@@ -26,11 +26,11 @@ async fn main() {
         gdb.create_graph_table("result_of_research2").await;     // Create a new table
         
         
-        let res = geng(9,
-            &[
-              GraphArgs::Connected], &gdb, "result_of_research2").await;
-        //println!("res: {res}");
-        //gdb.init_table("result_of_research2", &res, '\n').await;
+        //let res = load_table_with_geng(9,
+        //    &[
+        //      GraphArgs::Connected], &gdb, "result_of_research2").await;
+        
+        read_pipe_input(&gdb, "result_of_research2").await;
 
         gdb.drop_table("result_of_research2").await;
     }

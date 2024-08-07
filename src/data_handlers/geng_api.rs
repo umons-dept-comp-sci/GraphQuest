@@ -1,8 +1,10 @@
-use std::process::{Command, Stdio};
+use std::{process::{ChildStdout, Command, Stdio}, str::Lines};
 use db_handler::*;
-use std::io::{BufReader, BufRead};
+use std::{io::stdin, io::{BufReader, BufRead}};
 
 use crate::db_handler;  // Read stdout
+
+const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 
 
 pub enum GraphArgs {
@@ -66,7 +68,7 @@ impl GraphArgs {
 }
 
 // geng -c 6 -q
-pub async fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str) -> String
+pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str) -> String
 {
     // Concat all given args
     let args = {
@@ -100,7 +102,7 @@ pub async fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &Grap
             }
 
             // if we stored enough, we can push what we collected towards the given database
-            if signature_buffer.len() == 20000 {
+            if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
                 //println!("Pushing what i collected");
                 db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
                 signature_buffer.clear();   // free the *buffer*
@@ -124,4 +126,32 @@ pub async fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &Grap
     String::new()
 
     //println!("Vector : {:?}", signature_vec);
+}
+
+
+pub async fn read_buffer(lines: impl BufRead, db: &GraphDatabase, table_name: &str)
+{
+    let mut signature_buffer : Vec<String> = Vec::new();
+    for line in lines.lines() {
+        if let Ok(sign) = line {
+            //println!("I just read: {sign}");
+            signature_buffer.push(sign);
+        }else {
+            panic!("damn");
+        }
+        // if we stored enough, we can push what we collected towards the given database
+        if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
+            //println!("Pushing what i collected");
+            db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
+            signature_buffer.clear();   // free the *buffer*
+            //println!("Finished, moving on");
+        }
+    }
+}
+
+pub async fn read_pipe_input(db: &GraphDatabase, table_name: &str)
+{
+    let stdin = stdin();
+    read_buffer(stdin.lock(), db, table_name).await;
+
 }
