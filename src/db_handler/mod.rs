@@ -136,7 +136,7 @@ fn debug_log(message: &str)
 
 
 /// Tries to create a database
-/// * Create a database to the given path it if isn't already created
+/// * Creates a database to the given path it if isn't already created
 /// * Doesn't do anything if it is already created.
 pub async fn create_graph_database(db_path: &str)
 {
