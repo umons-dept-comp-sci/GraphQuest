@@ -16,7 +16,9 @@ async fn main() {
     gdb.create_graph_table("result_of_research").await;     // Create a new table
 
 
+    gdb.add_column_to_table("result_of_research", "euler", GraphQuest::db_handler::ColumnType::Text).await;
 
+    gdb.remove_column_from_table("result_of_research", "euler").await;
     
     
 
