@@ -1,4 +1,4 @@
-use std::fmt::Error;
+use std::fmt::{Debug, Error};
 
 use sqlx::{database, migrate::MigrateDatabase, pool, query, sqlite::{types, SqliteQueryResult}, FromRow, Pool, Row, Sqlite, SqlitePool};
 
@@ -26,6 +26,34 @@ pub struct GraphDatabase
 
 impl GraphDatabase {
     
+    /// Tries the given query to the database
+    /// * Returns `Ok(SqliteQueryResult)` if the query was a success
+    /// * Returns `Err()` with the given error message if it wasn't
+    async fn match_query_result(&self, query: &str, error_msg: &str) -> Result<SqliteQueryResult, String>
+    {
+        let res = sqlx::query(query)
+                                                            .execute(&self.pool)
+                                                            .await;
+        match res{
+            Ok(query_res) => 
+                {return Ok(query_res);},
+            Err(_) => 
+            {//println!("{}", e.to_string());
+            return  Err(error_msg.to_string()) }
+        }
+        
+    }
+    
+    /// Checks if the table is present in the database in the database
+    /// * Returns `Ok(SqliteQueryResult)` if the table exists
+    /// * Returns `Err(..)`if it doesn't
+    async fn check_if_table_exist(&self, table_name: &str) -> Result<SqliteQueryResult, String>
+    {
+        self.match_query_result(format!("SELECT * FROM {table_name}").as_str(), 
+                            "The table \"{table_name}\" does not exist for the given database")
+                            .await
+    }
+    
     /// Creates a simple graph table that has only one column called **signature**.
     /// The goal being to store graphs by using their ***graph6***  format.
     pub async fn create_graph_table(&self, table_name: &str) -> SqliteQueryResult
@@ -33,10 +61,13 @@ impl GraphDatabase {
         let query = format!("CREATE TABLE IF NOT EXISTS {table_name} 
                                     (signature VARCHAR({G6_FORMAT_MAX_SIZE}) PRIMARY KEY NOT NULL);");
 
-        sqlx::query(&query).execute(&self.pool).await.unwrap()
+        debug_log(format!("Trying to create table \"{table_name}\"").as_str());
+        let res = sqlx::query(&query).execute(&self.pool).await.unwrap();
+        debug_log(format!("Successfully creating the table \"{table_name}\"").as_str());
+        res
     }
 
-    /// Tries to add a column to the graph \\
+    /// Tries to add a column to the graph 
     /// # Errors
     /// Will panic if the specified table doesn't exist 
     pub async fn add_column_to_table(&self, table_name: &str, column_name: &str, data_type: ColumnType)
@@ -59,7 +90,9 @@ impl GraphDatabase {
         }
     }
 
-    
+    /// Tries to remove a column to the graph 
+    /// # Errors
+    /// Will panic if the specified table doesn't exist
     pub async fn remove_column_from_table(&self, table_name: &str, column_name: &str)
     {
         // Check if table exists
@@ -77,33 +110,39 @@ impl GraphDatabase {
 
     }
 
-    /// Checks if the table is present in the database in the database
-    /// * Returns `Ok(SqliteQueryResult)` if the table exists
-    /// * Returns `Err(..)`if it doesn't
-    async fn check_if_table_exist(&self, table_name: &str) -> Result<SqliteQueryResult, String>
-    {
-        self.match_query_result(format!("SELECT * FROM {table_name}").as_str(), 
-                            "The table \"{table_name}\" does not exist for the given database")
-                            .await
-    }
 
-    /// Tries the given query to the database
-    /// * Returns `Ok(SqliteQueryResult)` if the query was a success
-    /// * Returns `Err()` with the given error message if it wasn't
-    async fn match_query_result(&self, query: &str, error_msg: &str) -> Result<SqliteQueryResult, String>
+    /// Tries to create a table to the database and populates it with signatures
+    pub async fn init_table(&self, table_name: &str, signatures: &str, separator: char)
     {
-        let res = sqlx::query(query)
-                                                            .execute(&self.pool)
-                                                            .await;
-        match res{
-            Ok(query_res) => 
-                {return Ok(query_res);},
-            Err(_) => 
-                {return  Err(error_msg.to_string()) }
+        // Create the table first
+        self.create_graph_table(table_name).await;
+
+        // Then we add all signatures to the newly created table
+        let mut query = format!("INSERT INTO {table_name} VALUES ");
+
+        // Separates and adds all values into 
+        for sign in signatures.split(separator).into_iter()
+        {
+            if sign != ""
+            {
+                query.push_str(format!("(\"{sign}\"),").as_str());
+            }
         }
+        query.pop();        // remove the extra ','
+        query.push_str(";");
 
+        
+        self.match_query_result(query.as_str(), "Something went wrong").await.expect("Error while trying to add signatures");
     }
 
+
+    pub async fn drop_table(&self, table_name: &str)
+    {
+        debug_log(format!("Trying to remove the table \"{table_name}\", if it exists").as_str());
+
+        self.match_query_result(format!("DROP TABLE IF EXISTS {table_name}").as_str(), "Failed to drop the table").await.expect("Failed");
+        debug_log(format!("Successfully removed the table \"{table_name}\", if it existed previously").as_str());
+    }
 }
 
 
@@ -143,7 +182,7 @@ pub async fn create_graph_database(db_path: &str)
     if !Sqlite::database_exists(db_path).await.unwrap_or(false) {
         debug_log(format!("Creating database {}", db_path).as_str());
         match Sqlite::create_database(db_path).await {
-            Ok(_) => debug_log("Create db success"),
+            Ok(_) => debug_log("Successfully created the database"),
             Err(error) => panic!("error: {}", error),
         }
     } else {
@@ -173,9 +212,9 @@ pub async fn connect_graph_database(db_path : & str) -> GraphDatabase
 }
 
 
+// TODO Change the file name to SQLITE handler when making the app more generic  
 // TODO Change all unwrap with match cases
-
-
+// TODO Make better errors
 
 
 

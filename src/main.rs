@@ -3,7 +3,6 @@ use GraphQuest::db_handler::{connect_graph_database, create_graph_database};
 
 use GraphQuest::data_handlers::geng_api::*;
 
-
 const DB_URL: &str = "resources/test.db";
 
 
@@ -22,18 +21,20 @@ async fn main() {
     
         gdb.add_column_to_table("result_of_research", "euler", GraphQuest::db_handler::ColumnType::Text).await;
     
-        gdb.remove_column_from_table("result_of_research", "euler").await;
-    }
-    
-
-    // geng test
-    {
+        //gdb.remove_column_from_table("result_of_research", "euler").await;
         
-        geng(15,
+        
+        let res = geng(10,
             &[GraphArgs::Biconnected,
               GraphArgs::ClawFree,
               GraphArgs::Connected]);
+            
+        gdb.init_table("result_of_research2", &res, '\n').await;
+
+        gdb.drop_table("result_of_research2").await;
     }
+
+
     
     
 
