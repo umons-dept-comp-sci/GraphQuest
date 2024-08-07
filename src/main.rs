@@ -23,13 +23,14 @@ async fn main() {
     
         //gdb.remove_column_from_table("result_of_research", "euler").await;
         
+        gdb.create_graph_table("result_of_research2").await;     // Create a new table
         
-        let res = geng(10,
-            &[GraphArgs::Biconnected,
-              GraphArgs::ClawFree,
-              GraphArgs::Connected]);
-            
-        gdb.init_table("result_of_research2", &res, '\n').await;
+        
+        let res = geng(9,
+            &[
+              GraphArgs::Connected], &gdb, "result_of_research2").await;
+        //println!("res: {res}");
+        //gdb.init_table("result_of_research2", &res, '\n').await;
 
         gdb.drop_table("result_of_research2").await;
     }

@@ -110,29 +110,33 @@ impl GraphDatabase {
 
     }
 
+    pub async fn add_values(&self, table_name: &str, signatures: &Vec<String>)
+    {
+        // Then we add all signatures to the newly created table
+        let mut query = format!("INSERT INTO {table_name} VALUES ");
+
+        // Add all value to the query
+        for sign in signatures
+        {
+            query.push_str(format!("(\"{sign}\"),").as_str());
+        }
+
+        query.pop();        // remove the extra ','
+        query.push_str(";");
+        //println!("Finished concat");
+        
+        self.match_query_result(query.as_str(), "Something went wrong").await.expect("Error while trying to add signatures");
+    }
 
     /// Tries to create a table to the database and populates it with signatures
-    pub async fn init_table(&self, table_name: &str, signatures: &str, separator: char)
+    pub async fn init_table(&self, table_name: &str, signatures: &Vec<String>)
     {
         // Create the table first
         self.create_graph_table(table_name).await;
 
-        // Then we add all signatures to the newly created table
-        let mut query = format!("INSERT INTO {table_name} VALUES ");
-
-        // Separates and adds all values into 
-        for sign in signatures.split(separator).into_iter()
-        {
-            if sign != ""
-            {
-                query.push_str(format!("(\"{sign}\"),").as_str());
-            }
-        }
-        query.pop();        // remove the extra ','
-        query.push_str(";");
-
+        // Add values to the newly created table
+        self.add_values(table_name, signatures).await;
         
-        self.match_query_result(query.as_str(), "Something went wrong").await.expect("Error while trying to add signatures");
     }
 
 

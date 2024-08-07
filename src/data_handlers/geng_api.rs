@@ -1,4 +1,8 @@
-use std::{borrow::Borrow, process::Command};
+use std::process::{Command, Stdio};
+use db_handler::*;
+use std::io::{BufReader, BufRead};
+
+use crate::db_handler;  // Read stdout
 
 
 pub enum GraphArgs {
@@ -62,7 +66,7 @@ impl GraphArgs {
 }
 
 // geng -c 6 -q
-pub fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs]) -> String
+pub async fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str) -> String
 {
     // Concat all given args
     let args = {
@@ -72,24 +76,52 @@ pub fn geng(nb_of_vertices: usize, graph_settings: &[GraphArgs]) -> String
         }
         r
     };
-
+    
+    
     // Call the geng command
-    let call_res = Command::new("geng")
+    let mut call_res = Command::new("geng")
         .arg(args)
         .arg(nb_of_vertices.to_string())
         .arg("-q")
-        .output()
+        .stdout(Stdio::piped())
+        .spawn()
         .expect("Failed to execute the \"geng\" command");
+    {
+        let stdout = call_res.stdout.as_mut().unwrap();
+        let stdout_reader = BufReader::new(stdout);
+        let stdout_lines = stdout_reader.lines();
+
+        let mut signature_buffer : Vec<String> = Vec::new();
+        for line in stdout_lines {
+            if let Ok(sign) = line {
+                signature_buffer.push(sign);
+            }else {
+                panic!("damn");
+            }
+
+            // if we stored enough, we can push what we collected towards the given database
+            if signature_buffer.len() == 20000 {
+                //println!("Pushing what i collected");
+                db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
+                signature_buffer.clear();   // free the *buffer*
+                //println!("Finished, moving on");
+            }
+
+        }
+        // Push all signatures left
+        if signature_buffer.len() != 0 {
+            db.add_values(table_name, &signature_buffer).await;
+        }
+    }
+    
+        
+    call_res.wait().unwrap();
+
 
     // Return result as a string
-     String::from_utf8(call_res.stdout).expect("Couldn't read the output as a String of the \"geng\" command")
-    
+    //String::from_utf8(call_res.stdout).expect("Couldn't read the output as a String of the \"geng\" command");
 
-    //let mut signature_vec: Vec<&str> = output
-    //   .split("\n")
-    //   .collect();
-    //signature_vec.pop();
-    //return signature_vec;
+    String::new()
 
     //println!("Vector : {:?}", signature_vec);
 }
