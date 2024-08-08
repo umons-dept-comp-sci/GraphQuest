@@ -1,7 +1,7 @@
-use GraphQuest::db_handler::{connect_graph_database, create_graph_database};
+use GraphQuest::db_handler::{data_loaders::*, sqlite_handler::*};
 
 
-use GraphQuest::data_handlers::geng_api::*;
+
 
 const DB_URL: &str = "resources/test.db";
 
@@ -19,7 +19,7 @@ async fn main() {
         gdb.create_graph_table("result_of_research").await;     // Create a new table
     
     
-        gdb.add_column_to_table("result_of_research", "euler", GraphQuest::db_handler::ColumnType::Text).await;
+        gdb.add_column_to_table("result_of_research", "euler", ColumnType::Text).await;
     
         //gdb.remove_column_from_table("result_of_research", "euler").await;
         

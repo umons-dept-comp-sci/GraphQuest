@@ -1,12 +1,18 @@
-use std::{process::{ChildStdout, Command, Stdio}, str::Lines};
-use db_handler::*;
-use std::{io::stdin, io::{BufReader, BufRead}};
+use std::fs::File;
+use std::process::{Command, Stdio};
+use std::io::{stdin, BufReader, BufRead, Result, Lines};
+use std::path::Path;
+
+use db_handler::sqlite_handler::GraphDatabase;
 
 use crate::db_handler;  // Read stdout
 
+
+/// The maximum capacity of the vectoe before pushing and flushing its content
 const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 
 
+/// Enums used to facilitate the types of graphs to generate using `geng` with each one translating into a setting of the command.  
 pub enum GraphArgs {
     Connected,
     Biconnected,
@@ -22,6 +28,8 @@ pub enum GraphArgs {
     LowerBoundMinimumDegree(usize),
     UpperBoundMinimumDegree(usize),
 }
+
+/// Enums used to give more settings to `geng` 
 pub enum GenSettings
 {
     MinNumberOfEdges(usize),
@@ -67,8 +75,9 @@ impl GraphArgs {
     } 
 }
 
-// geng -c 6 -q
-pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str) -> String
+/// Creates and stores the content of a `geng` query in the given database, using a set of graph settings.
+/// The table name represents the name of the newly created table.
+pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str)
 {
     // Concat all given args
     let args = {
@@ -91,67 +100,51 @@ pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[Graph
     {
         let stdout = call_res.stdout.as_mut().unwrap();
         let stdout_reader = BufReader::new(stdout);
-        let stdout_lines = stdout_reader.lines();
 
-        let mut signature_buffer : Vec<String> = Vec::new();
-        for line in stdout_lines {
-            if let Ok(sign) = line {
-                signature_buffer.push(sign);
-            }else {
-                panic!("damn");
-            }
-
-            // if we stored enough, we can push what we collected towards the given database
-            if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                //println!("Pushing what i collected");
-                db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
-                signature_buffer.clear();   // free the *buffer*
-                //println!("Finished, moving on");
-            }
-
-        }
-        // Push all signatures left
-        if signature_buffer.len() != 0 {
-            db.add_values(table_name, &signature_buffer).await;
-        }
+        read_buffer(stdout_reader, db, table_name).await;
     }
     
         
     call_res.wait().unwrap();
-
-
-    // Return result as a string
-    //String::from_utf8(call_res.stdout).expect("Couldn't read the output as a String of the \"geng\" command");
-
-    String::new()
-
-    //println!("Vector : {:?}", signature_vec);
 }
 
-
-pub async fn read_buffer(lines: impl BufRead, db: &GraphDatabase, table_name: &str)
+/// Reads line by line the given buffer and pushes it's content in the given datase. 
+/// The table name represents the name of the newly created table.
+/// 
+/// In order to not crash, the method will use a vector to store the data read and after reaching a certain max capacity (being [BUFFER_VECTOR_MAX_SIZE]), will dump its content to the database. 
+pub async fn read_buffer(reader: impl BufRead, db: &GraphDatabase, table_name: &str) -> Vec<String>
 {
     let mut signature_buffer : Vec<String> = Vec::new();
-    for line in lines.lines() {
+    for line in reader.lines() {
         if let Ok(sign) = line {
-            //println!("I just read: {sign}");
+            println!("I just read: {sign}");
             signature_buffer.push(sign);
         }else {
             panic!("damn");
         }
         // if we stored enough, we can push what we collected towards the given database
         if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-            //println!("Pushing what i collected");
             db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
             signature_buffer.clear();   // free the *buffer*
-            //println!("Finished, moving on");
         }
     }
+    signature_buffer
 }
 
+/// Wait for the stdin inputs of the user, reads and stores it in the given database. 
+/// The table name represents the name of the newly created table.
 pub async fn read_pipe_input(db: &GraphDatabase, table_name: &str)
 {
     let stdin = stdin();
     read_buffer(stdin.lock(), db, table_name).await;
+}
 
+
+
+// TODO add load file method
+#[warn(dead_code)]
+fn read_lines<P>(filename: P) -> Result<Lines<BufReader<File>>>
+where P: AsRef<Path>, {
+    let file = File::open(filename)?;
+    Ok(BufReader::new(file).lines())
 }
