@@ -29,6 +29,15 @@ pub struct GraphDatabase
 
 impl GraphDatabase {
     
+
+    /// Tries the given query to the database and expects a string as the result
+    pub async fn query_return_string(&self, query: &str)  -> Result<Option<String>, sqlx::Error>
+    {
+        sqlx::query_scalar(query)
+                                            .fetch_optional(&self.pool)
+                                            .await
+    }
+
     /// Tries the given query to the database
     /// * Returns `Ok(SqliteQueryResult)` if the query was a success
     /// * Returns `Err()` with the given error message if it wasn't
@@ -127,8 +136,8 @@ impl GraphDatabase {
         query.pop();        // remove the extra ','
         query.push_str(";");
         //println!("Finished concat");
-        
-        self.match_query_result(query.as_str(), "Something went wrong").await.expect("Error while trying to add signatures");
+        println!("{:?}", self.match_query_result(query.as_str(), "Something went wrong").await);
+        //self.match_query_result(query.as_str(), "Something went wrong").await.expect("Error while trying to add signatures");
     }
 
     /// Tries to create a table to the database and populates it with signatures
@@ -142,7 +151,7 @@ impl GraphDatabase {
         
     }
 
-
+    /// Drops the given table if it exists
     pub async fn drop_table(&self, table_name: &str)
     {
         debug_log(format!("Trying to remove the table \"{table_name}\", if it exists").as_str());
@@ -150,6 +159,16 @@ impl GraphDatabase {
         self.match_query_result(format!("DROP TABLE IF EXISTS {table_name}").as_str(), "Failed to drop the table").await.expect("Failed");
         debug_log(format!("Successfully removed the table \"{table_name}\", if it existed previously").as_str());
     }
+
+    /// Simply initialise a [GraphDatabase] struct using an already existing/connected pool 
+    pub fn create_graph_database(pool: SqlitePool) -> Self
+    {
+        Self {
+            pool    // This is done in order to keep pool private
+        }
+    }
+
+
 }
 
 
@@ -165,13 +184,6 @@ impl ColumnType {
         String::from(res)
     }
 }
-
-
-//#[derive(Clone, FromRow, Debug)]
-//struct Graph {
-//    signature: String
-//}
-
 
 fn debug_log(message: &str)
 {
@@ -225,3 +237,27 @@ pub async fn connect_graph_database(db_path : & str) -> GraphDatabase
 
 
 
+
+
+
+//_______________________________________________
+// Unit testing
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;   // Import all
+
+    #[sqlx::test]
+    async fn create_graph_table_test(pool: sqlx::SqlitePool) -> sqlx::Result<()> {
+        let db = GraphDatabase::create_graph_database(pool);
+        
+        db.create_graph_table("test_table").await;
+        let query_res = db.query_return_string("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';").await.unwrap();
+        assert_eq!(Some("test_table".to_string()), query_res);  // check if table was indeed created
+        Ok(())
+    }
+
+
+}

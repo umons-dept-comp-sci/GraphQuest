@@ -148,3 +148,24 @@ where P: AsRef<Path>, {
     let file = File::open(filename)?;
     Ok(BufReader::new(file).lines())
 }
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;   // Import all
+
+    //#[sqlx::test]
+    async fn create_db_geng_test(pool: sqlx::SqlitePool) -> sqlx::Result<()> {
+        let db = GraphDatabase::create_graph_database(pool);
+        load_table_with_geng(8, &[GraphArgs::Connected], &db, "test_table1").await;
+        
+        db.create_graph_table("test_table").await;
+        let query_res = db.query_return_string("SELECT COUNT(DISTINCT *) FROM test_table1;").await.unwrap();
+        assert_eq!(Some("11117".to_string()), query_res);  // check if table was indeed created
+        Ok(())
+    }
+
+
+}
