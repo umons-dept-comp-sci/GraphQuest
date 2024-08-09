@@ -38,10 +38,10 @@ enum Modes {
 #[derive(Subcommand, Debug, Clone)]
 enum DatabaseModes {
     /// Adds a table to the given database
-    Add,
+    Create,
     /// Removes a table from the given database
     Remove,
-    /// Shows a table from the given database
+    /// Shows a summary table from the given database
     Show
 }
 
