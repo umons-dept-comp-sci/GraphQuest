@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::io::{stdin, BufReader, BufRead, Result, Lines};
 use std::path::Path;
 
-use db_handler::sqlite_handler::GraphDatabase;
+use db_handler::sqlite_handler::SqliteGraphDatabase;
 
 use crate::db_handler;  // Read stdout
 
@@ -77,7 +77,7 @@ impl GraphArgs {
 
 /// Creates and stores the content of a `geng` query in the given database, using a set of graph settings.
 /// The table name represents the name of the newly created table.
-pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &GraphDatabase, table_name: &str)
+pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[GraphArgs], db: &SqliteGraphDatabase, table_name: &str)
 {
     // Concat all given args
     let args = {
@@ -112,7 +112,7 @@ pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[Graph
 /// The table name represents the name of the newly created table.
 /// 
 /// In order to not crash, the method will use a vector to store the data read and after reaching a certain max capacity (being [BUFFER_VECTOR_MAX_SIZE]), will dump its content to the database. 
-pub async fn read_buffer(reader: impl BufRead, db: &GraphDatabase, table_name: &str) -> Vec<String>
+pub async fn read_buffer(reader: impl BufRead, db: &SqliteGraphDatabase, table_name: &str) -> Vec<String>
 {
     let mut signature_buffer : Vec<String> = Vec::new();
     for line in reader.lines() {
@@ -133,7 +133,7 @@ pub async fn read_buffer(reader: impl BufRead, db: &GraphDatabase, table_name: &
 
 /// Wait for the stdin inputs of the user, reads and stores it in the given database. 
 /// The table name represents the name of the newly created table.
-pub async fn read_pipe_input(db: &GraphDatabase, table_name: &str)
+pub async fn read_pipe_input(db: &SqliteGraphDatabase, table_name: &str)
 {
     let stdin = stdin();
     read_buffer(stdin.lock(), db, table_name).await;
@@ -151,21 +151,3 @@ where P: AsRef<Path>, {
 
 
 
-
-#[cfg(test)]
-mod tests {
-    use super::*;   // Import all
-
-    //#[sqlx::test]
-    async fn create_db_geng_test(pool: sqlx::SqlitePool) -> sqlx::Result<()> {
-        let db = GraphDatabase::create_graph_database(pool);
-        load_table_with_geng(8, &[GraphArgs::Connected], &db, "test_table1").await;
-        
-        db.create_graph_table("test_table").await;
-        let query_res = db.query_return_string("SELECT COUNT(DISTINCT *) FROM test_table1;").await.unwrap();
-        assert_eq!(Some("11117".to_string()), query_res);  // check if table was indeed created
-        Ok(())
-    }
-
-
-}
