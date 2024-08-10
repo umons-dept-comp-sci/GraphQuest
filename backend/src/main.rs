@@ -1,4 +1,4 @@
-use GraphQuest::db_handler::{data_loaders::*, sqlite_handler::*};
+use GraphQuest::db_handler::{lib::*, sqlite_handler::*};
 
 
 
@@ -11,6 +11,11 @@ const DB_URL: &str = "resources/test.db";
 async fn main() {
     // Database test
     {
+        let workspace: Workspace<SqliteGraphDatabase> = init_workspace(DB_URL).await;
+
+        
+
+        /*
         create_graph_database(DB_URL).await;    // Create a database if it didn't already exist
     
         let gdb = connect_graph_database(DB_URL).await;     // Connects to the created db 
@@ -32,7 +37,8 @@ async fn main() {
         
         read_pipe_input(&gdb, "result_of_research2").await;
 
-        gdb.drop_table("result_of_research2").await;
+        gdb.drop_table("result_of_research2").await; 
+        */
     }
 
 

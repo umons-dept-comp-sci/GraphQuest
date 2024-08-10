@@ -1,19 +1,29 @@
 use core::fmt;
 use std::{io::BufRead, path::Display};
 
+use super::sqlite_handler;
+
 
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
-pub const DATASET_TABLE_NAME : &str = "InitDataset";
+const DATASET_TABLE_NAME : &str = "InitDataset";
+/// The name of the first created table of the dataset containing the initial dataset
+pub const DATASET_PK_NAME : &str = "signature";
+/// The name of the first created table of the dataset containing the initial dataset
+const METADATA_TABLE_NAME : &str = "Metadata";
 /// The maximum size of a signature to store in the dataset
 pub const SIGNATURE_MAX_SIZE : usize = 250;
+/// The maximum size of a table name in the dataset
+pub const TABLE_NAME_MAX_SIZE : usize = 250;
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "inv_";
 
 
 
-// FIXME ATTENTION USER INPUT ET TABLE NAMES,
+pub struct Workspace<T: GraphDatabase> {
+    db : T,
+}
 
 
 /// A simple struct used to force a specific naming convention for tables storing invariants
@@ -33,15 +43,10 @@ impl Invariant {
     // Simply formats the invariant name to be easier to work with
     pub fn get_table_name(&self) -> String
     {
+        // FIXME ATTENTION USER INPUT ET TABLE NAMES,
         INVARIANT_PREFIX.to_string() + &self.name    // Append the prefix to the invariant 
     }
 }
-
-//impl fmt::Display for Invariant {
-//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//        write!(f,"{}", self.get_table_name())
-//    }
-//}
 
 
 /// Traits used to offer a selection of different possible data types for a database
@@ -59,33 +64,59 @@ pub trait DBColumnTypes
 pub trait GraphDatabase {
     
     /// Creates the database that will be storing the project.
-    /// Adds the dataset table that will be used to store all initial signatures. 
-    /// Returns a struct implementing the [GraphDatabase] trait.
     /// 
-    /// The database table must only have one column named *signature* (with it being the primary key).
-    /// And must be called [DATASET_TABLE_NAME]
-    /// ```text
-    /// [DATASET_TABLE_NAME]->   | signature |
-    ///                          +-----------+
-    ///                          | I?ABCd[v? |
-    ///                          | I?ABCd[n? |
-    ///                          | I?ABCd[^? |
-    ///                          |    ...    |
-    /// ```
+    /// Returns a struct implementing the [GraphDatabase] trait.
     async fn create_graph_database(db_url: &str) -> Self;
+
+    /// Adds a dataset table to the database that will be used to store all initial signatures.
+    /// The database table must only have one column (with it being the primary key).
+    /// And must be named using the given parameters.
+    /// ## Exemple of table
+    /// ```text
+    /// InitDataset -> | signature | nb_of_vertices |
+    ///                +-----------+----------------+
+    ///                | I?ABCd[v? |       7        |
+    ///                | I?ABCd[n? |       7        |
+    ///                | I?ABCd[^? |       7        |
+    ///                |          ...               |
+    /// ```
+    async fn create_dataset_table(&self, table_name: &str, pk_name: &str);
+
+
+    async fn add_value_to_dataset(&self, table_name: &str, signatures: &Vec<String>);
+
+    /// Adds a metadata table to the database that will be used to store all initial signatures.
+    /// 
+    /// 
+    /// And must be named using the given parameters.
+    /// ## Exemple of table
+    /// ```text
+    /// Metadata -> | table_name  | stopped_at |
+    ///             |-------------|------------|
+    ///             | InitDataset | 1500       |
+    ///             | Euler       | 753        |
+    ///             |            ...           |
+    /// ```
+    async fn create_meta_data_table(&self, table_name: &str);
     
+    
+
+
+
     /// Adds an table to the database to later store the value of an invariant for each graph of the database.
     /// 
-    /// An invariant table must have two columns named *signature* (which is the primary key) and *value*.
+    /// An invariant table must have two columns named [DATASET_PK_NAME] (which is the primary key) and *value*.
     /// 
     /// To name the name use [Invariant::get_table_name], this is done to make sure the given invariant name is valid.
+    /// 
+    /// ## Exemple of table
     /// ```text
-    /// | signature | value |
-    /// +-----------+-------+
-    /// | I?ABCd[v? | ##### |
-    /// | I?ABCd[n? | ##### |
-    /// | I?ABCd[^? | ##### |
-    /// |          ...      |
+    /// Chromatic -> | signature | value |
+    /// Number       +-----------+-------+
+    ///              | I?ABCd[v? | ##### |
+    ///              | I?ABCd[n? | ##### |
+    ///              | I?ABCd[^? | ##### |
+    ///              |          ...      |
     /// ```
     /// ## Exceptions
     /// Must panic when:
@@ -146,3 +177,27 @@ pub trait GraphDatabase {
     
 }
 
+
+/// Initialises a workplace
+/// 
+/// Will create everything needed by the program by using :
+/// * [GraphDatabase::create_graph_database] : to create the database
+/// * [GraphDatabase::create_dataset_table] : to create the dataset table
+/// * [GraphDatabase::create_meta_data_table] : to create the meta data table
+pub async fn init_workspace<T: GraphDatabase>(db_url: &str) -> Workspace<T>
+{
+
+    // Init database
+    let db = T::create_graph_database(db_url).await;
+    
+    // Init dataset table
+    db.create_dataset_table(DATASET_TABLE_NAME, DATASET_PK_NAME).await;
+
+    // Init meta data table
+    db.create_meta_data_table(METADATA_TABLE_NAME).await;
+
+    // Return the db connection encapsulated
+    Workspace {
+        db
+    }
+}

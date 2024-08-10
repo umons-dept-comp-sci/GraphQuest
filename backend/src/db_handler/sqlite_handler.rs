@@ -62,32 +62,56 @@ impl GraphDatabase for SqliteGraphDatabase {
             } 
         };
         
-        // Adds a database table 
-        let query = format!("CREATE TABLE IF NOT EXISTS {DATASET_TABLE_NAME} 
-                                    (signature VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL);");
-
-        sqlx::query(&query).execute(&db.pool).await;
-        // Returns it
-        
         db
+    }
+
+    async fn create_dataset_table(&self, table_name: &str, pk_name: &str) {
+        // Adds a database table 
+        let query = format!("CREATE TABLE {table_name} 
+                                    ({pk_name} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL);");
+
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
+    }
+    
+    async fn create_meta_data_table(&self, table_name: &str) {
+        // Adds a database table 
+        let query = format!("CREATE TABLE {table_name} 
+                                    (table_name VARCHAR({TABLE_NAME_MAX_SIZE}) PRIMARY KEY NOT NULL,
+                                     stopped_at {} DEFAULT 0);", SqliteColumnType::Integer.translate());
+
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
     async fn add_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T) {
         let query = format!("CREATE TABLE {} (
-                                    signature VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
+                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
                                     value {}
                                 ); ", invariant.get_table_name(), column_type.translate());
-        
-        sqlx::query(&query).execute(&self.pool);
+        println!("WHAT");
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
+    }
+    
+    async fn add_value_to_dataset(&self, table_name: &str, signatures: &Vec<String>) {
+        // Then we add all signatures to the newly created table
+        let mut query = format!("INSERT INTO {table_name} VALUES ");
+        // Add all value to the query
+        for sign in signatures
+        {
+            query.push_str(format!("(\"{sign}\"),").as_str());
+        }
+        query.pop();        // remove the extra ','
+        query.push_str(";");
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
+    }
+    
+    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String> {
+        todo!()
     }
     
     async fn add_values_to_inv_table<T>(&self, invariant: &Invariant, values: &Vec<T>) {
         todo!()
     }
     
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String> {
-        todo!()
-    }
 
     
 }
@@ -140,7 +164,6 @@ pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
 }
 
 
-// TODO Change the file name to SQLITE handler when making the app more generic  
 // TODO Change all unwrap with match cases
 // TODO Make better errors
 
