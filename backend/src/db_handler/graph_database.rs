@@ -1,8 +1,7 @@
 
 use std::io::BufRead;
-use crate::db_handler::data_loaders;
 
-use super::data_loaders::Method;
+use super::super::data_handler::data_loaders::*;
 
 
 
@@ -244,6 +243,9 @@ impl<T: GraphDatabase> Workspace<T> {
     {
         method.read_signatures(&self.db).await;
     }
+
+
+    
 
     /// Properly closes the worspace
     pub async fn close_workspace(self)
