@@ -5,7 +5,9 @@ use std::path::Path;
 
 use db_handler::sqlite_handler::SqliteGraphDatabase;
 
-use crate::db_handler;  // Read stdout
+use crate::db_handler;
+
+use super::lib::{GraphDatabase, Invariant};  // Read stdout
 
 
 /// The maximum capacity of the vectoe before pushing and flushing its content
@@ -42,7 +44,6 @@ impl GraphArgs {
     /// Use `geng --help` for more detail
     fn to_arg(&self) -> String
     {
-        // FIXME There is got to be a way cleaner way to do this
         let mut val: Option<usize> = None;
         let mut res = match self {
             GraphArgs::Connected => "c",
@@ -101,42 +102,20 @@ pub async fn load_table_with_geng(nb_of_vertices: usize, graph_settings: &[Graph
         let stdout = call_res.stdout.as_mut().unwrap();
         let stdout_reader = BufReader::new(stdout);
 
-        read_buffer(stdout_reader, db, table_name).await;
+        //read_buffer(stdout_reader, db, table_name).await;
+        //db.add_values_from_buffer(stdout_reader, &Invariant{name: "d"})
     }
     
         
     call_res.wait().unwrap();
 }
 
-/// Reads line by line the given buffer and pushes it's content in the given datase. 
-/// The table name represents the name of the newly created table.
-/// 
-/// In order to not crash, the method will use a vector to store the data read and after reaching a certain max capacity (being [BUFFER_VECTOR_MAX_SIZE]), will dump its content to the database. 
-pub async fn read_buffer(reader: impl BufRead, db: &SqliteGraphDatabase, table_name: &str) -> Vec<String>
-{
-    let mut signature_buffer : Vec<String> = Vec::new();
-    for line in reader.lines() {
-        if let Ok(sign) = line {
-            println!("I just read: {sign}");
-            signature_buffer.push(sign);
-        }else {
-            panic!("damn");
-        }
-        // if we stored enough, we can push what we collected towards the given database
-        if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-            db.add_values(table_name, &signature_buffer).await;     // add already stored signatures to the database
-            signature_buffer.clear();   // free the *buffer*
-        }
-    }
-    signature_buffer
-}
 
 /// Wait for the stdin inputs of the user, reads and stores it in the given database. 
-/// The table name represents the name of the newly created table.
-pub async fn read_pipe_input(db: &SqliteGraphDatabase, table_name: &str)
+pub async fn read_pipe_signatures<T: GraphDatabase>(db: &T)
 {
     let stdin = stdin();
-    read_buffer(stdin.lock(), db, table_name).await;
+    db.add_signatures_to_dataset_buffer(stdin.lock()).await;
 }
 
 
@@ -151,3 +130,27 @@ where P: AsRef<Path>, {
 
 
 
+
+
+pub enum Method 
+{
+    /// Read input from GengAPI
+    GengAPI,
+    /// Read input from stdin
+    Stdin,
+    /// Read input from file using a given path
+    File(String)
+} 
+
+impl Method
+{
+    /// Read inpu
+    pub async fn read_signatures<T: GraphDatabase>(&self, db:&T)
+    {
+        match self {
+            Method::GengAPI => todo!(),
+            Method::Stdin => read_pipe_signatures(db).await,
+            Method::File(_) => todo!(),
+        };
+    }
+}

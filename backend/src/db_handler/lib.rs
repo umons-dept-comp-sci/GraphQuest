@@ -1,7 +1,9 @@
-use core::fmt;
-use std::{io::BufRead, path::Display};
 
-use super::sqlite_handler;
+use std::io::BufRead;
+use crate::db_handler::data_loaders;
+
+use super::data_loaders::Method;
+
 
 
 /// The maximum capacity of the vector before pushing and flushing its content
@@ -21,7 +23,9 @@ pub const INVARIANT_PREFIX : &str = "inv_";
 
 
 
+/// Encapsulation of a database connection that facilitates querries
 pub struct Workspace<T: GraphDatabase> {
+    /// The GraphDatabase used to modify the database state  
     db : T,
 }
 
@@ -67,6 +71,15 @@ pub trait GraphDatabase {
     /// 
     /// Returns a struct implementing the [GraphDatabase] trait.
     async fn create_graph_database(db_url: &str) -> Self;
+
+
+    /// Connects to the given database
+    /// 
+    /// ## Exceptions
+    /// Must panic when:
+    /// *   The given database url is not valid
+    /// *   The database is not a valid workspace, meaning it was mostlikely tempered with (#TODO)
+    async fn connect_graph_database(db_url: &str) -> Self;
 
     /// Adds a dataset table to the database that will be used to store all initial signatures.
     /// The database table must only have one column (with it being the primary key).
@@ -126,14 +139,14 @@ pub trait GraphDatabase {
 
 
     
-    /// Adds value to an already existing invariant table made using the [GraphDatabase::add_invariant_table()] function.
+    /// Adds value to the dataset table.
     /// 
-    /// If the number of values to push is too big, consider using [GraphDatabase::add_values_from_buffer] instead, which is also using this method.
+    /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
     /// ## Exceptions
     /// Must panic when:
-    /// * The given table name doesn't not exists, because [GraphDatabase::add_invariant_table()] was not called before
+    /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
     /// * The values to add are not valid.
-    async fn add_values_to_inv_table<T>(&self, invariant: &Invariant, values: &Vec<T>);
+    async fn add_signatures_to_dataset<T>(&self, table_name: &str, values: &Vec<T>);
 
     /// Fetch signatures from the dataset table.
     /// ## Args
@@ -152,7 +165,7 @@ pub trait GraphDatabase {
     /// In order to save memory, the method will use a vector to store the data read
     /// and after reaching a certain max capacity (being [BUFFER_VECTOR_MAX_SIZE]),
     /// will dump its content to the database using [GraphDatabase::fetch_dataset_signatures].
-    async fn add_values_from_buffer(&self, reader: impl BufRead, invariant: &Invariant)
+    async fn add_signatures_to_dataset_buffer(&self, reader: impl BufRead)
     {
         let mut signature_buffer : Vec<String> = Vec::new();
         for line in reader.lines() {
@@ -164,40 +177,60 @@ pub trait GraphDatabase {
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                self.add_values_to_inv_table(invariant, &signature_buffer).await; // add already stored signatures to the database
+                self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await; // add already stored signatures to the database
                 signature_buffer.clear();   // free the *buffer*
             }
         }
         if signature_buffer.len() != 0
         {
-            self.add_values_to_inv_table(invariant, &signature_buffer).await;  // add remaining values to the database
+            self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await;  // add remaining values to the database
         }
     }
-
     
 }
 
 
-/// Initialises a workplace
-/// 
-/// Will create everything needed by the program by using :
-/// * [GraphDatabase::create_graph_database] : to create the database
-/// * [GraphDatabase::create_dataset_table] : to create the dataset table
-/// * [GraphDatabase::create_meta_data_table] : to create the meta data table
-pub async fn init_workspace<T: GraphDatabase>(db_url: &str) -> Workspace<T>
-{
 
-    // Init database
-    let db = T::create_graph_database(db_url).await;
-    
-    // Init dataset table
-    db.create_dataset_table(DATASET_TABLE_NAME, DATASET_PK_NAME).await;
 
-    // Init meta data table
-    db.create_meta_data_table(METADATA_TABLE_NAME).await;
+impl<T: GraphDatabase> Workspace<T> {
+    /// Initialises a workplace
+    /// 
+    /// Will create everything needed by the program by using :
+    /// * [GraphDatabase::create_graph_database] : to create the database
+    /// * [GraphDatabase::create_dataset_table] : to create the dataset table
+    /// * [GraphDatabase::create_meta_data_table] : to create the meta data table
+    pub async fn init_workspace(db_url: &str) -> Self
+    {
 
-    // Return the db connection encapsulated
-    Workspace {
-        db
+        // Init database
+        let db = T::create_graph_database(db_url).await;
+        
+        // Init dataset table
+        db.create_dataset_table(DATASET_TABLE_NAME, DATASET_PK_NAME).await;
+
+        // Init meta data table
+        db.create_meta_data_table(METADATA_TABLE_NAME).await;
+
+        // Return the db connection encapsulated
+        Workspace {
+            db
+        }
+    }
+
+
+    /// Connects to the workspace using the given url
+    pub async fn connect_workspace(db_url: &str) -> Self
+    {
+        // Try to connect to the database
+        let db = T::connect_graph_database(db_url).await;
+        // Return the db connection encapsulated
+        Workspace {
+            db
+        }
+    }
+
+    pub async fn add_dataset(&self, method: Method)
+    {
+        method.read_signatures(&self.db);
     }
 }

@@ -108,12 +108,43 @@ impl GraphDatabase for SqliteGraphDatabase {
         todo!()
     }
     
-    async fn add_values_to_inv_table<T>(&self, invariant: &Invariant, values: &Vec<T>) {
+    async fn add_signatures_to_dataset<T>(&self, invariant: &Invariant, values: &Vec<T>) {
         todo!()
+    }
+    
+    async fn connect_graph_database(db_url: &str) -> Self {
+        SqliteGraphDatabase{
+            pool:
+            {
+                // if managed to connected then return the value
+                if let Ok(pool) = SqlitePool::connect(db_url).await{
+                    pool
+                }
+                // else panic
+                else {
+                    panic!("The given database url is not valid")
+                }
+            } 
+        }
+        // TODO Check if the workspace is valid, if it wasn't tempered with
     }
     
 
     
+}
+
+
+impl SqliteGraphDatabase {
+
+    async fn _test_query_database(&self, query:String) -> Result<SqliteQueryResult, sqlx::Error>
+    {
+        sqlx::query(&query).execute(&self.pool).await
+    }
+    /// Returns the pool contained inside the struct
+    fn _get_pool(&self) -> &Pool<Sqlite>
+    {
+        &self.pool
+    }
 }
 
 
@@ -126,9 +157,6 @@ fn debug_log(message: &str)
 }
 
 
-/// Tries to create a database
-/// * Creates a database to the given path it if isn't already created
-/// * Doesn't do anything if it is already created.
 async fn create_graph_database(db_path: &str)
 {
     if !Sqlite::database_exists(db_path).await.unwrap_or(false) {
@@ -138,7 +166,7 @@ async fn create_graph_database(db_path: &str)
             Err(error) => panic!("error: {}", error),
         }
     } else {
-        debug_log("Database already exists, ignoring");   
+        panic!("The given database was already created");
     }
 }
 
@@ -164,6 +192,7 @@ pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
 }
 
 
+
 // TODO Change all unwrap with match cases
 // TODO Make better errors
 
@@ -175,3 +204,80 @@ pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
 //_______________________________________________
 // Unit testing
 
+#[cfg(test)]
+mod tests {
+    
+    use super::*;   // Import all
+    use std::process::Command;
+    
+    const DB_PATH: &str = "src/db_handler/test_db/sqlite_test_";
+    
+    fn get_test_path(postfix: &str) -> String
+    {
+        DB_PATH.to_string() + postfix
+    }
+    
+    fn delete_test_db(path: &str)
+    {
+        // Delete the created database
+        Command::new("rm")
+            .arg(&path)
+            .spawn()
+            .expect("Failed to remove the database");
+    }
+
+    #[sqlx::test]
+    async fn create_graph_table_test(_: sqlx::SqlitePool) -> sqlx::Result<()> 
+    {
+        let path = get_test_path("0.db");
+        // Creates database
+        SqliteGraphDatabase::create_graph_database(&path).await;
+        
+        // Checks if it exist
+        if !Sqlite::database_exists(&path).await.unwrap_or(false) {
+            panic!();
+        }
+
+        delete_test_db(&path);
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn connect_graph_database(pool: sqlx::SqlitePool) -> sqlx::Result<()>
+    {
+        let path = get_test_path("1.db");
+        // Creates database
+        SqliteGraphDatabase::create_graph_database(&path).await;
+        
+        // Tries to connect
+        SqliteGraphDatabase::connect_graph_database(&path).await;
+
+
+        delete_test_db(&path);
+        
+        Ok(())
+    }
+
+    
+
+
+}
+
+
+//#[cfg(test)]
+//mod tests {
+//    use super::*;   // Import all
+//
+//    #[sqlx::test]
+//    async fn create_graph_table_test(pool: sqlx::SqlitePool) -> sqlx::Result<()> {
+//        let db = GraphDatabase::create_graph_database(pool);
+//
+//        db.create_graph_table("test_table").await;
+//        let query_res = db.query_return_string("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';").await.unwrap();
+//        assert_eq!(Some("test_table".to_string()), query_res);  // check if table was indeed created
+//        Ok(())
+//    }
+//
+//
+//}
