@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Error};
+use std::fmt::{Debug, Display, Error};
 
 
 use crate::db_handler::lib::*;
@@ -65,17 +65,18 @@ impl GraphDatabase for SqliteGraphDatabase {
         db
     }
 
-    async fn create_dataset_table(&self, table_name: &str, pk_name: &str) {
+    async fn create_dataset_table(&self) {
         // Adds a database table 
-        let query = format!("CREATE TABLE {table_name} 
-                                    ({pk_name} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL);");
+        let query = format!("CREATE TABLE {DATASET_TABLE_NAME} 
+                                    ({DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL,
+                                     {DATASET_VALUE_NAME} VARCHAR);");
 
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn create_meta_data_table(&self, table_name: &str) {
+    async fn create_meta_data_table(&self) {
         // Adds a database table 
-        let query = format!("CREATE TABLE {table_name} 
+        let query = format!("CREATE TABLE {METADATA_TABLE_NAME} 
                                     (table_name VARCHAR({TABLE_NAME_MAX_SIZE}) PRIMARY KEY NOT NULL,
                                      stopped_at {} DEFAULT 0);", SqliteColumnType::Integer.translate());
 
@@ -87,13 +88,12 @@ impl GraphDatabase for SqliteGraphDatabase {
                                     {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
                                     value {}
                                 ); ", invariant.get_table_name(), column_type.translate());
-        println!("WHAT");
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn add_value_to_dataset(&self, table_name: &str, signatures: &Vec<String>) {
+    async fn add_value_to_dataset(&self, signatures: &Vec<String>) {
         // Then we add all signatures to the newly created table
-        let mut query = format!("INSERT INTO {table_name} VALUES ");
+        let mut query = format!("INSERT INTO {DATASET_TABLE_NAME} VALUES ");
         // Add all value to the query
         for sign in signatures
         {
@@ -105,10 +105,6 @@ impl GraphDatabase for SqliteGraphDatabase {
     }
     
     async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String> {
-        todo!()
-    }
-    
-    async fn add_signatures_to_dataset<T>(&self, invariant: &Invariant, values: &Vec<T>) {
         todo!()
     }
     
@@ -127,6 +123,52 @@ impl GraphDatabase for SqliteGraphDatabase {
             } 
         }
         // TODO Check if the workspace is valid, if it wasn't tempered with
+    }
+    
+    async fn add_signatures_to_dataset(&self, table_name: &str, signatures: &Vec<String>) {
+        // Then we add all signatures to the newly created table
+        let mut query = format!("INSERT INTO {table_name} VALUES ");
+        let mut first_byte;
+        // Add all value to the query
+        for sign in signatures
+        {
+            first_byte = sign.as_bytes()[0];
+            if first_byte >= 63 && first_byte < 126  
+            {
+                query.push_str(format!("(\"{sign}\", {}),", first_byte - 63).as_str());
+            }
+            else {
+                todo!("Didn't implement what to do for large graph (n >= 62)");
+            }
+        }
+        query.pop();        // remove the extra ','
+        query.push_str(";");
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
+        // update meta data table
+        self.update_meta_data(DATASET_TABLE_NAME, signatures.len()).await;
+    }
+    
+    async fn close_connection(self) {
+        self.pool.close().await;
+    }
+    
+    async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) {
+        let new_value = 
+        {
+            let query = format!("SELECT COUNT(*) FROM {changed_table_name}");
+            let current_table_size: Option<i64> = sqlx::query_scalar(&query).fetch_optional(&self.pool).await.unwrap();
+
+            current_table_size.expect(format!("Couldn't read the size of the given table {}", changed_table_name).as_str())
+            - added_values as i64
+        };
+
+        /*
+        INSERT OR REPLACE INTO users (id, username, email) VALUES (1, 'john doe', 'john@gmail.com');
+         */
+        let query = format!("INSERT OR REPLACE INTO {METADATA_TABLE_NAME} (table_name, stopped_at)
+                                    VALUES (\"{changed_table_name}\", {new_value});");
+        println!("query : {query}");
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
 

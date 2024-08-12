@@ -9,11 +9,18 @@ use super::data_loaders::Method;
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
-const DATASET_TABLE_NAME : &str = "InitDataset";
-/// The name of the first created table of the dataset containing the initial dataset
+pub const DATASET_TABLE_NAME : &str = "InitDataset";
+/// The column name of the primary key of the dataset
 pub const DATASET_PK_NAME : &str = "signature";
-/// The name of the first created table of the dataset containing the initial dataset
-const METADATA_TABLE_NAME : &str = "Metadata";
+/// The name of the second column of the dataset 
+pub const DATASET_VALUE_NAME : &str = "nb_of_vertices";
+/// The name of the the metadata table
+pub const METADATA_TABLE_NAME : &str = "Metadata";
+/// The name of the primary key of the metadata table
+pub const METADATA_PK_NAME : &str = "table_name";
+/// The name of the second column of the metadata table
+pub const METADATA_VALUE_NAME : &str = "stopped_at";
+
 /// The maximum size of a signature to store in the dataset
 pub const SIGNATURE_MAX_SIZE : usize = 250;
 /// The maximum size of a table name in the dataset
@@ -93,10 +100,10 @@ pub trait GraphDatabase {
     ///                | I?ABCd[^? |       7        |
     ///                |          ...               |
     /// ```
-    async fn create_dataset_table(&self, table_name: &str, pk_name: &str);
+    async fn create_dataset_table(&self);
 
 
-    async fn add_value_to_dataset(&self, table_name: &str, signatures: &Vec<String>);
+    async fn add_value_to_dataset(&self, signatures: &Vec<String>);
 
     /// Adds a metadata table to the database that will be used to store all initial signatures.
     /// 
@@ -110,9 +117,10 @@ pub trait GraphDatabase {
     ///             | Euler       | 753        |
     ///             |            ...           |
     /// ```
-    async fn create_meta_data_table(&self, table_name: &str);
+    async fn create_meta_data_table(&self);
     
     
+    async fn update_meta_data(&self, changed_table_name: &str, added_values: usize);
 
 
 
@@ -146,7 +154,7 @@ pub trait GraphDatabase {
     /// Must panic when:
     /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
     /// * The values to add are not valid.
-    async fn add_signatures_to_dataset<T>(&self, table_name: &str, values: &Vec<T>);
+    async fn add_signatures_to_dataset(&self, table_name: &str, values: &Vec<String>);
 
     /// Fetch signatures from the dataset table.
     /// ## Args
@@ -186,6 +194,9 @@ pub trait GraphDatabase {
             self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await;  // add remaining values to the database
         }
     }
+
+    ///Closes the connection with the database
+    async fn close_connection(self);
     
 }
 
@@ -206,10 +217,10 @@ impl<T: GraphDatabase> Workspace<T> {
         let db = T::create_graph_database(db_url).await;
         
         // Init dataset table
-        db.create_dataset_table(DATASET_TABLE_NAME, DATASET_PK_NAME).await;
+        db.create_dataset_table().await;
 
         // Init meta data table
-        db.create_meta_data_table(METADATA_TABLE_NAME).await;
+        db.create_meta_data_table().await;
 
         // Return the db connection encapsulated
         Workspace {
@@ -231,6 +242,12 @@ impl<T: GraphDatabase> Workspace<T> {
 
     pub async fn add_dataset(&self, method: Method)
     {
-        method.read_signatures(&self.db);
+        method.read_signatures(&self.db).await;
+    }
+
+    /// Properly closes the worspace
+    pub async fn close_workspace(self)
+    {
+        self.db.close_connection().await;
     }
 }

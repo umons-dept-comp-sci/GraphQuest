@@ -1,5 +1,7 @@
 use clap::{ArgAction, Args, Parser, Subcommand};
 
+use gquest_core::db_handler::{lib::{self, Workspace}, sqlite_handler::{self, SqliteGraphDatabase}};
+
 const DEFAULT_URL: &str = "sqlite://gquest.db";
 
 #[derive(Parser)]
@@ -13,17 +15,15 @@ struct CliArg {
 enum Modes {
     /// Initialise a project/database to work with
     Init {
+        #[command(subcommand)]
+        input_method : DatasetChoice,
         #[command(flatten)]
         path : DatabasePath,
-        #[clap(flatten)]
-        input_method : InputMethod
     },
     /// Add graphs to an already existing project  
     Add {
         #[command(flatten)]
-        path : DatabasePath,
-        #[clap(flatten)]
-        input_method : InputMethod
+        path : DatabasePath
     },
     /// Compute invariants from a dataset
     Compute {
@@ -74,16 +74,45 @@ struct DatabasePath {
 
 
 
+#[derive(Args, Debug, Clone)]
+struct GengArgs {
+    /// The mininum and/or maximum order of the graphs to generate
+    #[clap(name("min:[max] order"), long("order"), short('o'), value_delimiter = ':')]
+    order : Vec<Option<String>>,
+    /// The mininum and/or maximum number of edges of the graphs to generate
+    #[clap(name("min:[max] edges"), long("edges"), short('e'), value_delimiter = ':')]
+    edge : Vec<Option<String>>,
+    
+    /// The parameters to give to geng in oder to generate a graph of an order
+    #[clap(long, short)]
+    params : String,
+    
+}
+   
+
+
+
+#[derive(Subcommand, Debug, Clone)]
+enum DatasetChoice {
+    Geng {
+        #[command(flatten)]
+        args : GengArgs
+    },
+    Import {
+        #[command(flatten)]
+        args : ImportArgs
+    }
+}
+
+
+
+
 #[derive(Debug, clap::Args, Clone)]
 #[group(required = false, multiple = false)]        // This will stop the user from adding multiple arguments, meaning we do not have to check
-struct InputMethod {
+struct ImportArgs {
     /// The file were the dataset is stored
     #[clap(short, long)]
     file: Option<String>,
-    /// The geng query to execute
-    #[clap(short, long)]
-    geng_query: Option<String>,
-
     /// Read from the standart input (default) 
     #[clap(short, long, action=ArgAction::SetTrue)]
     read_stdin : bool,
@@ -91,21 +120,23 @@ struct InputMethod {
 
 
 
-#[derive(Args,  Debug, Clone)]
+#[derive(Args, Debug, Clone)]
 struct  DatabaseInfoPath {
     /// The path or url to the database to access
+    #[clap(short,long)]
     database_path_url: String,
 }
 
-fn main() {
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
      
     let args = CliArg::parse();
     
     match args.cmd {
-        Modes::Init { path, input_method } => init(path, input_method),
-        Modes::Add { path, input_method } => todo!(),
-        Modes::Compute { path, dependencies_file, programs } => 
-            println!("path: {:?} | dependencies: {:?} | programs : {:?}", path, dependencies_file, programs),
+        Modes::Init { path, input_method } => init(path, input_method).await,
+        Modes::Add { path } => todo!(),
+        Modes::Compute { path, dependencies_file, programs } => todo!(),
             
         Modes::Delete { path, table_name } => todo!(),
         Modes::Query { hide_output, do_not_save, formula, path } => todo!(),
@@ -114,19 +145,21 @@ fn main() {
 }
 
 
-fn init(path: DatabasePath, input_method: InputMethod)
+async fn init(path: DatabasePath, choice: DatasetChoice)
 {
+    // Create workspace
+    //let w : Workspace<SqliteGraphDatabase> = Workspace::init_workspace(&path.url).await;
     // Only one can be chosen at a time
-    if let Some(file_path) = input_method.file
-    {
-
+    match choice {
+        DatasetChoice::Geng { args } => {
+            println!("args: {:?}", args);
+            // Too many arguments
+            if args.order.len() > 2 {
+                panic!("Too many arguments for the \"order\" option");
+            }
+        },
+        DatasetChoice::Import { args } => todo!(),
     }
-    if let Some(geng_query)= input_method.geng_query
-    {
-
-    }
-    else 
-    {
-
-    }
+    // Close workspace
+    //w.close_workspace().await;
 }
