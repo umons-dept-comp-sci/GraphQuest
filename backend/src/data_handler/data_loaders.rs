@@ -66,7 +66,7 @@ pub async fn read_pipe_signatures<T: GraphDatabase>(db: &T)
 }
 
 
-
+/// Reads a file by using a buffer, and stores it in the given database
 async fn read_file<T:GraphDatabase> (db: &T, path: &String)
 {
     let f = File::open(path).expect(format!("The given file path \"{path}\" is not valid").as_str());
