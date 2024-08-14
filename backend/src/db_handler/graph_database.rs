@@ -189,6 +189,7 @@ pub trait GraphDatabase<'a> : Subject<'a>
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
+                self.notify_observator(false);
                 self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await; // add already stored signatures to the database
                 signature_buffer.clear();   // free the *buffer*
             }
@@ -246,9 +247,9 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         }
     }
 
-    pub async fn add_dataset(&mut self, method: Method)
+    pub async fn add_dataset(&mut self, method: Method, temp_obs: &'a dyn Observer )
     {
-        //self.db.set_graph_db_observer(temp_obs);
+        self.db.set_graph_db_observer(temp_obs);
         method.read_signatures(&self.db).await;
 
         self.db.remove_graph_db_observer();

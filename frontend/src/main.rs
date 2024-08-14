@@ -168,12 +168,17 @@ async fn init(path: DatabasePath, choice: DatasetChoice)
 {
     info!("Creating workspace database at path : {:?}", path.url);
     // Create workspace
+    
+
+    // pb lifeline must end with workspace !
+    let pb = DatasetProcess::create(8 as u64);
+
     let mut wp : Workspace<SqliteGraphDatabase> = Workspace::init_workspace(&path.url).await;
 
     info!("Database created");
 
     // Only one can be chosen at a time
-    match_import_data(&mut wp, choice).await;
+    match_import_data(&mut wp, choice, &pb).await;
     // Close workspace
     info!("Closing database");
     wp.close_workspace().await;
@@ -184,28 +189,29 @@ async fn add(path: DatabasePath, choice: DatasetChoice)
 {
     // Connect to workspace
     info!("Connecting to database at path : {:?}", path.url);
+    let pb = DatasetProcess::create(20 as u64);
     let mut wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
     info!("Connected to database");
-    match_import_data(&mut wp, choice).await;
+    match_import_data(&mut wp, choice, &pb).await;
     // close workspace
     wp.close_workspace().await;
 }
 
 
 /// Matches between the different dataset choices and calls the relevant function
-async fn match_import_data<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>, choice: DatasetChoice)
+async fn match_import_data<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>, choice: DatasetChoice, progress_bar: &'a DatasetProcess)
 {
     info!("Importing data");
     match choice {
-        DatasetChoice::Geng { args } => geng_choice(wp, args).await,
-        DatasetChoice::Import { args } => import_choice(wp, args).await,
+        DatasetChoice::Geng { args } => geng_choice(wp, args, &progress_bar).await,
+        DatasetChoice::Import { args } => import_choice(wp, args, &progress_bar).await,
     }
     info!("Finished importing data");
 }
 
 
 /// Imports a dataset from a call to geng which we construct here
-async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args: GengArgs)
+async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args: GengArgs, progress_bar: &'a DatasetProcess)
 {
     debug!("Given geng args: {:?}", args);
     let mut edges: (Option<u32>, Option<u32>) = (None, None);
@@ -286,28 +292,28 @@ async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args:
     }
     
 
-    let pb = DatasetProcess::create(iterator.len() as u64);
+    
     for order in iterator 
     {
-        wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_born: edges } ).await;
+        wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_born: edges }, progress_bar ).await;
         
         
-        pb.notify(true);    // Update progress bar
+        progress_bar.notify(true);    // Update progress bar
     }
     
 } 
 
 
 /// Imports a dataset either from a file or from the stdin
-async fn import_choice<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>,  args: ImportArgs)
+async fn import_choice<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>,  args: ImportArgs, progress_bar: &'a DatasetProcess)
 {
     // A path was given
     if let Some(path) = args.file
     {
-        wp.add_dataset(File(path.clone())).await;
+        //wp.add_dataset(File(path.clone())).await;
     }
     // if no file is given we suppose the input will arrive from stdin
     else {
-        wp.add_dataset(Stdin).await;
+        //wp.add_dataset(Stdin).await;
     }
 }
