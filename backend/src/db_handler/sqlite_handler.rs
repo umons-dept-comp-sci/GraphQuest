@@ -51,9 +51,9 @@ impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
         self.obs = vec![];
     }
 
-    fn notify_observator(&self, has_progressed: bool) {
+    fn notify_observator(&self, progression: u64) {
         if self.obs.len() != 0 {
-            self.obs[0].notify(has_progressed);
+            self.obs[0].notify(progression);
         }
     }
 }

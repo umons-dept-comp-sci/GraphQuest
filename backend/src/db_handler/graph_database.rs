@@ -1,7 +1,9 @@
 
 use std::{io::BufRead, marker::PhantomData};
 
-use crate::utils::subject::{Subject, Observer, TempGraphObs};
+use sqlx::Encode;
+
+use crate::utils::subject::{Subject, Observer};
 
 use super::super::data_handler::data_loaders::*;
 
@@ -182,14 +184,14 @@ pub trait GraphDatabase<'a> : Subject<'a>
         for line in reader.lines() {
             
             if let Ok(sign) = line {
-                //println!("I just read: {sign}");
+                
+                self.notify_observator((sign.len() + 1 ) as u64);   // + 1 because we also read the '\n' char
                 signature_buffer.push(sign);
             }else {
                 panic!("Could not read next buffer line");
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                self.notify_observator(false);
                 self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await; // add already stored signatures to the database
                 signature_buffer.clear();   // free the *buffer*
             }
