@@ -1,5 +1,7 @@
 
-use std::io::BufRead;
+use std::{io::BufRead, marker::PhantomData};
+
+use crate::utils::subject::{Subject, Observer, TempGraphObs};
 
 use super::super::data_handler::data_loaders::*;
 
@@ -30,11 +32,11 @@ pub const INVARIANT_PREFIX : &str = "inv_";
 
 
 /// Encapsulation of a database connection that facilitates querries
-pub struct Workspace<T: GraphDatabase> {
+pub struct Workspace<'a,  T: GraphDatabase<'a>> {
     /// The GraphDatabase used to modify the database state  
     db : T,
+    _t : PhantomData<&'a T>
 }
-
 
 /// A simple struct used to force a specific naming convention for tables storing invariants
 pub struct Invariant {
@@ -71,7 +73,8 @@ pub trait DBColumnTypes
 // TODO perhaps it would be usefull to specify the return value as a Result<..> ?
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-pub trait GraphDatabase {
+pub trait GraphDatabase<'a> : Subject<'a>
+ {
     
     /// Creates the database that will be storing the project.
     /// 
@@ -153,6 +156,7 @@ pub trait GraphDatabase {
     /// Must panic when:
     /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
     /// * The values to add are not valid.
+    /// * The values break the primary key rule (i.e. a signature is already inside the dataset)
     async fn add_signatures_to_dataset(&self, table_name: &str, values: &Vec<String>);
 
     /// Fetch signatures from the dataset table.
@@ -176,8 +180,9 @@ pub trait GraphDatabase {
     {
         let mut signature_buffer : Vec<String> = Vec::new();
         for line in reader.lines() {
+            
             if let Ok(sign) = line {
-                println!("I just read: {sign}");
+                //println!("I just read: {sign}");
                 signature_buffer.push(sign);
             }else {
                 panic!("Could not read next buffer line");
@@ -194,7 +199,7 @@ pub trait GraphDatabase {
         }
     }
 
-    ///Closes the connection with the database
+    /// Closes the connection with the database
     async fn close_connection(self);
     
 }
@@ -202,7 +207,7 @@ pub trait GraphDatabase {
 
 
 
-impl<T: GraphDatabase> Workspace<T> {
+impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     /// Initialises a workplace
     /// 
     /// Will create everything needed by the program by using :
@@ -223,7 +228,8 @@ impl<T: GraphDatabase> Workspace<T> {
 
         // Return the db connection encapsulated
         Workspace {
-            db
+            db,
+            _t : Default::default()
         }
     }
 
@@ -235,13 +241,17 @@ impl<T: GraphDatabase> Workspace<T> {
         let db = T::connect_graph_database(db_url).await;
         // Return the db connection encapsulated
         Workspace {
-            db
+            db,
+            _t : Default::default()
         }
     }
 
-    pub async fn add_dataset(&self, method: Method)
+    pub async fn add_dataset(&mut self, method: Method)
     {
+        //self.db.set_graph_db_observer(temp_obs);
         method.read_signatures(&self.db).await;
+
+        self.db.remove_graph_db_observer();
     }
 
 

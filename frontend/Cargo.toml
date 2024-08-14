@@ -7,3 +7,7 @@ edition = "2021"
 clap = { version = "4.5.13",  features = ["derive"] }
 tokio = { version = "1.39.2", features = ["macros"] }
 gquest_core = {path = "../backend"}
+log = "0.4.22"
+env_logger = "0.11.5"
+clap-verbosity-flag = "2.2.1"
+indicatif = "0.17.8"

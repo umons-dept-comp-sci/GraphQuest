@@ -4,12 +4,14 @@ use std::io::{stdin, BufReader, BufRead, Result, Lines};
 use std::path::Path;
 use std::ops::Range;
 
+use crate::utils::subject::Observer;
+
 use super::super::db_handler::graph_database::*; 
 
 
 /// Creates and stores the content of a `geng` query in the given database, using a set of graph settings.
 /// The table name represents the name of the newly created table.
-pub async fn load_table_with_geng<T: GraphDatabase>(db: &T,nb_of_vertices: u32, graph_settings: &String, edges_born: (Option<u32>, Option<u32>))
+pub async fn load_table_with_geng<'a, T: GraphDatabase<'a>>(db: &T,nb_of_vertices: u32, graph_settings: &String, edges_born: (Option<u32>, Option<u32>))
 {
     let mut edges_args = String::new();
     if let (None, Some(nb)) = edges_born 
@@ -29,11 +31,21 @@ pub async fn load_table_with_geng<T: GraphDatabase>(db: &T,nb_of_vertices: u32, 
         }
         edges_args = format!("{min}:{max}");
     }
-    println!("geng {} {} {} -q", graph_settings, nb_of_vertices, edges_args);
+    //println!("geng {} {} {} -q", graph_settings, nb_of_vertices, edges_args);
     // Call the geng com<mand
+    //let mut call_res = match 
+    //        Command::new("geng")
+    //            .arg(graph_settings)
+    //            .arg(nb_of_vertices.to_string())
+    //            .arg(edges_args)
+    //            .arg("-q")
+    //            .stdout(Stdio::piped()) 
+    //            .spawn()
+
     let mut call_res = match 
             Command::new("geng")
-                .arg(format!("{} {} {} -q",  graph_settings, nb_of_vertices, edges_args))
+                .arg(nb_of_vertices.to_string())
+                .arg("-q")
                 .stdout(Stdio::piped()) 
                 .spawn()
 
@@ -59,7 +71,7 @@ pub async fn load_table_with_geng<T: GraphDatabase>(db: &T,nb_of_vertices: u32, 
 
 
 /// Wait for the stdin inputs of the user, reads and stores it in the given database. 
-pub async fn read_pipe_signatures<T: GraphDatabase>(db: &T)
+pub async fn read_pipe_signatures<'a, T: GraphDatabase<'a>>(db: &T)
 {
     let stdin = stdin();
     db.add_signatures_to_dataset_buffer(stdin.lock()).await;
@@ -67,9 +79,10 @@ pub async fn read_pipe_signatures<T: GraphDatabase>(db: &T)
 
 
 /// Reads a file by using a buffer, and stores it in the given database
-async fn read_file<T:GraphDatabase> (db: &T, path: &String)
+async fn read_file<'a, T: GraphDatabase<'a>> (db: &T, path: &String)
 {
     let f = File::open(path).expect(format!("The given file path \"{path}\" is not valid").as_str());
+    // f.metadata().unwrap().len(); -> Get number of bytes
     let bufread = BufReader::new(f);
     db.add_signatures_to_dataset_buffer(bufread).await;
 }
@@ -94,7 +107,7 @@ pub enum Method
 impl Method
 {
     /// Read and add signatures to the given database using different input methods
-    pub async fn read_signatures<T: GraphDatabase>(&self, db:&T)
+    pub async fn read_signatures<'a, T: GraphDatabase<'a>>(&self, db:&T)
     {
         match self 
         {

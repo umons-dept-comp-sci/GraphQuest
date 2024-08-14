@@ -1,8 +1,10 @@
-use crate::db_handler::graph_database::*;
+use std::fmt::Error;
+
+use crate::{db_handler::graph_database::*, utils::subject::*};
 
 
 
-use sqlx::{database, migrate::MigrateDatabase, pool, query, sqlite::{types, SqliteQueryResult}, FromRow, Pool, Row, Sqlite, SqlitePool};
+use sqlx::{database, error::{DatabaseError, ErrorKind}, migrate::MigrateDatabase, pool, query, sqlite::{types, SqliteQueryResult}, Database, FromRow, Pool, Row, Sqlite, SqlitePool};
 
 
 const DEBUG_MODE: bool = true;
@@ -34,12 +36,29 @@ impl DBColumnTypes for SqliteColumnType {
 
 
 /// Struct used to simplify the manipulation of database for the user.
-pub struct SqliteGraphDatabase
+pub struct SqliteGraphDatabase<'a>
 {
-    pool: Pool<Sqlite>
+    pool: Pool<Sqlite>,
+    obs: Vec<&'a dyn Observer>
 }
 
-impl GraphDatabase for SqliteGraphDatabase {
+impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
+    fn set_graph_db_observer(&mut self, obs: &'a dyn Observer) {
+        self.obs.push(obs);
+    }
+
+    fn remove_graph_db_observer(&mut self) {
+        self.obs = vec![];
+    }
+
+    fn notify_observator(&self, has_progressed: bool) {
+        if self.obs.len() != 0 {
+            self.obs[0].notify(has_progressed);
+        }
+    }
+}
+
+impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     // TODO Also create meta data table
     async fn create_graph_database(db_url: &str) -> Self {
         // Creates the database if it didn't already exists
@@ -56,7 +75,8 @@ impl GraphDatabase for SqliteGraphDatabase {
                 else {
                     panic!("The given database url is not valid")
                 }
-            } 
+            },
+            obs : Vec::new()
         };
         
         db
@@ -117,7 +137,8 @@ impl GraphDatabase for SqliteGraphDatabase {
                 else {
                     panic!("The given database url is not valid")
                 }
-            } 
+            },
+            obs: Vec::new()
         }
         // TODO Check if the workspace is valid, if it wasn't tempered with
     }
@@ -140,7 +161,11 @@ impl GraphDatabase for SqliteGraphDatabase {
         }
         query.pop();        // remove the extra ','
         query.push_str(";");
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
+        // Try to push data
+        if let Err(e) = sqlx::query(&query).execute(&self.pool).await
+        {
+            react_to_database_error(&e);
+        }
         // update meta data table
         self.update_meta_data(DATASET_TABLE_NAME, signatures.len()).await;
     }
@@ -164,16 +189,14 @@ impl GraphDatabase for SqliteGraphDatabase {
          */
         let query = format!("INSERT OR REPLACE INTO {METADATA_TABLE_NAME} (table_name, stopped_at)
                                     VALUES (\"{changed_table_name}\", {new_value});");
-        println!("query : {query}");
+        //println!("query : {query}");
         sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-
+    }    
     
 }
 
 
-impl SqliteGraphDatabase {
+impl<'a> SqliteGraphDatabase<'a> {
 
     async fn _test_query_database(&self, query:String) -> Result<SqliteQueryResult, sqlx::Error>
     {
@@ -213,7 +236,7 @@ async fn create_graph_database(db_path: &str)
 /// Tries to connect to an already existing database using the given *db_path*. Returns a [GraphDatabase] struct.
 /// # Errors
 /// Will `panic!(..)` if the given data path is not valid
-pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
+pub async fn connect_graph_database<'a>(db_path : & str) -> SqliteGraphDatabase<'a>
 {
     SqliteGraphDatabase{
         pool:
@@ -226,7 +249,8 @@ pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
             else {
                 panic!("The given database path is not valid")
             }
-        } 
+        },
+        obs: Vec::new(), 
     }
 }
 
@@ -237,12 +261,37 @@ pub async fn connect_graph_database(db_path : & str) -> SqliteGraphDatabase
 
 
 
+/// Tries to get the error code located inside the sqlx error
+fn get_error_kind(e: &sqlx::Error) -> Result< ErrorKind, String>
+{
+    match e {
+        sqlx::Error::Database(db_e) => {
+            Ok(db_e.kind())
+        },
+        _ => Err(e.to_string()),
+    }
+}
+
+fn react_to_database_error(e: &sqlx::Error) 
+{
+    let kind = get_error_kind(e).expect("Error not handled");
+    match kind {
+        ErrorKind::UniqueViolation => panic!("A signature was already inside the dataset"),
+        ErrorKind::ForeignKeyViolation => todo!(),
+        ErrorKind::NotNullViolation => todo!(),
+        ErrorKind::CheckViolation => todo!(),
+        ErrorKind::Other => todo!(),
+        _ => todo!(),
+    }
+}
+
 
 
 
 //_______________________________________________
 // Unit testing
 
+/*
 #[cfg(test)]
 mod tests {
     
@@ -297,11 +346,9 @@ mod tests {
         
         Ok(())
     }
-
-    
-
-
 }
+
+
 
 
 //#[cfg(test)]
@@ -319,4 +366,5 @@ mod tests {
 //    }
 //
 //
-//}
+//} 
+*/
