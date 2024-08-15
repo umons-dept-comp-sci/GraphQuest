@@ -194,6 +194,7 @@ async fn add(path: DatabasePath, choice: DatasetChoice)
     info!("Connected to database");
     match_import_data(&mut wp, choice, &mut pb).await;
     // close workspace
+    info!("Closing database");
     wp.close_workspace().await;
 }
 
@@ -292,11 +293,11 @@ async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args:
     }
     
 
-    progress_bar.configure(iterator.len() as u64, format!("Order"), true);
+    progress_bar.start_progress(iterator.len() as u64, format!("Order"), ProgressBarType::Iterating);
     for order in iterator 
     {
         wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_born: edges }, progress_bar ).await;
-        progress_bar.notify(1);    // Update progress bar
+        progress_bar.notify_iteration();    // Update progress bar
     }
     
 } 
@@ -308,14 +309,16 @@ async fn import_choice<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>,  a
     // A path was given
     if let Some(path) = args.file
     {
-        let f = File::open(&path).expect(format!("The given file path \"{path}\" is not valid").as_str());
-
-        progress_bar.configure(f.metadata().unwrap().len(), format!("bytes"), false);
-
+        {
+            let f = File::open(&path).expect(format!("The given file path \"{path}\" is not valid").as_str());
+            progress_bar.start_progress(f.metadata().unwrap().len(), String::from("bytes"), ProgressBarType::Download);
+        }
+        
         wp.add_dataset(File(path.clone()), progress_bar).await;
     }
     // if no file is given we suppose the input will arrive from stdin
     else {
-        //wp.add_dataset(Stdin).await;
+        progress_bar.start_progress(10, String::from("reading"), ProgressBarType::Reading);
+        wp.add_dataset(Stdin, progress_bar).await;
     }
 }

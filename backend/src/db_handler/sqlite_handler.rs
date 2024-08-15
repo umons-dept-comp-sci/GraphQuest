@@ -53,7 +53,13 @@ impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
 
     fn notify_observator(&self, progression: u64) {
         if self.obs.len() != 0 {
-            self.obs[0].notify(progression);
+            self.obs[0].notify_data_pushed(progression);
+        }
+    }
+    
+    fn tick_observator(&self) {
+        if self.obs.len() != 0 {
+            self.obs[0].notify_tick();
         }
     }
 }

@@ -4,11 +4,35 @@ use clap_verbosity_flag::*;
 use gquest_core::utils::subject::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
+
+
+pub const STYLE_DOWNLOAD_FILE : &str = "[{spinner:.green} {elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}";
+pub const READING_INPUT : &str = "[{spinner:.red} {elapsed_precise}] {msg}";
+
+
+
+pub enum ProgressBarType
+{
+    Iterating,
+    Download,
+    Reading,
+}
+
+impl ProgressBarType {
+    fn to_string(&self) -> String
+    {
+        match self {
+            ProgressBarType::Download | ProgressBarType::Iterating => "[{spinner:.green} {elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+            ProgressBarType::Reading => "[{spinner:.red} {elapsed_precise}]",
+        }.to_string()
+    }
+}
+
 /// Starts log environment using the given verbosity arguments
 pub fn startup_log<T: LogLevel>(verb: Verbosity<T>)
 {
     let level = verb.log_level_filter();
-    println!("{:?}", level);
+    //println!("{:?}", level);
     env_logger::builder()
         .filter_level(level)
         .format_target(false)
@@ -20,26 +44,39 @@ pub fn startup_log<T: LogLevel>(verb: Verbosity<T>)
 /// An observer that tracks the progression of the dataset
 pub struct DatasetPbObs
 {
-    geng_progress : ProgressBar,
-    is_iterating : bool,
+    geng_progress : Option<ProgressBar>,
+    bar_type: Option<ProgressBarType>,
 }
 
 
 
 
 impl Observer for DatasetPbObs {
-    fn notify(&self, progression: u64) {
-        if progression != 0 {
-            increase_progress_bar(&self.geng_progress,  {
-                if !self.is_iterating {
-                    progression
-                }else {
-                    1
-                }
-            });
-        }else {
-            // Ticks the progress bar in order to update the time spent
-            self.geng_progress.tick();
+    
+    fn notify_tick(&self) {
+        if let Some(pb) = &self.geng_progress {
+            pb.tick();  // Simply update without progressing
+        }
+    }
+    
+    fn notify_data_pushed(&self, progression: u64) {
+        if let Some(pb) = &self.geng_progress
+        {
+            // If the read data is what is observed, then update the bar
+            if let Some(ProgressBarType::Download) = self.bar_type 
+            {
+                increase_progress_bar(pb, progression);   
+            }   // otherwise simply update it
+            else {
+                // Ticks the progress bar in order to update the time spent
+                pb.tick();
+            }
+        }
+    }
+    
+    fn notify_iteration(&self) {
+        if let Some(pb) = &self.geng_progress {
+            increase_progress_bar(pb, 1);
         }
     }
 }
@@ -49,28 +86,25 @@ impl DatasetPbObs {
     
     /// Creates a dataset process by creating a progress bar with a defined style and the given len
     pub fn create() -> Self {
-        let pb = ProgressBar::new(0);
-        let sty = ProgressStyle::with_template(
-            "[{spinner:.green} {elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-        )
-        .unwrap()
-        .progress_chars("#|-");
-        
-        
-        pb.set_style(sty.clone());
-        pb.set_message("TEMP");
+
         
         Self {
-            geng_progress : pb,
-            is_iterating : true
+            geng_progress : None,
+            bar_type : None
         }
     }
-    pub fn configure(&mut self, len: u64, message: String, is_iterating: bool)
+
+    /// Starts the progress bar using the given parameters
+    pub fn start_progress(&mut self, len: u64, message: String, bar_type: ProgressBarType)
     {
-        self.geng_progress.reset();
-        self.is_iterating = is_iterating;
-        self.geng_progress.set_length(len);
-        self.geng_progress.set_message(message);
+        let pb = ProgressBar::new(len);
+        let sty = ProgressStyle::with_template(&bar_type.to_string())
+            .unwrap()
+            .progress_chars("#|-");
+        pb.set_style(sty.clone());
+        pb.set_message(message);
+        self.geng_progress = Some(pb);
+        self.bar_type = Some(bar_type);
     }
 }
 

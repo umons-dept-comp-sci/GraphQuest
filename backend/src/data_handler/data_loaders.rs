@@ -13,38 +13,31 @@ use super::super::db_handler::graph_database::*;
 /// The table name represents the name of the newly created table.
 pub async fn load_table_with_geng<'a, T: GraphDatabase<'a>>(db: &T,nb_of_vertices: u32, graph_settings: &String, edges_born: (Option<u32>, Option<u32>))
 {
-    let mut edges_args = String::new();
-    if let (None, Some(nb)) = edges_born 
-    {
-        // nb or less
-        edges_args = format!("0:{nb}");
+    let mut args: Vec<String> = vec![];
+    
+    if graph_settings != "" {
+        args.push(graph_settings.clone());
     }
-    if let (Some(nb), None) = edges_born
-    {
-        // nb or more
-        edges_args = format!("{nb}:0");
+
+    args.push(nb_of_vertices.to_string());
+    
+    match edges_born {
+        (None, None) => (),
+        (None, Some(nb)) => args.push(format!("0:{nb}")),
+        (Some(nb), None) => args.push(format!("{nb}:0")),
+        (Some(min), Some(max)) => 
+        {
+            // min to max
+            if max < min {
+                panic!("The maximum number({max}) of edges cannot be smaller than the given minimum({min})");
+            }
+            args.push(format!("{min}:{max}"));
+        },
     }
-    if let (Some(min), Some(max)) = edges_born  {
-        // min to max
-        if max < min {
-            panic!("The maximum number({max}) of edges cannot be smaller than the given minimum({min})");
-        }
-        edges_args = format!("{min}:{max}");
-    }
-    //println!("geng {} {} {} -q", graph_settings, nb_of_vertices, edges_args);
-    // Call the geng com<mand
-    //let mut call_res = match 
-    //        Command::new("geng")
-    //            .arg(graph_settings)
-    //            .arg(nb_of_vertices.to_string())
-    //            .arg(edges_args)
-    //            .arg("-q")
-    //            .stdout(Stdio::piped()) 
-    //            .spawn()
 
     let mut call_res = match 
             Command::new("geng")
-                .arg(nb_of_vertices.to_string())
+                .args(args)
                 .arg("-q")
                 .stdout(Stdio::piped()) 
                 .spawn()

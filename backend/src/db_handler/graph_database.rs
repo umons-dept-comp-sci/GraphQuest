@@ -1,5 +1,5 @@
 
-use std::{io::BufRead, marker::PhantomData};
+use std::{io::BufRead, iter, marker::PhantomData};
 
 use sqlx::Encode;
 
@@ -30,6 +30,8 @@ pub const SIGNATURE_MAX_SIZE : usize = 250;
 pub const TABLE_NAME_MAX_SIZE : usize = 250;
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "inv_";
+/// The speed at which the observator will be notified (if any present on db)
+const ITERATION_BEFORE_NOTIFY : u8 = 100;
 
 
 
@@ -181,11 +183,13 @@ pub trait GraphDatabase<'a> : Subject<'a>
     async fn add_signatures_to_dataset_buffer(&self, reader: impl BufRead)
     {
         let mut signature_buffer : Vec<String> = Vec::new();
+        let mut notif_countdown = 1;
+        let mut byte_buffer: u64 = 0;
         for line in reader.lines() {
             
             if let Ok(sign) = line {
                 
-                self.notify_observator((sign.len() + 1 ) as u64);   // + 1 because we also read the '\n' char
+                byte_buffer += (sign.len() + 1) as u64; // Count bytes read, (+ 1 because we also read the '\n' char)
                 signature_buffer.push(sign);
             }else {
                 panic!("Could not read next buffer line");
@@ -195,9 +199,17 @@ pub trait GraphDatabase<'a> : Subject<'a>
                 self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await; // add already stored signatures to the database
                 signature_buffer.clear();   // free the *buffer*
             }
+            notif_countdown -= 1;   // Update countdown
+            // If it is time to notify the observor
+            if notif_countdown == 0 {
+                self.notify_observator(byte_buffer);   
+                notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
+                byte_buffer = 0;
+            }
         }
         if signature_buffer.len() != 0
-        {
+        {                
+            self.notify_observator(byte_buffer);   // Last notifications
             self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await;  // add remaining values to the database
         }
     }
