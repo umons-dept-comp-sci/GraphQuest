@@ -6,6 +6,7 @@ pub mod db_handler {
 
 pub mod data_handler {
     pub mod data_loaders;
+    pub mod invariant_handlers;
 }
 
 

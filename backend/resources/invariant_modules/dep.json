@@ -1,0 +1,25 @@
+{
+  "invariants":
+  [
+    {
+        "exec_path": "alpha.py",
+        "name": "alpha",
+        "dependencies": ["beta"]
+    },
+    {
+      "exec_path": "beta.py",
+      "name": "beta",
+      "dependencies": ["delta"]
+    },
+    {
+      "exec_path": "delta.py",
+      "name": "delta",
+      "dependencies": []
+    },
+    {
+      "exec_path": "theta.py",
+      "name": "theta",
+      "dependencies": ["beta"]
+    }
+  ]
+}

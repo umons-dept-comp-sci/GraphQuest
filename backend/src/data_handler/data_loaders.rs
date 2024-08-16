@@ -6,8 +6,7 @@ use std::ops::Range;
 
 use crate::utils::subject::Observer;
 
-use super::super::db_handler::graph_database::*; 
-
+use super::super::db_handler::graph_database::*;
 
 /// Creates and stores the content of a `geng` query in the given database, using a set of graph settings.
 /// The table name represents the name of the newly created table.
@@ -46,12 +45,11 @@ pub async fn load_table_with_geng<'a, T: GraphDatabase<'a>>(db: &T,nb_of_vertice
                 .arg("-q")
                 .stdout(Stdio::piped()) 
                 .spawn()
-
-         {
-        Ok(res) => res,
-        Err(e) => panic!("There was an error while trying to execute `geng`: {}", e),
-    };
-    
+            {
+                Ok(res) => res,
+                Err(e) => panic!("There was an error while trying to execute `geng`: {}", e),
+            };
+            
     
     {
         let stdout = call_res.stdout.as_mut().unwrap();
@@ -94,7 +92,7 @@ pub enum Method
     GengAPI{
         nb_of_vertices: u32,
         graph_settings: String,
-        edges_born: (Option<u32>, Option<u32>)
+        edges_bound: (Option<u32>, Option<u32>)
     },
     /// Read input from stdin
     Stdin,
@@ -109,7 +107,7 @@ impl Method
     {
         match self 
         {
-            Method::GengAPI { nb_of_vertices, graph_settings, edges_born } => load_table_with_geng(db, *nb_of_vertices, graph_settings, *edges_born).await,
+            Method::GengAPI { nb_of_vertices, graph_settings, edges_bound: edges_born } => load_table_with_geng(db, *nb_of_vertices, graph_settings, *edges_born).await,
             Method::Stdin => read_pipe_signatures(db).await,
             Method::File(path) => read_file(db, path).await,
         };

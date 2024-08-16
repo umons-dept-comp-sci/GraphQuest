@@ -1,4 +1,4 @@
-use gquest_core::{data_handler, db_handler::{graph_database::*, sqlite_handler::*}};
+use gquest_core::{data_handler::{self, invariant_handlers::{Invariant, InvariantsHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
 
 
 
@@ -15,7 +15,30 @@ async fn main() {
     //wp.add_dataset(GraphQuest::db_handler::data_loaders::Method::Stdin).await;
     //wp.add_dataset<O>(data_handler::data_loaders::Method::GengAPI { nb_of_vertices: 6, graph_settings: "-c".to_string(), edges_born: (Some(4), None)}, None).await;
     //wp.close_workspace().await;
+    let mut inv_handler = InvariantsHandler::new();
+    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/alpha.py"), 
+                              &String::from("alpha"), 
+                              vec![String::from("beta")], 
+                              ));   
 
+    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/beta.py"), 
+                              &String::from("beta"), 
+                              vec![String::from("theta"), String::from("delta")], 
+                              ));   
+
+    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/delta.py"), 
+                              &String::from("delta"), 
+                              vec![], 
+                              ));   
+
+    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/theta.py"), 
+                              &String::from("theta"), 
+                              vec![], 
+                              ));   
+    println!("oh damn: {:?}", InvariantsHandler::pretty_order(&inv_handler.get_topological_order()));
+
+    let inv2 = InvariantsHandler::read_json(&"resources/invariant_modules/dep.json".to_string());
+
+    println!("Second order: {:?}", InvariantsHandler::pretty_order(&inv2.get_topological_order()));
     
-    println!("Hello, world!");
 }

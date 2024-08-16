@@ -1,11 +1,10 @@
 
 use std::{io::BufRead, iter, marker::PhantomData};
 
-use sqlx::Encode;
-
 use crate::utils::subject::{Subject, Observer};
 
 use super::super::data_handler::data_loaders::*;
+use super::super::data_handler::invariant_handlers::*;
 
 
 
@@ -28,8 +27,6 @@ pub const METADATA_VALUE_NAME : &str = "stopped_at";
 pub const SIGNATURE_MAX_SIZE : usize = 250;
 /// The maximum size of a table name in the dataset
 pub const TABLE_NAME_MAX_SIZE : usize = 250;
-/// The prefix of all the invariant tables 
-pub const INVARIANT_PREFIX : &str = "inv_";
 /// The speed at which the observator will be notified (if any present on db)
 const ITERATION_BEFORE_NOTIFY : u8 = 100;
 
@@ -40,28 +37,6 @@ pub struct Workspace<'a,  T: GraphDatabase<'a>> {
     /// The GraphDatabase used to modify the database state  
     db : T,
     _t : PhantomData<&'a T>
-}
-
-/// A simple struct used to force a specific naming convention for tables storing invariants
-pub struct Invariant {
-    name : String,
-}
-
-
-impl Invariant {
-    /// Creates an invariant using the given name
-    pub fn create_invariant(name: &str) -> Self
-    {
-        Self {
-            name : name.to_string()
-        }
-    }
-    // Simply formats the invariant name to be easier to work with
-    pub fn get_table_name(&self) -> String
-    {
-        // FIXME ATTENTION USER INPUT ET TABLE NAMES,
-        INVARIANT_PREFIX.to_string() + &self.name    // Append the prefix to the invariant 
-    }
 }
 
 
