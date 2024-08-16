@@ -125,10 +125,7 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// ```
     async fn create_meta_data_table(&self);
     
-    
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize);
-
-
 
     /// Adds an table to the database to later store the value of an invariant for each graph of the database.
     /// 
@@ -150,9 +147,6 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// * The given table name is already used
     async fn add_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T);
 
-
-
-    
     /// Adds value to the dataset table.
     /// 
     /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
@@ -174,7 +168,6 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// * The given indexes are not valid
     async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String>;
     
-
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
     /// In order to save memory, the method will use a vector to store the data read
@@ -202,14 +195,14 @@ pub trait GraphDatabase<'a> : Subject<'a>
             notif_countdown -= 1;   // Update countdown
             // If it is time to notify the observor
             if notif_countdown == 0 {
-                self.notify_observator(byte_buffer);   
+                self.update_observator(byte_buffer);   
                 notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
                 byte_buffer = 0;
             }
         }
         if signature_buffer.len() != 0
         {                
-            self.notify_observator(byte_buffer);   // Last notifications
+            self.update_observator(byte_buffer);   // Last notifications
             self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await;  // add remaining values to the database
         }
     }
@@ -232,6 +225,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     pub async fn init_workspace(db_url: &str) -> Self
     {
 
+        
         // Init database
         let db = T::create_graph_database(db_url).await;
         
@@ -260,6 +254,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
             _t : Default::default()
         }
     }
+
 
     pub async fn add_dataset(&mut self, method: Method, temp_obs: &'a dyn Observer )
     {

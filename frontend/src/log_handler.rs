@@ -6,11 +6,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 
 
-pub const STYLE_DOWNLOAD_FILE : &str = "[{spinner:.green} {elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}";
-pub const READING_INPUT : &str = "[{spinner:.red} {elapsed_precise}] {msg}";
-
-
-
+/// The progressbar type to display on the terminal, it will also affect how the progress bar reacts to notifications/updates
 pub enum ProgressBarType
 {
     Iterating,
@@ -44,7 +40,7 @@ pub fn startup_log<T: LogLevel>(verb: Verbosity<T>)
 /// An observer that tracks the progression of the dataset
 pub struct DatasetPbObs
 {
-    geng_progress : Option<ProgressBar>,
+    progress_bar : Option<ProgressBar>,
     bar_type: Option<ProgressBarType>,
 }
 
@@ -54,13 +50,13 @@ pub struct DatasetPbObs
 impl Observer for DatasetPbObs {
     
     fn notify_tick(&self) {
-        if let Some(pb) = &self.geng_progress {
+        if let Some(pb) = &self.progress_bar {
             pb.tick();  // Simply update without progressing
         }
     }
     
     fn notify_data_pushed(&self, progression: u64) {
-        if let Some(pb) = &self.geng_progress
+        if let Some(pb) = &self.progress_bar
         {
             // If the read data is what is observed, then update the bar
             if let Some(ProgressBarType::Download) = self.bar_type 
@@ -75,7 +71,7 @@ impl Observer for DatasetPbObs {
     }
     
     fn notify_iteration(&self) {
-        if let Some(pb) = &self.geng_progress {
+        if let Some(pb) = &self.progress_bar {
             increase_progress_bar(pb, 1);
         }
     }
@@ -89,7 +85,7 @@ impl DatasetPbObs {
 
         
         Self {
-            geng_progress : None,
+            progress_bar : None,
             bar_type : None
         }
     }
@@ -103,8 +99,17 @@ impl DatasetPbObs {
             .progress_chars("#|-");
         pb.set_style(sty.clone());
         pb.set_message(message);
-        self.geng_progress = Some(pb);
+        self.progress_bar = Some(pb);
         self.bar_type = Some(bar_type);
+    }
+
+
+    /// Forces the current progress bar to finish even if it still is running
+    pub fn force_finish(& self)
+    {
+        if let Some(pb) = &self.progress_bar {
+            pb.finish();
+        }
     }
 }
 
@@ -114,7 +119,7 @@ impl DatasetPbObs {
 
 
 
-/// Increase the given progress bar by delta and finishes it when it reaches the end
+/// Increase the given progress bar by delta and finishes it when it reaches the end without going over the maximum position
 fn increase_progress_bar(pb: &ProgressBar, delta: u64)
 {
     // Increase the progress bar state

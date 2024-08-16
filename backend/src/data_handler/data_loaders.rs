@@ -14,9 +14,14 @@ use super::super::db_handler::graph_database::*;
 pub async fn load_table_with_geng<'a, T: GraphDatabase<'a>>(db: &T,nb_of_vertices: u32, graph_settings: &String, edges_born: (Option<u32>, Option<u32>))
 {
     let mut args: Vec<String> = vec![];
-    
+
     if graph_settings != "" {
-        args.push(graph_settings.clone());
+        if !graph_settings.starts_with("-")  {      // Checks if the '-' is missing
+            args.push(format!("-{graph_settings}"));
+        }
+        else {
+            args.push(graph_settings.clone());
+        }
     }
 
     args.push(nb_of_vertices.to_string());
