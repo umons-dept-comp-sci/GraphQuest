@@ -18,22 +18,34 @@ async fn main() {
     let mut inv_handler = InvariantsHandler::new();
     inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/alpha.py"), 
                               &String::from("alpha"), 
-                              vec![String::from("beta")], 
+                              vec![String::from("beta")],
+                              None,
+                              None,
+                              None
                               ));   
 
     inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/beta.py"), 
                               &String::from("beta"), 
                               vec![String::from("theta"), String::from("delta")], 
+                              None,
+                              None,
+                              None
                               ));   
 
     inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/delta.py"), 
                               &String::from("delta"), 
                               vec![], 
+                              None,
+                              None,
+                              None
                               ));   
 
     inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/theta.py"), 
                               &String::from("theta"), 
-                              vec![], 
+                              vec![],
+                              None,
+                              None ,
+                              None
                               ));   
     println!("oh damn: {:?}", InvariantsHandler::pretty_order(&inv_handler.get_topological_order()));
 

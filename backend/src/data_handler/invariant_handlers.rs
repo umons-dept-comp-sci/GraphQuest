@@ -1,4 +1,4 @@
-use std::{fmt, collections::HashMap, fmt::Display, fs::File, path::{Path}};
+use std::{fmt, collections::HashMap, fmt::Display, fs::File, path::Path};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use topo_sort::{SortResults, TopoSort}; 
@@ -32,6 +32,19 @@ pub struct Invariant {
     ///// When specified, the program will be provided the needed input that matches the given query
     //input_query: Option<String>
 
+    /// The return type of the program, written in the standart output
+    return_type: Option<String>,
+
+    /// The character that separates two inputs being read by the executable of this invariant
+    /// 
+    /// By default, will be `\n`
+    input_seperator: Option<char>,
+
+    /// The character that separates two computed results of the executable of this invariant being read by this program
+    /// 
+    /// By default, will be `\n`
+    output_separator: Option<char>
+
 }
 
 impl Display for Invariant {
@@ -47,24 +60,24 @@ impl Display for Invariant {
 
 impl Invariant {
     /// Creates an invariant using the given name
-    pub fn new(exec_path: &String, name: &String, dependencies: Vec<String>) -> Self
+    pub fn new(exec_path: &String, name: &String, dependencies: Vec<String>, return_type: Option<String>, 
+               input_seperator: Option<char>, output_seperator: Option<char>) -> Self
     {
+        
         let path = Path::new(exec_path);
         path.try_exists().expect(format!("The given invariant path \"{exec_path}\", is not valid").as_str());
 
         if !name.is_ascii() {
             panic!("The given invariant name \"{name}\" is not valid")
-        }        
-        // Get file
-        //let f = File::open(path)
-        //                    .expect(format!("The given invariant path \"{exec_path}\", is not valid")
-        //                    .as_str());
-        
+        }
+
         Invariant {
             exec_path : exec_path.to_string(),
             name : name.to_string(),
             dependencies,
-            //input_query
+            return_type,
+            input_seperator,
+            output_separator: output_seperator
         }
     }
 
@@ -107,6 +120,7 @@ impl InvariantsHandler {
         let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
         
         for inv in inv_vec.invariants {
+            println!("{:?}", inv.input_seperator);
             handler.add_invariant(inv);
         }
 

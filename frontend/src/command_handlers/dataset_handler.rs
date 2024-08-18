@@ -142,7 +142,7 @@ async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args:
     progress_bar.start_progress(iterator.len() as u64, format!("Order"), ProgressBarType::Iterating);
     for order in iterator 
     {
-        wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_born: edges }, progress_bar ).await;
+        wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_bound: edges }, progress_bar ).await;
         progress_bar.notify_iteration();    // Update progress bar
     }
     
