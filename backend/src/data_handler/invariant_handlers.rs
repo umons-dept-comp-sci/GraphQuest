@@ -1,4 +1,4 @@
-use std::{fmt, collections::HashMap, fmt::Display, fs::File, path::Path};
+use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{Command, Stdio}};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use topo_sort::{SortResults, TopoSort}; 
@@ -17,7 +17,9 @@ struct _InvariantVec {
 /// A struct used to represent invariants to be computed/ or used for compution
 #[derive(Serialize, Deserialize)]
 pub struct Invariant {
-    /// The path to the file to execute
+    /// The path to the file to execute.
+    /// 
+    /// Can be either a relative or absolute path
     exec_path: String,
 
     /// The name of the computed invariant
@@ -32,7 +34,7 @@ pub struct Invariant {
     ///// When specified, the program will be provided the needed input that matches the given query
     //input_query: Option<String>
 
-    /// The return type of the program, written in the standart output
+    /// The return type of the program, written in the standart output. Integers by default
     return_type: Option<String>,
 
     /// The character that separates two inputs being read by the executable of this invariant
@@ -71,13 +73,33 @@ impl Invariant {
             panic!("The given invariant name \"{name}\" is not valid")
         }
 
-        Invariant {
+        let i = Invariant {
             exec_path : exec_path.to_string(),
             name : name.to_string(),
             dependencies,
             return_type,
             input_seperator,
             output_separator: output_seperator
+        };
+        i.check_path();
+
+        i
+
+    }
+
+    /// Checks if the given invariant path actually leads to the executable
+    /// ## Exceptions
+    /// Will panic if the path doesn't lead to an executable 
+    fn check_path(&self)
+    {
+        // Checks if the given file path exists
+        let tmp_clone = self.exec_path.clone();
+        let inv_path = Path::new(&tmp_clone);
+        
+        // if the invariant doesn't exist
+        if let Ok(false) = inv_path.try_exists() {
+            
+            panic!("The given file path (\"{}\"),\n\t to the invariant (\"{}\") is not valid", self.exec_path, self.name);
         }
     }
 
@@ -113,19 +135,42 @@ impl InvariantsHandler {
     }
     
     /// Creates a [InvariantsHandler] from a given json file
+    /// 
+    /// The given paths in the dependency files can be either 
+    /// * Absolute
+    /// * Or relative to the dependency file itself 
     pub fn read_json(path: &String) -> Self
     {
         let mut handler = Self::new();
-        let f = File::open(path).expect(format!("The given file path (\"{path}\") is not valid").as_str());
-        let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
+        let p = Path::new(&path);
+        let f = File::open(p).expect(format!("The given dependency file path (\"{path}\") is not valid").as_str());
+        println!("{:?}", p.parent());
         
-        for inv in inv_vec.invariants {
-            println!("{:?}", inv.input_seperator);
+        let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
+        let mut inv_path: &Path;
+        let mut tmp_clone: String;
+        for mut inv in inv_vec.invariants {
+
+            tmp_clone = inv.exec_path.clone();
+            inv_path = Path::new(&tmp_clone);
+            // If the path given is not absolute
+            // it means that the executable is related to the position of the given dependency file
+            if !inv_path.is_absolute() {
+                // If the given dependency file has a parent dir path, we can add it
+                if let Some(s) = p.parent() {
+                    inv.exec_path = format!("{}/{}", s.to_str().unwrap(), &inv.exec_path);
+                }
+            }
+            // Checks if the given file path exists
+            inv.check_path();
+            
             handler.add_invariant(inv);
         }
 
         handler
     }
+
+    
 
     /// Adds an invariant to the [InvariantsHandler] 
     pub fn add_invariant(&mut self, inv: Invariant)
@@ -176,7 +221,7 @@ impl InvariantsHandler {
     }
 
     /// Gets a formatted string to help show the given topological sort
-    pub fn pretty_order(res: &Vec<Invariant>) -> String
+    pub fn pretty_print_order(res: &Vec<Invariant>) -> String
     {
         let mut to_print = String::new();
         for (i, inv) in res.iter().enumerate() {
@@ -193,5 +238,23 @@ impl InvariantsHandler {
 
 
 
+
+pub fn exec_inv(inv: &Invariant)
+{
+    // executes the given invariant
+    let to_pipe = Command::new(format!("geng"))
+            .arg("5")
+            .arg("-q")
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+    let ex_inv = Command::new(format!("{}", inv.exec_path))
+                      .stdin(Stdio::from(to_pipe.stdout.unwrap()))
+                      .output().unwrap();
+    println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
+
+    
+}
 
 

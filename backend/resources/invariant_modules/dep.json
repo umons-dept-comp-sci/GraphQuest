@@ -2,7 +2,7 @@
   "invariants":
   [
     {
-        "exec_path": "alpha.py",
+        "exec_path": "/home/axel/Desktop/bir/GraphQuest/backend/resources/invariant_modules/alpha.py",
         "name": "alpha",
         "dependencies": ["beta"],
         "return_type": "integer",
