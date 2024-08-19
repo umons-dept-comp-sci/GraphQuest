@@ -1,7 +1,9 @@
-use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{Command, Stdio}};
+use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{Command, Stdio}, sync::mpsc, thread};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
-use topo_sort::{SortResults, TopoSort}; 
+use topo_sort::{SortResults, TopoSort};
+
+use crate::utils::subject::*; 
 
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "inv_";
@@ -206,16 +208,23 @@ impl InvariantsHandler {
             }
             topo_sort.insert(inv_name.clone(), dependencies);
         }
+        
         // Apply topological sort
         let result_string = match topo_sort.into_vec_nodes() {
             SortResults::Full(nodes) => nodes,
             SortResults::Partial(_) => panic!("A dependency cycle was found for the given invariants, thus making their computations impossible !"),
         };
+
+        //let mut result_nodes: Vec<&TopologicalInvariantNode> = vec![];
+
         // Get result as invariant structs
         let mut res: Vec<Invariant> = vec![];
+        let mut inv: Invariant;
         for inv_name in result_string {
+            inv = self.name_hashmap.remove(&inv_name).unwrap();
             // Move the ownership of the invariant from the hashmap (by removing it) to the result vector
-            res.push(self.name_hashmap.remove(&inv_name).unwrap());
+            res.push(inv);
+            
         }
         res
     }
@@ -243,7 +252,7 @@ pub fn exec_inv(inv: &Invariant)
 {
     // executes the given invariant
     let to_pipe = Command::new(format!("geng"))
-            .arg("5")
+            .arg("2")
             .arg("-q")
             .stdout(Stdio::piped())
             .spawn()
@@ -253,8 +262,80 @@ pub fn exec_inv(inv: &Invariant)
                       .stdin(Stdio::from(to_pipe.stdout.unwrap()))
                       .output().unwrap();
     println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
-
+    
+    
+    let mut x = InvariantExecManager::new();
+    x.thread_manager();
     
 }
 
 
+struct InvariantExecManager
+{
+    inv: Vec<Invariant>,
+    dep_left: Vec<u16>,
+    
+    dep_index: Vec<Vec<u16>>,
+}
+impl InvariantExecManager {
+    fn new() -> Self
+    {
+        Self {
+            inv: vec![],
+            dep_left : vec![],
+            dep_index : vec![], 
+        }
+
+    }
+    fn thread_manager(mut self)
+    {
+        let mut thread_available = 3;
+        
+        let (tx, rx) = mpsc::channel::<u16>();
+        // Make a vector to hold the children which are spawned.
+        
+        
+        for i in 0..thread_available {
+            if self.dep_left[i] == 0 {
+                self.start_thread(i, &tx);
+                thread_available -= 1;
+            }
+            else {
+                break;  // We cannot start other invariants before the previous are done
+            }
+        }
+    
+        // The exterior loop is made in case 
+        //while *self.dep_left.last().unwrap() != 0 as u16{
+            
+            for received in &rx {
+                println!("Got: {}", received);
+                thread_available += 1;
+                for d in &self.dep_index[received as usize] {
+                    self.dep_left[*d as usize] -= 1;
+                    if self.dep_left[*d as usize] == 0 && thread_available != 0{
+                        // send thread
+                        self.start_thread(*d as usize, &tx);
+                    }
+                }
+            }
+        //}
+    }
+    fn start_thread(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>)
+    {
+        let tx_copy = mpsc::Sender::clone(original_sender);
+        let inv = Invariant::new(&String::from("resources/invariant_modules/theta.py"), 
+        &String::from("theta"), 
+        vec![],
+        None,
+        None ,
+        None
+        );
+        thread::spawn(move || 
+        {
+            //exec_inv(&self.inv[inv_index]); // TODO CLONE INV
+            exec_inv(&inv);
+            println!("this is a thread");
+        });
+    }
+}

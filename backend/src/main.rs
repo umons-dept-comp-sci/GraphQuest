@@ -1,4 +1,4 @@
-use gquest_core::{data_handler::{self, invariant_handlers::{exec_inv, Invariant, InvariantsHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
+use gquest_core::{data_handler::{self, invariant_handlers::{exec_inv, Invariant, InvariantsHandler}}, db_handler::{graph_database::*, sqlite_handler::*}, utils::count_mutex};
 
 
 
@@ -54,5 +54,7 @@ async fn main() {
     let inv_order = &inv2.get_topological_order();
     println!("Second order: {:?}", InvariantsHandler::pretty_print_order(inv_order));
     exec_inv(&inv_order[0]);
+
+    //count_mutex::test();
     
 }
