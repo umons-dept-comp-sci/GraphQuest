@@ -59,6 +59,12 @@ impl Display for Invariant {
 }
 
 
+impl Clone for Invariant {
+    fn clone(&self) -> Self {
+        Self { exec_path: self.exec_path.clone(), name: self.name.clone(), dependencies: self.dependencies.clone(), return_type: self.return_type.clone(), input_seperator: self.input_seperator.clone(), output_separator: self.output_separator.clone() }
+    }
+}
+
 
 
 
@@ -113,6 +119,25 @@ impl Invariant {
         // FIXME ATTENTION USER INPUT ET TABLE NAMES,
         INVARIANT_PREFIX.to_string() + &self.name    // Append the prefix to the invariant 
     }
+
+    /// Compute the invariant by using the provided executable 
+    pub fn exec_inv(&self)
+    {
+        // executes the given invariant
+        let to_pipe = Command::new(format!("geng"))
+                .arg("1")
+                .arg("-q")
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+    
+        let ex_inv = Command::new(format!("{}", self.exec_path))
+                          .stdin(Stdio::from(to_pipe.stdout.unwrap()))
+                          .output().unwrap();
+        //println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
+    
+        
+    }
 }
 
 
@@ -122,12 +147,12 @@ impl Invariant {
 /// * if one of it's dependencies was not added 
 ///
 /// And can perform a topology sort
-pub struct InvariantsHandler
+pub struct InvariantsOrderHandler
 {
     name_hashmap : HashMap<String, Invariant>
 }
 
-impl InvariantsHandler {
+impl InvariantsOrderHandler {
     /// Creates a new empty [InvariantsHandler]
     pub fn new() -> Self 
     {
@@ -187,7 +212,7 @@ impl InvariantsHandler {
     /// Performs a topological sort with the stored [Invariant]s
     /// 
     /// After this function, the [InvariantsHandler] will go out of scope.
-    pub fn get_topological_order(mut self) -> Vec<Invariant>
+    pub fn get_topological_order(mut self) -> InvariantExecManager
     {
         // Init the topological sort
         let mut topo_sort: TopoSort<String> = TopoSort::with_capacity(self.name_hashmap.len());
@@ -216,126 +241,146 @@ impl InvariantsHandler {
         };
 
         //let mut result_nodes: Vec<&TopologicalInvariantNode> = vec![];
-
-        // Get result as invariant structs
-        let mut res: Vec<Invariant> = vec![];
+        let mut res = InvariantExecManager::new();
+        let mut name_index_hash: HashMap<String, u16> = HashMap::new();
+        
+        
         let mut inv: Invariant;
-        for inv_name in result_string {
-            inv = self.name_hashmap.remove(&inv_name).unwrap();
+        let mut index = 0;
+        let mut dep_left: u16;
+        for inv_name in result_string { 
+            name_index_hash.insert( inv_name.clone(),index);    // insert into hashmap for an easy access to his index
             // Move the ownership of the invariant from the hashmap (by removing it) to the result vector
-            res.push(inv);
+            inv = self.name_hashmap.remove(&inv_name).unwrap();      
             
+            // Add dependencies
+            for dep_name in &inv.dependencies {
+                // By definition of a topological sort,
+                // the dependencies were already added to the hashmap
+                res.add_dep( index, *name_index_hash.get(dep_name).unwrap());
+                
+            }
+            dep_left = inv.dependencies.len() as u16;
+            res.add_nodes(inv, dep_left);
+            index += 1;
         }
         res
     }
-
-    /// Gets a formatted string to help show the given topological sort
-    pub fn pretty_print_order(res: &Vec<Invariant>) -> String
-    {
-        let mut to_print = String::new();
-        for (i, inv) in res.iter().enumerate() {
-            to_print += inv.to_string().as_str();
-            if i != res.len()-1 {
-                to_print.push_str(" => ");
-            }
-        }
-        to_print
-    }
-
-
 }
 
 
 
 
-pub fn exec_inv(inv: &Invariant)
+
+/// Manages the execution of invariants whose order has been determined by an [InvariantsOrderHandler]
+pub struct InvariantExecManager
 {
-    // executes the given invariant
-    let to_pipe = Command::new(format!("geng"))
-            .arg("2")
-            .arg("-q")
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-
-    let ex_inv = Command::new(format!("{}", inv.exec_path))
-                      .stdin(Stdio::from(to_pipe.stdout.unwrap()))
-                      .output().unwrap();
-    println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
-    
-    
-    let mut x = InvariantExecManager::new();
-    x.thread_manager();
-    
-}
-
-
-struct InvariantExecManager
-{
-    inv: Vec<Invariant>,
+    /// The invariants sorted using a topological sort
+    invariants: Vec<Invariant>,
+    /// The number of dependence left to execute for each invariants
     dep_left: Vec<u16>,
-    
+    /// The index of the invariants relying on a specific invariant
     dep_index: Vec<Vec<u16>>,
 }
+
+
 impl InvariantExecManager {
+    /// Creates a new [InvariantExecManager]
     fn new() -> Self
     {
         Self {
-            inv: vec![],
+            invariants: vec![],
             dep_left : vec![],
             dep_index : vec![], 
         }
-
     }
-    fn thread_manager(mut self)
+
+    /// Adds a node to execute after the ones already added
+    fn add_nodes(&mut self, inv: Invariant, dep_left: u16)
     {
-        let mut thread_available = 3;
-        
+        self.invariants.push(inv);
+        self.dep_left.push(dep_left);
+        self.dep_index.push(vec![]);
+    }
+
+    /// Adds a dependence to the already placed invariant 
+    fn add_dep(&mut self, inv_index: u16, dep_index: u16)
+    {
+        self.dep_index[dep_index as usize].push(inv_index);
+    }
+
+    /// Handles the execution in a topological order of the invariants by using the provided number of threads 
+    pub fn handle_execution(mut self, mut threads_available: usize)
+    {
+        if threads_available <= 1 {
+            panic!("At least one thread must be used to work with");
+        }
+        println!("Starting thread manager");
+        println!("{:?}", self.dep_left);
         let (tx, rx) = mpsc::channel::<u16>();
         // Make a vector to hold the children which are spawned.
         
-        
-        for i in 0..thread_available {
+        // Min since you can have more threads than process
+        for i in 0..(std::cmp::min(threads_available, self.invariants.len())) {
+            
             if self.dep_left[i] == 0 {
                 self.start_thread(i, &tx);
-                thread_available -= 1;
+                threads_available -= 1;
             }
             else {
                 break;  // We cannot start other invariants before the previous are done
             }
         }
-    
-        // The exterior loop is made in case 
-        //while *self.dep_left.last().unwrap() != 0 as u16{
-            
+        println!("Finished to init threads");
+        let mut count = 0;
+        // The exterior loop is made in case
             for received in &rx {
+                count += 1;
                 println!("Got: {}", received);
-                thread_available += 1;
+                threads_available += 1;
+                //println!("d: {:?}", &self.dep_index);
                 for d in &self.dep_index[received as usize] {
                     self.dep_left[*d as usize] -= 1;
-                    if self.dep_left[*d as usize] == 0 && thread_available != 0{
+                    if self.dep_left[*d as usize] == 0 && threads_available != 0{
                         // send thread
                         self.start_thread(*d as usize, &tx);
                     }
                 }
+                // Check if it is finished or not
+                if count == self.invariants.len()
+                {
+                    break;
+                }
             }
-        //}
     }
+
+    /// Start a thread that will execute the invariant located at the given index
     fn start_thread(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>)
     {
         let tx_copy = mpsc::Sender::clone(original_sender);
-        let inv = Invariant::new(&String::from("resources/invariant_modules/theta.py"), 
-        &String::from("theta"), 
-        vec![],
-        None,
-        None ,
-        None
-        );
+        
+        let inv_copy = self.invariants[inv_index].clone();
+        println!("Gonna do: {}", inv_copy.name); 
         thread::spawn(move || 
         {
-            //exec_inv(&self.inv[inv_index]); // TODO CLONE INV
-            exec_inv(&inv);
-            println!("this is a thread");
+            // Execute invariant
+            inv_copy.exec_inv();
+            // send notification to main thread to signal the end of this program's execution
+            tx_copy.send(inv_index as u16).unwrap();
         });
+    }
+
+
+    /// Gets a formatted string to help show the given topological sort
+    pub fn pretty_print_order(&self) -> String
+    {
+        let mut to_print = String::new();
+        for (i, inv) in self.invariants.iter().enumerate() {
+            to_print += inv.to_string().as_str();
+            if i != self.invariants.len()-1 {
+                to_print.push_str(" => ");
+            }
+        }
+        to_print
     }
 }

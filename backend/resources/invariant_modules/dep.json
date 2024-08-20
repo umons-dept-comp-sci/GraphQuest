@@ -21,7 +21,12 @@
     {
       "exec_path": "theta.py",
       "name": "theta",
-      "dependencies": ["beta"]
+      "dependencies": ["beta", "delta"]
+    },
+    {
+      "exec_path": "p.py",
+      "name": "python_test",
+      "dependencies": ["delta", "beta", "alpha", "theta"]
     }
   ]
 }

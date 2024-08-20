@@ -1,4 +1,4 @@
-use gquest_core::{data_handler::{self, invariant_handlers::{exec_inv, Invariant, InvariantsHandler}}, db_handler::{graph_database::*, sqlite_handler::*}, utils::count_mutex};
+use gquest_core::{data_handler::{self, invariant_handlers::{Invariant, InvariantsOrderHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
 
 
 
@@ -15,7 +15,7 @@ async fn main() {
     //wp.add_dataset(GraphQuest::db_handler::data_loaders::Method::Stdin).await;
     //wp.add_dataset<O>(data_handler::data_loaders::Method::GengAPI { nb_of_vertices: 6, graph_settings: "-c".to_string(), edges_born: (Some(4), None)}, None).await;
     //wp.close_workspace().await;
-    let mut inv_handler = InvariantsHandler::new();
+    let mut inv_handler = InvariantsOrderHandler::new();
     inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/alpha.py"), 
                               &String::from("alpha"), 
                               vec![String::from("beta")],
@@ -47,14 +47,14 @@ async fn main() {
                               None ,
                               None
                               ));   
-    println!("oh damn: {:?}", InvariantsHandler::pretty_print_order(&inv_handler.get_topological_order()));
+    //println!("oh damn: {:?}", InvariantsHandler::pretty_print_order(&inv_handler.get_topological_order()));
 
-    let inv2 = InvariantsHandler::read_json(&"resources/invariant_modules/dep.json".to_string());
+    let inv2 = InvariantsOrderHandler::read_json(&"resources/invariant_modules/dep.json".to_string());
 
-    let inv_order = &inv2.get_topological_order();
-    println!("Second order: {:?}", InvariantsHandler::pretty_print_order(inv_order));
-    exec_inv(&inv_order[0]);
-
+    let inv_order = inv2.get_topological_order();
+    println!("Second order: {:?}", inv_order.pretty_print_order());
+    //exec_inv(&inv_order[0]);
+    inv_order.handle_execution(5);
     //count_mutex::test();
     
 }
