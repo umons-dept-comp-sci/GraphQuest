@@ -1,4 +1,5 @@
 
+use std::process::ChildStdin;
 use std::{io::BufRead, marker::PhantomData};
 
 use crate::utils::subject::{Subject, Observer};
@@ -42,19 +43,21 @@ pub struct Workspace<'a,  T: GraphDatabase<'a>> {
 }
 
 
-/// Traits used to offer a selection of different possible data types for a database
+/// Traits used to offer a selection of different possible data types for a database.
 pub trait DBColumnTypes
 {
     /// Translates the given struct as a string which can be used in a query in order to 
     /// represent a type from a database
     fn translate(&self) -> String;
-} 
 
+    /// Returns the integer enum
+    fn get_integer_column() -> Self;
+} 
 
 // TODO perhaps it would be usefull to specify the return value as a Result<..> ?
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-pub trait GraphDatabase<'a> : Subject<'a>
+pub trait GraphDatabase<'a> : Subject<'a> + Clone
  {
     
     /// Creates the database that will be storing the project.
@@ -122,7 +125,7 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// ## Exceptions
     /// Must panic when:
     /// * The given index is not valid
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, f: &dyn Fn(String));
+    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>, input: &ChildStdin);
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -168,15 +171,23 @@ pub trait GraphDatabase<'a> : Subject<'a>
 
     //_________________________________INVARIANTS_______________________________________________________________________________
 
-    /// Creates the given invariant table and adds it to the meta data table 
+    /// Creates the given invariant table and adds it to the meta data table,
+    /// if it wasn't already added
     async fn init_invariant(&self, inv: &Invariant)
     {
-        // Create table
-        //self.create_invariant_table(inv, column_type).await;
-        // Add Metadata line
-        self.update_meta_data(&inv.get_table_name(), 0).await;
+        if !self.inv_already_added(inv).await
+        {
+            // Create table
+            // TODO, by default we use an int but we do need to check the return type of this invariant
+            self.create_invariant_table(inv).await;
+            // Add Metadata line
+            self.update_meta_data(&inv.get_table_name(), 0).await;
+        }
     }
 
+    /// Checks if the invariant was already added to the database
+    async fn inv_already_added(&self, inv: &Invariant) -> bool;
+    
     /// Adds an table to the database to later store the value of an invariant for each graph of the database.
     /// 
     /// An invariant table must have two columns named [DATASET_PK_NAME] (which is the primary key) and *value*.
@@ -195,7 +206,7 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// ## Exceptions
     /// Must panic when:
     /// * The given table name is already used
-    async fn create_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T);
+    async fn create_invariant_table(&self, invariant: &Invariant);
     
     /// Launches a thread that computes the given invariant
     /// 
@@ -266,16 +277,15 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         self.db.close_connection().await;
     }
 
-    pub async fn test(&self)
+    pub async fn test(&self, inv: &Invariant)
     {
-        self.db.fetch_dataset_signatures(Some(0), &|x|  println!("Read: {}", x)).await;
+        inv.exec_inv(&self.db).await;
     }
-
     
 
-    pub async fn compute_invariants(&self, inv_order : InvariantsOrderHandler)
+    pub async fn compute_invariants(&self, inv_order : InvariantsOrderHandler, threads_available: usize)
     {
-        let x = inv_order.get_topological_order();
-        //x.handle_execution(6);
+        let inv_manager = inv_order.get_topological_order();
+        inv_manager.handle_execution(threads_available, &self.db).await;
     }
 }

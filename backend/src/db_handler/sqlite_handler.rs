@@ -1,4 +1,6 @@
+use std::io::Write;
 use std::pin::Pin;
+use std::process::ChildStdin;
 
 use crate::{db_handler::graph_database::*, utils::subject::*};
 use crate::data_handler::invariant_handlers::*;
@@ -29,6 +31,10 @@ impl DBColumnTypes for SqliteColumnType {
 
         String::from(res)
     }
+    
+    fn get_integer_column() -> Self {
+        SqliteColumnType::Integer
+    }
 }
 
 
@@ -40,6 +46,12 @@ pub struct SqliteGraphDatabase<'a>
 {
     pool: Pool<Sqlite>,
     obs: Vec<&'a dyn Observer>
+}
+
+impl<'a> Clone for SqliteGraphDatabase<'a> {
+    fn clone(&self) -> Self {
+        Self { pool: self.pool.clone(), obs: self.obs.clone() }
+    }
 }
 
 impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
@@ -121,27 +133,38 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, f: &dyn Fn(String))
+    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, limit: Option<usize>, mut input: &ChildStdin)
     {
-        let query = format!("SELECT {} FROM {}", DATASET_PK_NAME, DATASET_TABLE_NAME);
         let mut current: usize = 0; 
-        let start = match start_index {
-            Some(nb) => nb,
-            None => 0,
+        
+        let query = {
+            let start = match start_index {
+                Some(nb) => nb,
+                None => 0,
+            };
+            
+            let mut tmp = format!("SELECT {} FROM {}", DATASET_PK_NAME, DATASET_TABLE_NAME);
+            if let Some(size) = limit 
+            {
+                tmp.push_str(format!(" LIMIT {}", size).as_str());
+            }
+            tmp.push_str(format!(" OFFSET {}", start).as_str());
+            tmp.push(';');
+
+            tmp
+
         };
-
+        
+        println!("query: {:?}", query);
         let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&query).fetch(&self.pool);
-
+        
         while let Some(res) = que_res.next().await
         {
-            if let Ok(sign) = res 
+            if let Ok(mut sign) = res 
             {
-                if current >= start 
-                {
-                    f(sign);
-                    
-                }
-                current += 1;
+                println!("pushing sign: {}", sign);
+                sign.push('\n');
+                input.write(sign.as_bytes()).unwrap();
             }
         }   
         
@@ -216,9 +239,11 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn launch_thread_invariant(&self, inv: &Invariant)
     {
+        
         let pool_copy = self._get_pool().clone();
         
         tokio::spawn(async move {
+            
             // Demonstrates that `CloseEvent` is itself a `Future` you can wait on.
             // This lets you implement any kind of on-close event that you like.
             pool_copy.close_event().await;
@@ -230,12 +255,22 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
     }
     
-    async fn create_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T) {
+    async fn create_invariant_table(&self, invariant: &Invariant) {
         let query = format!("CREATE TABLE {} (
                                     {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
                                     value {}
-                                ); ", invariant.get_table_name(), column_type.translate());
+                                ); ", invariant.get_table_name(), SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
         sqlx::query(&query).execute(&self.pool).await.unwrap();
+    }
+    
+    async fn inv_already_added(&self, inv: &Invariant) -> bool {
+        let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", inv.get_table_name());
+        let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
+
+        match res {
+            Ok(count) => count == 1,
+            Err(e) => {react_to_database_error(&e); false},
+        }
     }
     
     

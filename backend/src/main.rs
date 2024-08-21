@@ -1,6 +1,6 @@
 use gquest_core::{data_handler::{self, invariant_handlers::{Invariant, InvariantsOrderHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
 
-
+const THREADS_AVAILABLE: usize = 4;
 
 
 const DB_URL: &str = "resources/test.db";
@@ -54,8 +54,18 @@ async fn main() {
 
     //let inv_order = inv2.get_topological_order();
     //println!("Second order: {:?}", inv_order.pretty_print_order());
+    
     //exec_inv(&inv_order[0]);
-    //wp2.compute_invariants(inv2).await;
+    //wp2.compute_invariants(inv2, THREADS_AVAILABLE).await;
+    
     //count_mutex::test();
-    wp2.test().await;
+    //wp2.test().await;
+    let x = Invariant::new(&String::from("resources/invariant_modules/p.py"), 
+                              &String::from("theta"), 
+                              vec![],
+                              None,
+                              None ,
+                              None
+                              );
+    wp2.test(&x).await;
 }

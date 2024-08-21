@@ -1,6 +1,9 @@
-use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
+use std::{collections::HashMap, fmt::{self, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
+use std::io::BufReader;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
+
+use crate::db_handler::graph_database::GraphDatabase;
 
 
 /// The prefix of all the invariant tables 
@@ -118,24 +121,104 @@ impl Invariant {
         INVARIANT_PREFIX.to_string() + &self.name    // Append the prefix to the invariant 
     }
 
-    /// Compute the invariant by using the provided executable 
-    pub fn exec_inv(&self)
+    /// Compute the invariant and stores result in the database
+    pub async fn exec_inv<'a, T: GraphDatabase<'a>>(&self, db: &T)
     {
         // executes the given invariant
-        let to_pipe = Command::new(format!("geng"))
-                .arg("1")
-                .arg("-q")
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap();
+        //let to_pipe = Command::new(format!("rev"))
+        //            .stdout(Stdio::piped())
+        //            .spawn()
+        //            .unwrap();
+        //
+        //let mut out_to_in = to_pipe.stdin.unwrap();
+
+
+        
+        
+        //let mut ex_inv = Command::new(format!("{}", self.exec_path))
+        //                                .stdin(Stdio::piped())
+        //                                .stdout(Stdio::piped())
+        //                                .spawn().unwrap();
+        let mut ex_inv = Command::new(format!("cat"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn().unwrap();
     
-        let ex_inv = Command::new(format!("{}", self.exec_path))
-                          .stdin(Stdio::from(to_pipe.stdout.unwrap()))
-                          .output().unwrap();
+        let mut stdin = ex_inv.stdin.take().unwrap();
+        //stdin.write("fuck\n");
+        println!("starting fetching");
+        let mut count = 1;
+        db.fetch_dataset_signatures(Some(0), Some(2000), &stdin).await;
+        println!("finished fetching");
+        {
+            let stdout = ex_inv.stdout.as_mut().unwrap();
+            let stdout_reader = BufReader::new(stdout);
+            println!("Reading lines");
+            for line in stdout_reader.lines() {
+                //println!("count: {:?}", count);
+                if count >= 2000 {
+                    break;
+                }
+                if let Ok(sign) = line {
+                    println!("Just read : {:?}", sign);
+                }
+                count += 1;
+            }
+            println!("broke up");
+            drop(ex_inv);
+            //ex_inv.wait().unwrap();
+            
+        }
+        //FIXME Here is the problem: We are sending so much data that the python program reads, but he also sends them back to the output pipe
+        // but since we are currently sending the data, we cannot read it
+        // so this means that the output pipe gets filled up and the python program waits to write more
+        // but since he is waiting, and can't read what we are sending
+        // therefore the stdin pipe also gets full
+        // i.e. deadlock  
+
+                  
         //println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
     
         
     }
+    // Copy of function
+    /*
+    pub async fn exec_inv<'a, T: GraphDatabase<'a>>(&self, db: &T)
+    {
+        // executes the given invariant
+        //let to_pipe = Command::new(format!("rev"))
+        //            .stdout(Stdio::piped())
+        //            .spawn()
+        //            .unwrap();
+        //
+        //let mut out_to_in = to_pipe.stdin.unwrap();
+
+
+        
+        
+        db.fetch_dataset_signatures(None, out_to_in).await;
+        let mut ex_inv = Command::new(format!("{}", self.exec_path))
+                            .stdin(Stdio::from(to_pipe.stdout.unwrap()))
+                            .spawn().unwrap();
+         
+
+        {
+            let stdout = ex_inv.stdout.as_mut().unwrap();
+            let stdout_reader = BufReader::new(stdout);
+            for line in stdout_reader.lines() {
+                if let Ok(sign) = line {
+                    println!("Just read : {:?}", sign);
+                }
+            }
+        }
+
+        ex_inv.wait().unwrap();
+                  
+        //println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
+    
+        
+    }
+     */
 }
 
 
@@ -308,7 +391,7 @@ impl InvariantExecManager {
     }
 
     /// Handles the execution in a topological order of the invariants by using the provided number of threads 
-    pub fn handle_execution(mut self, mut threads_available: usize)
+    pub async fn handle_execution<'a, T: GraphDatabase<'a>>(mut self, mut threads_available: usize, db: &T)
     {
         let n = self.dep_index.len();
 
@@ -337,7 +420,7 @@ impl InvariantExecManager {
         for i in 0..(std::cmp::min(threads_available, self.invariants.len())) {
             
             if self.dep_left[i] == 0 {
-                self.start_thread(i, &tx);
+                self.start_inv(i, &tx, db.clone()).await;
                 threads_available -= 1;
                 todo[i] = false;    // i is now being worked on 
             }
@@ -365,7 +448,7 @@ impl InvariantExecManager {
                 {
                     threads_available -= 1;
                     todo[i] = false;
-                    self.start_thread(i, &tx);                    
+                    self.start_inv(i, &tx, db.clone()).await;                    
                 }
                 i += 1;
             }
@@ -379,16 +462,20 @@ impl InvariantExecManager {
     }
 
     /// Start a thread that will execute the invariant located at the given index
-    fn start_thread(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>)
+    async fn start_inv<'a, T: GraphDatabase<'a>>(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>, db: T)
     {
         let tx_copy = mpsc::Sender::clone(original_sender);
         
         let inv_copy = self.invariants[inv_index].clone();
+        
+        // Create (if it wasn't already added) the invariant in the database
+        db.init_invariant(&inv_copy).await;
+        
         println!("Gonna do: {}", inv_copy.name); 
         thread::spawn(move || 
         {
             // Execute invariant
-            inv_copy.exec_inv();
+            //inv_copy.exec_inv(db);
             // send notification to main thread to signal the end of this program's execution
             tx_copy.send(inv_index as u16).unwrap();
         });

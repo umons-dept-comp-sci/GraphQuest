@@ -1,11 +1,6 @@
 use std::fs::File;
 use std::process::{Command, Stdio};
-use std::io::{stdin, BufReader, BufRead, Result, Lines};
-use std::path::Path;
-use std::ops::Range;
-
-use crate::utils::subject::Observer;
-
+use std::io::{stdin, BufReader};
 use super::super::db_handler::graph_database::*;
 
 /// Creates and stores the content of a `geng` query in the given database, using a set of graph settings.

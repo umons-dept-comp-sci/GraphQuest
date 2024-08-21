@@ -10,13 +10,16 @@ def get_res(sign):
 
 
 if __name__=="__main__":
+    f = open("tmp.txt", "w")
     list1 = []
     for line in sys.stdin:
         list1.append(line.strip("\n"))
         if len(list1) != MAX_BUFFER:
+            f.write(str(list1))
             for args in list1:
+                
                 res = get_res(args)
-                sys.stdout.write(str(res) + ";")
+                sys.stdout.write(str(res) + "\n")
             list1.clear()
+    f.close()
     sys.stdout.write("\n")
-
