@@ -1,9 +1,7 @@
 use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use topo_sort::{SortResults, TopoSort};
 
-use crate::utils::subject::*; 
 
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "inv_";

@@ -1,13 +1,11 @@
-use std::fmt::Error;
 use std::pin::Pin;
 
-use crate::utils::custom_streams::AsyncStringStream;
 use crate::{db_handler::graph_database::*, utils::subject::*};
 use crate::data_handler::invariant_handlers::*;
 
-use futures::{Stream, StreamExt, TryStreamExt};
-use sqlx::{database, error::{DatabaseError, ErrorKind}, migrate::MigrateDatabase, pool, query, sqlite::{types, SqliteQueryResult}, Database, FromRow, Pool, Row, Sqlite, SqlitePool};
-use tokio::stream; 
+use futures::{Stream, StreamExt};
+use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
+
 
 const DEBUG_MODE: bool = true;
 
@@ -340,19 +338,6 @@ fn react_to_database_error(e: &sqlx::Error)
 
 
 
-pub struct CustomSqliteStream
-{
-    _query: String,
-    _pool_copy: Pool<Sqlite>, 
-    stream: Option<Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>>>
-}
-
-
-impl AsyncStringStream for CustomSqliteStream {
-    async fn get_next() -> Option<String> {
-        todo!()
-    }
-}
 
 
 //_______________________________________________
