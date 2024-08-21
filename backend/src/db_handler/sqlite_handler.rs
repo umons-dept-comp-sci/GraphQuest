@@ -1,10 +1,13 @@
 use std::fmt::Error;
+use std::pin::Pin;
 
+use crate::utils::custom_streams::AsyncStringStream;
 use crate::{db_handler::graph_database::*, utils::subject::*};
 use crate::data_handler::invariant_handlers::*;
 
+use futures::{Stream, StreamExt, TryStreamExt};
 use sqlx::{database, error::{DatabaseError, ErrorKind}, migrate::MigrateDatabase, pool, query, sqlite::{types, SqliteQueryResult}, Database, FromRow, Pool, Row, Sqlite, SqlitePool};
-
+use tokio::stream; 
 
 const DEBUG_MODE: bool = true;
 
@@ -105,13 +108,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn add_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T) {
-        let query = format!("CREATE TABLE {} (
-                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
-                                    value {}
-                                ); ", invariant.get_table_name(), column_type.translate());
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
+    
     
     async fn add_value_to_dataset(&self, signatures: &Vec<String>) {
         // Then we add all signatures to the newly created table
@@ -126,8 +123,30 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String> {
-        todo!()
+    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, f: &dyn Fn(String))
+    {
+        let query = format!("SELECT {} FROM {}", DATASET_PK_NAME, DATASET_TABLE_NAME);
+        let mut current: usize = 0; 
+        let start = match start_index {
+            Some(nb) => nb,
+            None => 0,
+        };
+
+        let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&query).fetch(&self.pool);
+
+        while let Some(res) = que_res.next().await
+        {
+            if let Ok(sign) = res 
+            {
+                if current >= start 
+                {
+                    f(sign);
+                    
+                }
+                current += 1;
+            }
+        }   
+        
     }
     
     async fn connect_graph_database(db_url: &str) -> Self {
@@ -189,14 +208,40 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             - added_values as i64
         };
 
-        /*
-        INSERT OR REPLACE INTO users (id, username, email) VALUES (1, 'john doe', 'john@gmail.com');
-         */
         let query = format!("INSERT OR REPLACE INTO {METADATA_TABLE_NAME} (table_name, stopped_at)
                                     VALUES (\"{changed_table_name}\", {new_value});");
         //println!("query : {query}");
         sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }    
+    } 
+
+    //_________________________________INVARIANTS_______________________________________________________________________________
+    
+    async fn launch_thread_invariant(&self, inv: &Invariant)
+    {
+        let pool_copy = self._get_pool().clone();
+        
+        tokio::spawn(async move {
+            // Demonstrates that `CloseEvent` is itself a `Future` you can wait on.
+            // This lets you implement any kind of on-close event that you like.
+            pool_copy.close_event().await;
+        
+            println!("Pool is closing!");
+        
+            // Imagine maybe recording application statistics or logging a report, etc.
+        });
+        
+    }
+    
+    async fn create_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T) {
+        let query = format!("CREATE TABLE {} (
+                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
+                                    value {}
+                                ); ", invariant.get_table_name(), column_type.translate());
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
+    }
+    
+    
+    
     
 }
 
@@ -261,6 +306,9 @@ pub async fn connect_graph_database<'a>(db_path : & str) -> SqliteGraphDatabase<
 
 
 
+
+
+
 // TODO Change all unwrap with match cases
 // TODO Make better errors
 
@@ -291,6 +339,20 @@ fn react_to_database_error(e: &sqlx::Error)
 }
 
 
+
+pub struct CustomSqliteStream
+{
+    _query: String,
+    _pool_copy: Pool<Sqlite>, 
+    stream: Option<Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>>>
+}
+
+
+impl AsyncStringStream for CustomSqliteStream {
+    async fn get_next() -> Option<String> {
+        todo!()
+    }
+}
 
 
 //_______________________________________________

@@ -6,12 +6,13 @@ use gquest_core::{data_handler::{self, invariant_handlers::{Invariant, Invariant
 const DB_URL: &str = "resources/test.db";
 
 
-
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     
     //let wp: Workspace<SqliteGraphDatabase> = Workspace::init_workspace(DB_URL).await;
-    //let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
+    //let wp1 : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
+    
+    let wp2 : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     //wp.add_dataset(GraphQuest::db_handler::data_loaders::Method::Stdin).await;
     //wp.add_dataset<O>(data_handler::data_loaders::Method::GengAPI { nb_of_vertices: 6, graph_settings: "-c".to_string(), edges_born: (Some(4), None)}, None).await;
     //wp.close_workspace().await;
@@ -51,10 +52,10 @@ async fn main() {
 
     let inv2 = InvariantsOrderHandler::read_json(&"resources/invariant_modules/dep.json".to_string());
 
-    let inv_order = inv2.get_topological_order();
-    println!("Second order: {:?}", inv_order.pretty_print_order());
+    //let inv_order = inv2.get_topological_order();
+    //println!("Second order: {:?}", inv_order.pretty_print_order());
     //exec_inv(&inv_order[0]);
-    inv_order.handle_execution(5);
+    //wp2.compute_invariants(inv2).await;
     //count_mutex::test();
-    
+    wp2.test().await;
 }

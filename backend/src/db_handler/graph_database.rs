@@ -1,10 +1,12 @@
 
 use std::{io::BufRead, iter, marker::PhantomData};
 
+use crate::utils::custom_streams::AsyncStringStream;
 use crate::utils::subject::{Subject, Observer};
 
 use super::super::data_handler::data_loaders::*;
 use super::super::data_handler::invariant_handlers::*;
+use super::sqlite_handler::CustomSqliteStream;
 
 
 
@@ -22,6 +24,9 @@ pub const METADATA_TABLE_NAME : &str = "Metadata";
 pub const METADATA_PK_NAME : &str = "table_name";
 /// The name of the second column of the metadata table
 pub const METADATA_VALUE_NAME : &str = "stopped_at";
+/// The name of the column in an invariant table where the values are stored 
+pub const INVARIANT_COLUMN_NAME : &str = "value";
+
 
 /// The maximum size of a signature to store in the dataset
 pub const SIGNATURE_MAX_SIZE : usize = 250;
@@ -102,26 +107,6 @@ pub trait GraphDatabase<'a> : Subject<'a>
     
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize);
 
-    /// Adds an table to the database to later store the value of an invariant for each graph of the database.
-    /// 
-    /// An invariant table must have two columns named [DATASET_PK_NAME] (which is the primary key) and *value*.
-    /// 
-    /// To name the name use [Invariant::get_table_name], this is done to make sure the given invariant name is valid.
-    /// 
-    /// ## Exemple of table
-    /// ```text
-    /// Chromatic -> | signature | value |
-    /// Number       +-----------+-------+
-    ///              | I?ABCd[v? | ##### |
-    ///              | I?ABCd[n? | ##### |
-    ///              | I?ABCd[^? | ##### |
-    ///              |          ...      |
-    /// ```
-    /// ## Exceptions
-    /// Must panic when:
-    /// * The given table name is already used
-    async fn add_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T);
-
     /// Adds value to the dataset table.
     /// 
     /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
@@ -132,16 +117,15 @@ pub trait GraphDatabase<'a> : Subject<'a>
     /// * The values break the primary key rule (i.e. a signature is already inside the dataset)
     async fn add_signatures_to_dataset(&self, table_name: &str, values: &Vec<String>);
 
-    /// Fetch signatures from the dataset table.
+    /// Fetches signatures from the dataset table and executes the given function
     /// ## Args
-    /// * `start_index` : The index of the table to start fetching the data at
+    /// * `start_index` : The index of the table to start executing the data at
     ///     * If the given value is `none`, the fetching will start a 0 
-    /// * `end_index` : The index of the table to stop fetching the data at
-    ///     * If the given value is `none`, the fetching will stop at the end of the table
+    /// * `f` : The function to call for each signature in the dataset
     /// ## Exceptions
     /// Must panic when:
-    /// * The given indexes are not valid
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>) -> Vec<String>;
+    /// * The given index is not valid
+    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, f: &dyn Fn(String));
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -184,6 +168,43 @@ pub trait GraphDatabase<'a> : Subject<'a>
 
     /// Closes the connection with the database
     async fn close_connection(self);
+
+    //_________________________________INVARIANTS_______________________________________________________________________________
+
+    /// Creates the given invariant table and adds it to the meta data table 
+    async fn init_invariant(&self, inv: &Invariant)
+    {
+        // Create table
+        //self.create_invariant_table(inv, column_type).await;
+        // Add Metadata line
+        self.update_meta_data(&inv.get_table_name(), 0).await;
+    }
+
+    /// Adds an table to the database to later store the value of an invariant for each graph of the database.
+    /// 
+    /// An invariant table must have two columns named [DATASET_PK_NAME] (which is the primary key) and *value*.
+    /// 
+    /// To name the name use [Invariant::get_table_name], this is done to make sure the given invariant name is valid.
+    /// 
+    /// ## Exemple of table
+    /// ```text
+    /// Chromatic -> | signature | value |
+    /// Number       +-----------+-------+
+    ///              | I?ABCd[v? | ##### |
+    ///              | I?ABCd[n? | ##### |
+    ///              | I?ABCd[^? | ##### |
+    ///              |          ...      |
+    /// ```
+    /// ## Exceptions
+    /// Must panic when:
+    /// * The given table name is already used
+    async fn create_invariant_table<T: DBColumnTypes>(&self, invariant: &Invariant, column_type: T);
+    
+    /// Launches a thread that computes the given invariant
+    /// 
+    /// * Must create the invariant table if it does not already exists [GraphDatabase::inver]
+    /// * If the invariant table was partially completed, it must continue from where it previously stopped 
+    async fn launch_thread_invariant(&self, inv: &Invariant);
     
 }
 
@@ -246,5 +267,18 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     pub async fn close_workspace(self)
     {
         self.db.close_connection().await;
+    }
+
+    pub async fn test(&self)
+    {
+        self.db.fetch_dataset_signatures(Some(0), &|x|  println!("Read: {}", x)).await;
+    }
+
+    
+
+    pub async fn compute_invariants(&self, inv_order : InvariantsOrderHandler)
+    {
+        let x = inv_order.get_topological_order();
+        //x.handle_execution(6);
     }
 }

@@ -11,6 +11,7 @@ pub trait Observer {
     
 }
 
+
 /// Trait used to represent the subject in the observer design pattern
 pub trait Subject<'a> {
     /// Set the current graph observer 
