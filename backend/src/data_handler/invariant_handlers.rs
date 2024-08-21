@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{Command, Stdio}, sync::mpsc, thread};
+use std::{collections::HashMap, fmt::{self, Display}, fs::File, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use topo_sort::{SortResults, TopoSort};
@@ -312,13 +312,28 @@ impl InvariantExecManager {
     /// Handles the execution in a topological order of the invariants by using the provided number of threads 
     pub fn handle_execution(mut self, mut threads_available: usize)
     {
+        let n = self.dep_index.len();
+
+
+        //println!("{}", self.pretty_print_order());
         if threads_available <= 1 {
             panic!("At least one thread must be used to work with");
         }
-        println!("Starting thread manager");
-        println!("{:?}", self.dep_left);
+
+        // Vector used in order to keep track of what invariants are left to execute
+        let mut todo : Vec<bool> = {
+            let mut tmp: Vec<bool> = vec![];
+            for _ in 0..n {
+                tmp.push(true);
+            }
+            tmp
+        };
+
+        //println!("Starting thread manager");
+        //println!("{:?}", self.dep_left);
+        // Use of a "Multi-producer, single-consumer" struct in order to communicate with threads
         let (tx, rx) = mpsc::channel::<u16>();
-        // Make a vector to hold the children which are spawned.
+        
         
         // Min since you can have more threads than process
         for i in 0..(std::cmp::min(threads_available, self.invariants.len())) {
@@ -326,32 +341,43 @@ impl InvariantExecManager {
             if self.dep_left[i] == 0 {
                 self.start_thread(i, &tx);
                 threads_available -= 1;
+                todo[i] = false;    // i is now being worked on 
             }
-            else {
-                break;  // We cannot start other invariants before the previous are done
-            }
+            // It can sometimes happen that you can start invariants even if they are after 
+            // ones waiting for a dependence, hence the full loop
         }
-        println!("Finished to init threads");
-        let mut count = 0;
-        // The exterior loop is made in case
-            for received in &rx {
-                count += 1;
-                println!("Got: {}", received);
-                threads_available += 1;
-                //println!("d: {:?}", &self.dep_index);
-                for d in &self.dep_index[received as usize] {
-                    self.dep_left[*d as usize] -= 1;
-                    if self.dep_left[*d as usize] == 0 && threads_available != 0{
-                        // send thread
-                        self.start_thread(*d as usize, &tx);
-                    }
-                }
-                // Check if it is finished or not
-                if count == self.invariants.len()
-                {
-                    break;
-                }
+        //println!("Finished to init threads");
+        
+        // Counter of finished tasks
+        let mut finish_count = 0;
+        // When a message is received, it means the thread finished and it sent the index of the finished task
+        for received in &rx {
+            finish_count += 1;
+            //println!("Was finished: {}", received);
+            threads_available += 1;
+            
+            // Because this task is done, we can update the dependencies
+            for d in &self.dep_index[received as usize] {
+                self.dep_left[*d as usize] -= 1;
             }
+            // Check if some other tasks are now available
+            let mut i = 0;
+            while threads_available > 0 && i < n {
+                if todo[i] && self.dep_left[i] == 0
+                {
+                    threads_available -= 1;
+                    todo[i] = false;
+                    self.start_thread(i, &tx);                    
+                }
+                i += 1;
+            }
+            // Check if all tasks are finished or not
+            if finish_count == self.invariants.len() 
+            {
+                break;
+            }
+            //println!("state: {:?}", todo);
+        }
     }
 
     /// Start a thread that will execute the invariant located at the given index
