@@ -50,6 +50,8 @@ pub struct SqliteGraphDatabase<'a>
     obs: Vec<&'a dyn Observer>
 }
 
+unsafe impl<'a> Send for SqliteGraphDatabase<'a> {}
+
 impl<'a> Clone for SqliteGraphDatabase<'a> {
     fn clone(&self) -> Self {
         Self { pool: self.pool.clone(), obs: self.obs.clone() }
@@ -122,7 +124,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     
     
-    async fn add_value_to_dataset(&self, signatures: &Vec<String>) {
+    async fn add_values_to_dataset(&self, signatures: &Vec<String>) {
         // Then we add all signatures to the newly created table
         let mut query = format!("INSERT INTO {DATASET_TABLE_NAME} VALUES ");
         // Add all value to the query
@@ -132,6 +134,8 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         }
         query.pop();        // remove the extra ','
         query.push_str(";");
+        println!("query: {:?}", query);
+        panic!();
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
@@ -159,7 +163,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             let mut tmp = format!("SELECT * FROM ({})", signatures_query);
             let mut inv_name;
             for name in inv_names_to_join {
-                inv_name = Invariant::get_table_name_from_string(&name);
+                inv_name = InvariantsExecutable::get_table_name_from_string(&name);
                 if let Err(t) = self.get_size_of_table(&inv_name).await {
                    return Err(t);
                 }
@@ -217,11 +221,12 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         // Add all value to the query
         // The format is always: ("signature", value), ...
         for (sign, value) in signatures_values {
-            query.push_str(format!("(\"{sign}\", {value}),").as_str());
+            query.push_str(format!("( \"{sign}\", {value}),").as_str());
         }
         
         query.pop();        // remove the extra ','
         query.push_str(";");
+        println!("query: {:?}", query);
         // Try to push data
         if let Err(e) = sqlx::query(&query).execute(&self.pool).await
         {
@@ -253,42 +258,26 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
 
     //_________________________________INVARIANTS_______________________________________________________________________________
     
-    async fn launch_thread_invariant(&self, inv: &Invariant)
-    {
-        
-        let pool_copy = self._get_pool().clone();
-        
-        tokio::spawn(async move {
-            
-            // Demonstrates that `CloseEvent` is itself a `Future` you can wait on.
-            // This lets you implement any kind of on-close event that you like.
-            pool_copy.close_event().await;
-        
-            println!("Pool is closing!");
-        
-            // Imagine maybe recording application statistics or logging a report, etc.
-        });
-        
+    async fn create_invariant_table(&self, invariant: &InvariantsExecutable) {
+        // FIXME
+        //let query = format!("CREATE TABLE {} (
+        //                            {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
+        //                            value {}
+        //                        ); ", invariant.get_table_name(), SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
+        //sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn create_invariant_table(&self, invariant: &Invariant) {
-        let query = format!("CREATE TABLE {} (
-                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
-                                    value {}
-                                ); ", invariant.get_table_name(), SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-    async fn inv_already_added(&self, inv: &Invariant) -> bool {
+    async fn inv_already_added(&self, inv: &InvariantsExecutable) -> bool {
 
-        // FIXME copied code from get_size_of_table
-        let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", inv.get_table_name());
-        let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
-
-        match res {
-            Ok(count) => count == 1,
-            Err(e) => {react_to_database_error(&e); false},
-        }
+        // FIXME
+        //let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", inv.get_table_name());
+        //let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
+//
+        //match res {
+        //    Ok(count) => count == 1,
+        //    Err(e) => {react_to_database_error(&e); false},
+        //}
+        todo!()
     }
     
     async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError> {
@@ -302,11 +291,8 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             Err(_) => Err(TableNotFoundError::new(name.to_string())),
         }
     }
-    
-    
-    
-    
 }
+
 
 
 impl<'a> SqliteGraphDatabase<'a> {
@@ -319,6 +305,12 @@ impl<'a> SqliteGraphDatabase<'a> {
     fn _get_pool(&self) -> &Pool<Sqlite>
     {
         &self.pool
+    }
+
+
+    async fn kill_me(&self) -> Self
+    {
+        todo!()
     }
 }
 

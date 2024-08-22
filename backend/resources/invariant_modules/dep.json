@@ -1,31 +1,31 @@
 {
-  "invariants":
+  "executables":
   [
     {
-        "exec_path": "/home/axel/Desktop/bir/GraphQuest/backend/resources/invariant_modules/alpha.py",
-        "name": "alpha",
+        "exec_path": "alpha.py",
+        "names": ["alpha"],
         "dependencies": ["beta"],
         "return_type": "integer",
         "input_seperator": "\n"
     },
     {
       "exec_path": "beta.py",
-      "name": "beta",
+      "names": ["beta"],
       "dependencies": ["delta"]
     },
     {
       "exec_path": "delta.py",
-      "name": "delta",
+      "names": ["delta"],
       "dependencies": []
     },
     {
       "exec_path": "theta.py",
-      "name": "theta",
+      "names": ["theta"],
       "dependencies": ["beta", "delta"]
     },
     {
       "exec_path": "p.py",
-      "name": "python_test",
+      "names": ["python_test"],
       "dependencies": ["delta", "beta", "alpha", "theta"]
     }
   ]

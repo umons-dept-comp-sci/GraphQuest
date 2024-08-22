@@ -1,6 +1,7 @@
 
 /// Trait used to represent the observer in the observer design pattern
-pub trait Observer {
+pub trait Observer: Send + Sync
+{
     /// Notify the observer that a tick has passed
     fn notify_tick(&self);
     /// Notify the observer of the quantity of data read since the last call to this function

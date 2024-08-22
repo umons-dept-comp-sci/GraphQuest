@@ -1,4 +1,4 @@
-use gquest_core::{data_handler::{self, invariant_handlers::{Invariant, InvariantsOrderHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
+use gquest_core::{data_handler::{self, invariant_handlers::{InvariantsExecutable, InvariantsOrderHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
 
 const THREADS_AVAILABLE: usize = 4;
 
@@ -15,42 +15,10 @@ async fn main() {
     let wp2 : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     //wp.add_dataset(GraphQuest::db_handler::data_loaders::Method::Stdin).await;
     //wp.add_dataset<O>(data_handler::data_loaders::Method::GengAPI { nb_of_vertices: 6, graph_settings: "-c".to_string(), edges_born: (Some(4), None)}, None).await;
-    //wp.close_workspace().await;
-    let mut inv_handler = InvariantsOrderHandler::new();
-    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/alpha.py"), 
-                              &String::from("alpha"), 
-                              vec![String::from("beta")],
-                              None,
-                              None,
-                              None
-                              ));   
-
-    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/beta.py"), 
-                              &String::from("beta"), 
-                              vec![String::from("theta"), String::from("delta")], 
-                              None,
-                              None,
-                              None
-                              ));   
-
-    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/delta.py"), 
-                              &String::from("delta"), 
-                              vec![], 
-                              None,
-                              None,
-                              None
-                              ));   
-
-    inv_handler.add_invariant(Invariant::new(&String::from("resources/invariant_modules/theta.py"), 
-                              &String::from("theta"), 
-                              vec![],
-                              None,
-                              None ,
-                              None
-                              ));   
-    //println!("oh damn: {:?}", InvariantsHandler::pretty_print_order(&inv_handler.get_topological_order()));
-
+    //wp.close_workspace().await;  
     let inv2 = InvariantsOrderHandler::read_json(&"resources/invariant_modules/dep.json".to_string());
+    
+    println!("oh damn: {:?}", &inv2.get_topological_order().pretty_print_order());
 
     //let inv_order = inv2.get_topological_order();
     //println!("Second order: {:?}", inv_order.pretty_print_order());
@@ -60,12 +28,12 @@ async fn main() {
     
     //count_mutex::test();
     //wp2.test().await;
-    let x = Invariant::new(&String::from("resources/invariant_modules/p.py"), 
-                              &String::from("p"), 
-                              vec![],
-                              None,
-                              None ,
-                              None
-                              );
-    wp2.test(&x).await;
+    //let x = InvariantsExecutable::new(&String::from("resources/invariant_modules/theta.py"), 
+    //                          vec![String::from("alpha1"), String::from("alpha2")], 
+    //                          vec![],
+    //                          None,
+    //                          None ,
+    //                          None
+    //                          );
+    //wp2.test(&x).await;
 }

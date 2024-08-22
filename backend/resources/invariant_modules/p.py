@@ -14,9 +14,11 @@ if __name__=="__main__":
     count = 0
     sys.stdout.flush()
     for line in sys.stdin:
-        f.write(str(line))
-        res = get_res(line)
-        sys.stdout.write(str(res) + "\n")
+        signature = line.split(" ")[0]
+        signature = signature.split("\n")[0]
+        f.write(str(signature))
+        res = get_res(signature)
+        sys.stdout.write(signature + " " + str(res) + "\n")
         count += 1
     f.write("closing") 
     f.close()
