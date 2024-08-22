@@ -6,7 +6,7 @@ use crate::utils::subject::{Subject, Observer};
 
 use super::super::data_handler::data_loaders::*;
 use super::super::data_handler::invariant_handlers::*;
-
+use super::db_errors::*;
 
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
@@ -115,17 +115,21 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
     /// * The values to add are not valid.
     /// * The values break the primary key rule (i.e. a signature is already inside the dataset)
-    async fn add_signatures_to_dataset(&self, table_name: &str, values: &Vec<String>);
+    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>);
 
-    /// Fetches signatures from the dataset table and executes the given function
+
+
+    /// Fetches signatures from the dataset table and writes them into the given input
     /// ## Args
     /// * `start_index` : The index of the table to start executing the data at
     ///     * If the given value is `none`, the fetching will start a 0 
-    /// * `f` : The function to call for each signature in the dataset
+    /// * `limit` : The limit on the number of value to fetch
+    ///     * If the given value is `none`, the fetching will be stop at the end of the table
+    /// * `inv_names_to_join` : The names of all invariants columns to join when fetching the data
     /// ## Exceptions
     /// Must panic when:
-    /// * The given index is not valid
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, end_index: Option<usize>, input: &ChildStdin);
+    /// * The given indexes are not valid
+    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: Vec<String>, input: &ChildStdin) -> Result<(), TableNotFoundError>;
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -134,7 +138,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// will dump its content to the database using [GraphDatabase::fetch_dataset_signatures].
     async fn add_signatures_to_dataset_buffer(&self, reader: impl BufRead)
     {
-        let mut signature_buffer : Vec<String> = Vec::new();
+        let mut signature_value_buffer : Vec<(String, String)> = Vec::new();
+        
         let mut notif_countdown = 1;
         let mut byte_buffer: u64 = 0;
         for line in reader.lines() {
@@ -142,14 +147,27 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
             if let Ok(sign) = line {
                 
                 byte_buffer += (sign.len() + 1) as u64; // Count bytes read, (+ 1 because we also read the '\n' char)
-                signature_buffer.push(sign);
+
+                // Also push the order of this graph as a value
+                signature_value_buffer.push((sign.clone(),
+                    {
+                        let first_byte = sign.as_bytes()[0];
+                        if first_byte >= 63 && first_byte < 126{
+                            (first_byte - 63).to_string()
+                        }
+                        else{
+                            todo!("Didn't implement what to do for large graph (n >= 62)");
+                        }
+
+                    }
+                ));
             }else {
                 panic!("Could not read next buffer line");
             }
             // if we stored enough, we can push what we collected towards the given database
-            if signature_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await; // add already stored signatures to the database
-                signature_buffer.clear();   // free the *buffer*
+            if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
+                self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await; // add already stored signatures to the database
+                signature_value_buffer.clear();   // free the *buffer*
             }
             notif_countdown -= 1;   // Update countdown
             // If it is time to notify the observor
@@ -159,12 +177,14 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
                 byte_buffer = 0;
             }
         }
-        if signature_buffer.len() != 0
+        if signature_value_buffer.len() != 0
         {                
             self.update_observator(byte_buffer);   // Last notifications
-            self.add_signatures_to_dataset(DATASET_TABLE_NAME, &signature_buffer).await;  // add remaining values to the database
+            self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await;  // add remaining values to the database
         }
     }
+
+ 
 
     /// Closes the connection with the database
     async fn close_connection(self);
@@ -213,7 +233,35 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// * Must create the invariant table if it does not already exists [GraphDatabase::inver]
     /// * If the invariant table was partially completed, it must continue from where it previously stopped 
     async fn launch_thread_invariant(&self, inv: &Invariant);
+
+
+
+    /// Simply returns the length of the table with the given name
+    /// ## Exceptions
+    /// Must return a TableNotFoundError if the given table is not found
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError>;
     
+
+    /// Gets the minimum size between all given tables and the dataset table 
+    /// ## Exceptions
+    /// Will panic if one of the given table doesn't not exists
+    async fn get_min_dependency_size(&self, tables: &Vec<String>) -> usize
+    {
+        // The starting min size is obviously the quantity of data stored inside the dataset
+        let mut min_size = self.get_size_of_table(DATASET_TABLE_NAME).await.unwrap();
+        
+        // Get minimum
+        let mut table_size;
+        for table in tables {
+            println!("going for : {:?}", table);
+            table_size = self.get_size_of_table(table).await.expect("One the given table does not exists");
+            if table_size < min_size {
+                min_size = table_size;
+            }
+        }
+
+        min_size
+    }
 }
 
 

@@ -2,7 +2,7 @@
 import sys
 import random
 
-MAX_BUFFER = 10000
+
 
 def get_res(sign):
     return random.randint(0,1000)
@@ -10,16 +10,15 @@ def get_res(sign):
 
 
 if __name__=="__main__":
-    f = open("tmp.txt", "w")
-    list1 = []
+    f = open("tmp.txt", "a")
+    count = 0
+    sys.stdout.flush()
     for line in sys.stdin:
-        list1.append(line.strip("\n"))
-        if len(list1) != MAX_BUFFER:
-            f.write(str(list1))
-            for args in list1:
-                
-                res = get_res(args)
-                sys.stdout.write(str(res) + "\n")
-            list1.clear()
+        f.write(str(line))
+        res = get_res(line)
+        sys.stdout.write(str(res) + "\n")
+        count += 1
+    f.write("closing") 
     f.close()
+
     sys.stdout.write("\n")

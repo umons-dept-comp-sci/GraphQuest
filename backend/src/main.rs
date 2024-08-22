@@ -61,7 +61,7 @@ async fn main() {
     //count_mutex::test();
     //wp2.test().await;
     let x = Invariant::new(&String::from("resources/invariant_modules/p.py"), 
-                              &String::from("theta"), 
+                              &String::from("p"), 
                               vec![],
                               None,
                               None ,

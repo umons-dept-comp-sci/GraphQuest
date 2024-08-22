@@ -8,6 +8,8 @@ use crate::data_handler::invariant_handlers::*;
 use futures::{Stream, StreamExt};
 use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
 
+use super::db_errors::TableNotFoundError;
+
 
 const DEBUG_MODE: bool = true;
 
@@ -133,11 +135,10 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn fetch_dataset_signatures(&self, start_index: Option<usize>, limit: Option<usize>, mut input: &ChildStdin)
+    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, inv_names_to_join: Vec<String>, mut input: &ChildStdin) -> Result<(), TableNotFoundError>
     {
-        let mut current: usize = 0; 
-        
-        let query = {
+        // Represents the query where we fetch the desired signatures
+        let signatures_query = {
             let start = match start_index {
                 Some(nb) => nb,
                 None => 0,
@@ -149,24 +150,44 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 tmp.push_str(format!(" LIMIT {}", size).as_str());
             }
             tmp.push_str(format!(" OFFSET {}", start).as_str());
-            tmp.push(';');
-
+            
             tmp
-
         };
+
+        // Represents the query where we join the desired invariant tables
+        let join_query_res: Result<String, TableNotFoundError> = {
+            let mut tmp = format!("SELECT * FROM ({})", signatures_query);
+            let mut inv_name;
+            for name in inv_names_to_join {
+                inv_name = Invariant::get_table_name_from_string(&name);
+                if let Err(t) = self.get_size_of_table(&inv_name).await {
+                   return Err(t);
+                }
+                tmp.push_str(format!(" INNER JOIN {} USING ({})", inv_name, DATASET_PK_NAME).as_str());
+            }
+            tmp.push(';');
+            Ok(tmp)
+        };
+        if let Err(t) = join_query_res{
+            return Err(t);
+        }
+
+        let join_query = join_query_res.unwrap();
         
-        println!("query: {:?}", query);
-        let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&query).fetch(&self.pool);
         
+        // execute query
+        let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&join_query).fetch(&self.pool);
+        // push result to the given stdout
         while let Some(res) = que_res.next().await
         {
             if let Ok(mut sign) = res 
             {
-                println!("pushing sign: {}", sign);
+                //println!("pushing sign: {}", sign);
                 sign.push('\n');
                 input.write(sign.as_bytes()).unwrap();
             }
         }   
+        Ok(())
         
     }
     
@@ -188,22 +209,17 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         // TODO Check if the workspace is valid, if it wasn't tempered with
     }
     
-    async fn add_signatures_to_dataset(&self, table_name: &str, signatures: &Vec<String>) {
+    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) {
         // Then we add all signatures to the newly created table
         let mut query = format!("INSERT INTO {table_name} VALUES ");
-        let mut first_byte;
+
+        
         // Add all value to the query
-        for sign in signatures
-        {
-            first_byte = sign.as_bytes()[0];
-            if first_byte >= 63 && first_byte < 126  
-            {
-                query.push_str(format!("(\"{sign}\", {}),", first_byte - 63).as_str());
-            }
-            else {
-                todo!("Didn't implement what to do for large graph (n >= 62)");
-            }
+        // The format is always: ("signature", value), ...
+        for (sign, value) in signatures_values {
+            query.push_str(format!("(\"{sign}\", {value}),").as_str());
         }
+        
         query.pop();        // remove the extra ','
         query.push_str(";");
         // Try to push data
@@ -212,7 +228,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             react_to_database_error(&e);
         }
         // update meta data table
-        self.update_meta_data(DATASET_TABLE_NAME, signatures.len()).await;
+        self.update_meta_data(DATASET_TABLE_NAME, signatures_values.len()).await;
     }
     
     async fn close_connection(self) {
@@ -264,12 +280,26 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
     
     async fn inv_already_added(&self, inv: &Invariant) -> bool {
+
+        // FIXME copied code from get_size_of_table
         let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", inv.get_table_name());
         let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
 
         match res {
             Ok(count) => count == 1,
             Err(e) => {react_to_database_error(&e); false},
+        }
+    }
+    
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError> {
+        let query = format!("SELECT count({}) FROM {};", DATASET_PK_NAME, name);
+        println!("query: {:?}", &query);
+
+        let res: Result<u64, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
+
+        match res {
+            Ok(count) => Ok(count as usize),
+            Err(_) => Err(TableNotFoundError::new(name.to_string())),
         }
     }
     
@@ -365,8 +395,8 @@ fn react_to_database_error(e: &sqlx::Error)
         ErrorKind::UniqueViolation => panic!("A signature was already inside the dataset"),
         ErrorKind::ForeignKeyViolation => todo!(),
         ErrorKind::NotNullViolation => todo!(),
-        ErrorKind::CheckViolation => todo!(),
-        ErrorKind::Other => todo!(),
+        ErrorKind::CheckViolation => panic!(""),
+        ErrorKind::Other => panic!("An unmapped database error happened, perhaps the table name is incorrect ?"),
         _ => todo!(),
     }
 }

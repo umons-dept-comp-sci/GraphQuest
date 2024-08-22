@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::{self, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
+use std::{cmp::min, collections::HashMap, fmt::{self, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Command, Stdio}, sync::mpsc, thread};
 use std::io::BufReader;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
@@ -8,7 +8,8 @@ use crate::db_handler::graph_database::GraphDatabase;
 
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "inv_";
-
+/// The quantity of data to send to the invariant executable
+pub const BATCH_SIZE: usize = 3000;
 
 
 /// Private struct simply used to help the json parsing of multiple invariants 
@@ -118,57 +119,62 @@ impl Invariant {
     pub fn get_table_name(&self) -> String
     {
         // FIXME ATTENTION USER INPUT ET TABLE NAMES,
-        INVARIANT_PREFIX.to_string() + &self.name    // Append the prefix to the invariant 
+        Self::get_table_name_from_string(&self.name)    // Append the prefix to the invariant 
+    }
+
+    // Simply formats the name to what the invariant table name is
+    pub fn get_table_name_from_string(name: &String) -> String 
+    {
+        INVARIANT_PREFIX.to_string() + name
     }
 
     /// Compute the invariant and stores result in the database
     pub async fn exec_inv<'a, T: GraphDatabase<'a>>(&self, db: &T)
     {
-        // executes the given invariant
-        //let to_pipe = Command::new(format!("rev"))
-        //            .stdout(Stdio::piped())
-        //            .spawn()
-        //            .unwrap();
-        //
-        //let mut out_to_in = to_pipe.stdin.unwrap();
+        // get min size
 
-
-        
-        
-        //let mut ex_inv = Command::new(format!("{}", self.exec_path))
-        //                                .stdin(Stdio::piped())
-        //                                .stdout(Stdio::piped())
-        //                                .spawn().unwrap();
-        let mut ex_inv = Command::new(format!("cat"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn().unwrap();
-    
-        let mut stdin = ex_inv.stdin.take().unwrap();
-        //stdin.write("fuck\n");
-        println!("starting fetching");
-        let mut count = 1;
-        db.fetch_dataset_signatures(Some(0), Some(2000), &stdin).await;
-        println!("finished fetching");
+        let mut nb_of_data = 
         {
-            let stdout = ex_inv.stdout.as_mut().unwrap();
-            let stdout_reader = BufReader::new(stdout);
-            println!("Reading lines");
-            for line in stdout_reader.lines() {
-                //println!("count: {:?}", count);
-                if count >= 2000 {
-                    break;
-                }
-                if let Ok(sign) = line {
-                    println!("Just read : {:?}", sign);
-                }
-                count += 1;
+            let mut table_vec:Vec<String> = vec![];
+            for inv_name in &self.dependencies {
+                table_vec.push(Self::get_table_name_from_string(inv_name));
             }
-            println!("broke up");
-            drop(ex_inv);
-            //ex_inv.wait().unwrap();
+            db.get_min_dependency_size(&table_vec).await
+        };
+
+        let mut batch_sent = 0;
+        while nb_of_data > 0 {
+            let mut ex_inv = Command::new(format!("{}", self.exec_path))
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .spawn().unwrap();
             
+            let stdin = ex_inv.stdin.take().unwrap();
+
+            db.fetch_data(Some(batch_sent * BATCH_SIZE), Some(BATCH_SIZE), vec![], &stdin).await.unwrap();
+
+            drop(stdin); // force stdin of program to stop reading so we can read the stdout of it
+            
+            {
+                let stdout = ex_inv.stdout.as_mut().unwrap();
+                let stdout_reader = BufReader::new(stdout);
+                
+                for line in stdout_reader.lines() {
+                    if let Ok(sign) = line {
+                        println!("Just read : {:?}", sign);
+                    }
+                    
+                }
+                
+                drop(ex_inv);
+            }
+            batch_sent += 1;
+            nb_of_data -=  min(BATCH_SIZE, nb_of_data); // min used to avoid substraction overflow
         }
+
+        println!("finished fetching");
+        
+        
         //FIXME Here is the problem: We are sending so much data that the python program reads, but he also sends them back to the output pipe
         // but since we are currently sending the data, we cannot read it
         // so this means that the output pipe gets filled up and the python program waits to write more
