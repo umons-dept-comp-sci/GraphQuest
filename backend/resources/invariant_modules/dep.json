@@ -3,14 +3,14 @@
   [
     {
         "exec_path": "alpha.py",
-        "names": ["alpha"],
-        "dependencies": ["beta"],
+        "names": ["alpha", "other", "cool"],
+        "dependencies": [],
         "return_type": "integer",
         "input_seperator": "\n"
     },
     {
       "exec_path": "beta.py",
-      "names": ["beta"],
+      "names": ["beta", "x"],
       "dependencies": ["delta"]
     },
     {
@@ -21,12 +21,12 @@
     {
       "exec_path": "theta.py",
       "names": ["theta"],
-      "dependencies": ["beta", "delta"]
+      "dependencies": ["x"]
     },
     {
       "exec_path": "p.py",
       "names": ["python_test"],
-      "dependencies": ["delta", "beta", "alpha", "theta"]
+      "dependencies": ["delta", "beta", "theta"]
     }
   ]
 }

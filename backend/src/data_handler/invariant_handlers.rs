@@ -217,24 +217,26 @@ impl InvariantsExecutable {
 }
 
 
-/// Stores invariants in order to prepare the later computations involving them.
+/// Stores [InvariantsExecutable]s in order to prepare the later computations involving them.
 /// Such as by checking :
 /// * if an invariant was already added
 /// * if one of it's dependencies was not added 
-///
+/// * ...
 /// And can perform a topology sort
 pub struct InvariantsOrderHandler
 {
-    exec_hashmap : HashMap<String, InvariantsExecutable>,
+    name_path_hashmap : HashMap<String, String>,
+    path_exec_hashmap : HashMap<String, InvariantsExecutable>,
     nb_of_exec: usize,
 }
 
 impl InvariantsOrderHandler {
-    /// Creates a new empty [InvariantsHandler]
+    /// Creates a new empty [InvariantsOrderHandler]
     pub fn new() -> Self 
     {
         Self {
-            exec_hashmap: HashMap::new(),
+            name_path_hashmap: HashMap::new(),
+            path_exec_hashmap: HashMap::new(),
             nb_of_exec: 0,
         }
     }
@@ -275,6 +277,11 @@ impl InvariantsOrderHandler {
         handler
     }
 
+    fn get_executable(&self, name: &String) -> &InvariantsExecutable
+    {
+        &self.path_exec_hashmap[&self.name_path_hashmap[name]]
+    }
+
     
 
     /// Adds an [InvariantsExecutable] to the [InvariantsHandler] 
@@ -282,17 +289,18 @@ impl InvariantsOrderHandler {
     {
         for inv_name in &inv.names {
             
-            if self.exec_hashmap.contains_key(inv_name) {
-                panic!("An invariant with the same name \"{inv_name}\" already exists, from the executable : {}", self.exec_hashmap[inv_name].exec_path)
+            if self.name_path_hashmap.contains_key(inv_name) {
+                panic!("The executable \"{}\" has an invariant with the name \"{inv_name}\" that already exists in the executable \"{}\"", inv.exec_path, self.get_executable(inv_name).exec_path)
             }
-            self.exec_hashmap.insert(inv_name.clone(), inv.clone());
+            self.name_path_hashmap.insert(inv_name.clone(), inv.exec_path.clone());
         }
+        self.path_exec_hashmap.insert(inv.exec_path.clone(), inv);
         self.nb_of_exec += 1;
     }
     
-    /// Performs a topological sort with the stored [Invariant]s
+    /// Performs a topological sort with the stored [InvariantsExecutable]s
     /// 
-    /// After this function, the [InvariantsHandler] will go out of scope.
+    /// After this function, the [InvariantsOrderHandler] will go out of scope.
     pub fn get_topological_order(mut self) -> InvariantsExecManager
     {
         // Init the topological sort
@@ -300,53 +308,61 @@ impl InvariantsOrderHandler {
         let mut prev_exec_path : String = String::new();
         // Add nodes
         let mut dependencies: Vec<String>;
-        for (inv_name, inv) in &self.exec_hashmap {
+        let mut exec : &InvariantsExecutable;
+        for (inv_name, inv_path) in &self.name_path_hashmap {
             dependencies = vec![];
-            for dep_name in &inv.dependencies {
+            exec = &self.path_exec_hashmap[inv_path];
+            for dep_name in &exec.dependencies {
                 // Check that the dependency exists
-                if !self.exec_hashmap.contains_key(dep_name.as_str()) {
-                    panic!("The following dependency \"{}\" from the invariant \"{}\", has not been added to this invariantsHandler", dep_name, inv_name);
+                if !self.name_path_hashmap.contains_key(dep_name.as_str()) {
+                    panic!("The following dependency \"{}\" from the exectuable \"{}\", has not been added to this InvariantsOrderHandler", dep_name, exec.exec_path);
                 }
                 if dep_name == inv_name
                 {
-                    panic!("The invariant \"{inv_name}\" cannot depend on itself");
+                    panic!("The executable \"{}\" cannot depend on itself",  exec.exec_path);
                 }
-                dependencies.push(self.exec_hashmap[dep_name].exec_path.clone());
+                dependencies.push(self.get_executable(dep_name).exec_path.clone());
             }
-            if prev_exec_path != inv.exec_path {
-                prev_exec_path = inv.exec_path.clone();
-                topo_sort.insert(inv.exec_path.clone(), dependencies);
+            
+            if prev_exec_path != exec.exec_path {
+                prev_exec_path = exec.exec_path.clone();
+                topo_sort.insert(exec.exec_path.clone(), dependencies);
             }
         }
-        
         // Apply topological sort
         let result_string = match topo_sort.into_vec_nodes() {
             SortResults::Full(nodes) => nodes,
             SortResults::Partial(_) => panic!("A dependency cycle was found for the given invariants, thus making their computations impossible !"),
         };
-
+        
         //let mut result_nodes: Vec<&TopologicalInvariantNode> = vec![];
         let mut res = InvariantsExecManager::new();
         let mut name_index_hash: HashMap<String, u16> = HashMap::new();
         
         println!("{:?}", result_string);
-        let mut inv: InvariantsExecutable;
+        
+        
+        let mut exec: InvariantsExecutable;
         let mut index = 0;
         let mut dep_left: u16;
-        for inv_path in result_string { 
-            name_index_hash.insert( inv_path.clone(),index);    // insert into hashmap for an easy access to his index
+        for inv_path in result_string {
             // Move the ownership of the invariant from the hashmap (by removing it) to the result vector
-            inv = self.exec_hashmap.remove(&inv_path).unwrap();      
+            exec = self.path_exec_hashmap.remove(&inv_path).unwrap();
+
+            for name in &exec.names {
+                name_index_hash.insert( name.clone(),index);    // insert into hashmap for an easy access to his index
+            }
+        
             
             // Add dependencies
-            for dep_name in &inv.dependencies {
+            for dep_name in &exec.dependencies {
                 // By definition of a topological sort,
                 // the dependencies were already added to the hashmap
                 res.add_dep( index, *name_index_hash.get(dep_name).unwrap());
-                
             }
-            dep_left = inv.dependencies.len() as u16;
-            res.add_nodes(inv, dep_left);
+
+            dep_left = exec.dependencies.len() as u16;
+            res.add_nodes(exec, dep_left);
             index += 1;
         }
         res
