@@ -3,30 +3,30 @@
   [
     {
         "exec_path": "alpha.py",
-        "names": ["alpha", "other", "cool"],
+        "names": ["a1", "a2", "a3"],
         "dependencies": [],
         "return_type": "integer",
         "input_seperator": "\n"
     },
     {
       "exec_path": "beta.py",
-      "names": ["beta", "x"],
-      "dependencies": ["delta"]
+      "names": ["b1", "b2"],
+      "dependencies": ["d1"]
     },
     {
       "exec_path": "delta.py",
-      "names": ["delta"],
-      "dependencies": []
+      "names": ["d1"],
+      "dependencies": ["a3", "a1"]
     },
     {
       "exec_path": "theta.py",
-      "names": ["theta"],
-      "dependencies": ["x"]
+      "names": ["t"],
+      "dependencies": []
     },
     {
       "exec_path": "p.py",
-      "names": ["python_test"],
-      "dependencies": ["delta", "beta", "theta"]
+      "names": ["p1"],
+      "dependencies": ["d1", "b1"]
     }
   ]
 }

@@ -357,6 +357,9 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     }
 
 
+
+
+
     
 
     /// Properly closes the worspace
@@ -371,9 +374,8 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     }
     
 
-    pub async fn compute_invariants(db_url: &str, inv_order : InvariantsOrderHandler, threads_available: usize)
+    pub async fn compute_invariants(&self, inv_manager : InvariantsExecManager, process_available: usize)
     {
-        let inv_manager = inv_order.get_topological_order();
-        inv_manager.handle_execution::<T>(threads_available, &db_url).await;
+        inv_manager.handle_process_executions(process_available).await;
     }
 }

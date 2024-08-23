@@ -238,6 +238,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn close_connection(self) {
         self.pool.close().await;
+        
     }
     
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) {

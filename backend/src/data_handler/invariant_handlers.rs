@@ -160,7 +160,7 @@ impl InvariantsExecutable {
             batch_sent += 1;
             nb_of_data -=  min(BATCH_SIZE, nb_of_data); // min used to avoid substraction overflow
         }
-
+        
         println!("finished fetching");
         
         
@@ -339,8 +339,6 @@ impl InvariantsOrderHandler {
         let mut res = InvariantsExecManager::new();
         let mut name_index_hash: HashMap<String, u16> = HashMap::new();
         
-        println!("{:?}", result_string);
-        
         
         let mut exec: InvariantsExecutable;
         let mut index = 0;
@@ -377,7 +375,7 @@ impl InvariantsOrderHandler {
 pub struct InvariantsExecManager
 {
     /// The invariants sorted using a topological sort
-    invariants: Vec<InvariantsExecutable>,
+    executables: Vec<InvariantsExecutable>,
     /// The number of dependence left to execute for each invariants
     dep_left: Vec<u16>,
     /// The index of the invariants relying on a specific invariant
@@ -390,7 +388,7 @@ impl InvariantsExecManager {
     fn new() -> Self
     {
         Self {
-            invariants: vec![],
+            executables: vec![],
             dep_left : vec![],
             dep_index : vec![], 
         }
@@ -399,7 +397,7 @@ impl InvariantsExecManager {
     /// Adds a node to execute after the ones already added
     fn add_nodes(&mut self, inv: InvariantsExecutable, dep_left: u16)
     {
-        self.invariants.push(inv);
+        self.executables.push(inv);
         self.dep_left.push(dep_left);
         self.dep_index.push(vec![]);
     }
@@ -410,18 +408,15 @@ impl InvariantsExecManager {
         self.dep_index[dep_index as usize].push(inv_index);
     }
 
-    /// Handles the execution in a topological order of the invariants by using the provided number of threads 
-    pub async fn handle_execution<'a, T: GraphDatabase<'a>>(mut self, mut threads_available: usize, db_url: &str)
+    /// 
+    pub async fn handle_process_executions(mut self, mut proccess_available: usize)
     {
         let n = self.dep_index.len();
-
-
-        //println!("{}", self.pretty_print_order());
-        if threads_available <= 1 {
-            panic!("At least one thread must be used to work with");
+        if proccess_available < 1 {
+            panic!("At least one proccess must be used to work with");
         }
 
-        // Vector used in order to keep track of what invariants are left to execute
+        // Vector used in order to keep track of what executable are left to execute
         let mut todo : Vec<bool> = {
             let mut tmp: Vec<bool> = vec![];
             for _ in 0..n {
@@ -429,62 +424,42 @@ impl InvariantsExecManager {
             }
             tmp
         };
+        let mut can_exec : Vec<usize>;
+        let mut completed = 0;
+        let mut i;
 
-        // Use of a "Multi-producer, single-consumer" struct in order to communicate with threads
-        let (tx, rx) = mpsc::channel::<u16>();
-        
-        
-        // Min since you can have more threads than process
-        for i in 0..(std::cmp::min(threads_available, self.invariants.len())) {
-            
-            if self.dep_left[i] == 0 {
-                self.start_inv(i, &tx, db_url.to_owned()).await;
-                threads_available -= 1;
-                todo[i] = false;    // i is now being worked on 
-            }
-            // It can sometimes happen that you can start invariants even if they are after 
-            // ones waiting for a dependence, hence the full loop
-        }
-        //println!("Finished to init threads");
-        
-        // Counter of finished tasks
-        let mut finish_count = 0;
-        // When a message is received, it means the thread finished and it sent the index of the finished task
-        for received in &rx {
-            finish_count += 1;
-            //println!("Was finished: {}", received);
-            threads_available += 1;
-            
-            // Because this task is done, we can update the dependencies
-            for d in &self.dep_index[received as usize] {
-                self.dep_left[*d as usize] -= 1;
-            }
-            // Check if some other tasks are now available
-            let mut i = 0;
-            while threads_available > 0 && i < n {
-                if todo[i] && self.dep_left[i] == 0
-                {
-                    threads_available -= 1;
+        while completed < n {
+            can_exec = vec![];
+            i = 0;
+            // Check which tasks can now be executed
+            while i < n && proccess_available > 0
+            {
+                if self.dep_left[i] == 0  && todo[i]{
+                    can_exec.push(i);
+                    proccess_available -= 1;
                     todo[i] = false;
-                    self.start_inv(i, &tx, db_url.to_owned()).await;                    
                 }
                 i += 1;
             }
-            // Check if all tasks are finished or not
-            if finish_count == self.invariants.len() 
-            {
-                break;
+            // execute those tasks
+            println!("executing : {:?}", can_exec);
+            // update dependencies
+            for j in &can_exec {    // for all executed programs
+                proccess_available += 1;
+                completed += 1;
+                for dep_index in &self.dep_index[*j] {   // for all programs currently waiting for this program to finish
+                    self.dep_left[*dep_index as usize] -= 1;   // update them
+                }
             }
-            //println!("state: {:?}", todo);
         }
-    }
 
+    }
    
     /// Start a thread that will execute the invariant located at the given index
     async fn start_inv(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>, db_url: String)
     {
         let tx_copy = mpsc::Sender::clone(original_sender);
-        let inv_copy = self.invariants[inv_index].clone();
+        let inv_copy = self.executables[inv_index].clone();
         
         
         
@@ -502,12 +477,12 @@ impl InvariantsExecManager {
 
 
     /// Gets a formatted string to help show the given topological sort
-    pub fn pretty_print_order(&self) -> String
+    pub fn pretty_string(&self) -> String
     {
         let mut to_print = String::new();
-        for (i, inv) in self.invariants.iter().enumerate() {
+        for (i, inv) in self.executables.iter().enumerate() {
             to_print += inv.to_string().as_str();
-            if i != self.invariants.len()-1 {
+            if i != self.executables.len()-1 {
                 to_print.push_str(" => ");
             }
         }
