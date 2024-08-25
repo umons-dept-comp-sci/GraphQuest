@@ -10,17 +10,16 @@ def get_res(sign):
 
 
 if __name__=="__main__":
-    f = open("tmp.txt", "a")
+    
     count = 0
     sys.stdout.flush()
     for line in sys.stdin:
         signature = line.split(" ")[0]
         signature = signature.split("\n")[0]
-        f.write(str(signature))
-        res = get_res(signature)
-        sys.stdout.write(signature + " " + str(res) + "\n")
+        
+        res = "7"
+        sys.stdout.write(signature + " " + res + "\n")
         count += 1
-    f.write("closing") 
-    f.close()
-
+    
+    
     sys.stdout.write("\n")

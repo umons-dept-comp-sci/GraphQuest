@@ -1,9 +1,9 @@
-use std::{cmp::min, collections::HashMap, fmt::{self, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
+use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
 use std::io::BufReader;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
 
-use crate::db_handler::{graph_database::GraphDatabase, sqlite_handler::SqliteGraphDatabase};
+use crate::db_handler::{graph_database::{GraphDatabase, DATASET_TABLE_NAME}, sqlite_handler::SqliteGraphDatabase};
 
 
 /// The prefix of all the invariant tables 
@@ -24,10 +24,10 @@ pub struct InvariantsExecutable {
     /// The path to the file to execute.
     /// 
     /// Can be either a relative or absolute path
-    exec_path: String,
+    pub exec_path: String,
 
     /// The name of the computed invariants in the returned order
-    names: Vec<String>,
+    pub names: Vec<String>,
 
     /// The vector of dependencies requiered to compute this invariant.
     /// A dependency can be either :
@@ -60,6 +60,11 @@ impl Display for InvariantsExecutable {
     }
 }
 
+impl Debug for InvariantsExecutable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InvExec").field("exec_path", &self.exec_path).finish()
+    }
+}
 
 impl Clone for InvariantsExecutable {
     fn clone(&self) -> Self {
@@ -121,99 +126,6 @@ impl InvariantsExecutable {
     {
         INVARIANT_PREFIX.to_string() + name
     }
-
-    /// Compute the invariant and stores result in the database
-    pub async fn exec_inv<'a, T: GraphDatabase<'a>>(&self, db: &T)
-    {
-        // get min size
-
-        let mut nb_of_data = 
-        {
-            let mut table_vec:Vec<String> = vec![];
-            for inv_name in &self.dependencies {
-                table_vec.push(Self::get_table_name_from_string(inv_name));
-            }
-            db.get_min_dependency_size(&table_vec).await
-        };
-
-        let mut batch_sent = 0;
-        while nb_of_data > 0 {
-            let mut ex_inv = Command::new(format!("{}", self.exec_path))
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::piped())
-                                    .spawn().unwrap();
-            
-            let stdin = ex_inv.stdin.take().unwrap();
-
-            db.fetch_data(Some(batch_sent * BATCH_SIZE), Some(BATCH_SIZE), vec![], &stdin).await.unwrap();
-
-            drop(stdin); // forces stdin of program to stop reading so we can read the stdout of it
-            
-            {
-                let stdout = ex_inv.stdout.as_mut().unwrap();
-                let stdout_reader = BufReader::new(stdout);
-                
-                db.push_data_from_buffer(self, stdout_reader).await;
-                
-                drop(ex_inv);
-            }
-            batch_sent += 1;
-            nb_of_data -=  min(BATCH_SIZE, nb_of_data); // min used to avoid substraction overflow
-        }
-        
-        println!("finished fetching");
-        
-        
-        //FIXME Here is the problem: We are sending so much data that the python program reads, but he also sends them back to the output pipe
-        // but since we are currently sending the data, we cannot read it
-        // so this means that the output pipe gets filled up and the python program waits to write more
-        // but since he is waiting, and can't read what we are sending
-        // therefore the stdin pipe also gets full
-        // i.e. deadlock  
-
-                  
-        //println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
-    
-        
-    }
-    // Copy of function
-    /*
-    pub async fn exec_inv<'a, T: GraphDatabase<'a>>(&self, db: &T)
-    {
-        // executes the given invariant
-        //let to_pipe = Command::new(format!("rev"))
-        //            .stdout(Stdio::piped())
-        //            .spawn()
-        //            .unwrap();
-        //
-        //let mut out_to_in = to_pipe.stdin.unwrap();
-
-
-        
-        
-        db.fetch_dataset_signatures(None, out_to_in).await;
-        let mut ex_inv = Command::new(format!("{}", self.exec_path))
-                            .stdin(Stdio::from(to_pipe.stdout.unwrap()))
-                            .spawn().unwrap();
-         
-
-        {
-            let stdout = ex_inv.stdout.as_mut().unwrap();
-            let stdout_reader = BufReader::new(stdout);
-            for line in stdout_reader.lines() {
-                if let Ok(sign) = line {
-                    println!("Just read : {:?}", sign);
-                }
-            }
-        }
-
-        ex_inv.wait().unwrap();
-                  
-        //println!("FOO: {}", String::from_utf8_lossy(&ex_inv.stdout));
-    
-        
-    }
-     */
 }
 
 
@@ -409,13 +321,14 @@ impl InvariantsExecManager {
     }
 
     /// 
-    pub async fn handle_process_executions(mut self, mut proccess_available: usize)
+    pub async fn handle_process_executions<'a, T: GraphDatabase<'a>>(mut self, db: &T, mut proccess_available: usize)
     {
         let n = self.dep_index.len();
         if proccess_available < 1 {
             panic!("At least one proccess must be used to work with");
         }
-
+        
+        
         // Vector used in order to keep track of what executable are left to execute
         let mut todo : Vec<bool> = {
             let mut tmp: Vec<bool> = vec![];
@@ -442,7 +355,18 @@ impl InvariantsExecManager {
                 i += 1;
             }
             // execute those tasks
-            println!("executing : {:?}", can_exec);
+            let task_copy = {
+                let mut tmp: Vec<InvariantsExecutable> = vec![];
+                for i in &can_exec {
+                    tmp.push(self.executables[*i].clone());
+                }
+                tmp
+            };
+            let groups = Self::group_by_dependencies(task_copy);
+            
+            Self::exec_invariants(groups, db).await;
+            
+
             // update dependencies
             for j in &can_exec {    // for all executed programs
                 proccess_available += 1;
@@ -454,26 +378,133 @@ impl InvariantsExecManager {
         }
 
     }
-   
-    /// Start a thread that will execute the invariant located at the given index
-    async fn start_inv(&self, inv_index: usize, original_sender: &mpsc::Sender<u16>, db_url: String)
-    {
-        let tx_copy = mpsc::Sender::clone(original_sender);
-        let inv_copy = self.executables[inv_index].clone();
-        
-        
-        
-        //let db = Arc::new(RwLock::new(T::connect_graph_database(&db_url.clone()).await));
-        
-        //let tmp = SqliteGraphDatabase::connect_graph_database(&db_url).await;
-        // Create (if it wasn't already added) the invariant in the database
-        //tmp.init_invariant(&inv_copy).await;
-        
-        tx_copy.send(inv_index as u16).unwrap();
 
-        //tmp.close_connection().await;
+    /// Group all invariant executable using their dependencies 
+    fn group_by_dependencies(mut inv_executables: Vec<InvariantsExecutable>) -> Vec<Vec<InvariantsExecutable>>
+    {
+        let mut res: Vec<Vec<InvariantsExecutable>> = vec![];
         
+        let mut i = 0;
+        let mut groups = {
+            let mut tmp: Vec<usize> = vec![];
+            
+            for _ in 0..inv_executables.len()
+            {
+                tmp.push(inv_executables.len());
+            }
+
+            tmp
+        };
+        let mut current_group = 0;
+
+        while i < inv_executables.len() {
+            // if not yet grouped
+            if groups[i] == inv_executables.len() {
+                // new group formed
+                res.push(vec![]);
+                groups[i] = current_group;
+                let mut j = i + 1;
+                while j < inv_executables.len() {
+                    // if not yet grouped (if has been grouped we don't compare their dependency vectors)
+                    // and if they have the same dependecy vectors, we can group them 
+                    
+                    if groups[j] == inv_executables.len() && &inv_executables[i].dependencies == &inv_executables[j].dependencies {
+                        groups[j] = current_group;
+                    }
+                    j += 1;
+                }
+                current_group += 1; 
+            }
+            
+            i += 1;
+        }
+        
+        for i in (0..(inv_executables.len())).rev()
+        {
+            let exec = inv_executables.pop().unwrap();
+            // push exec to correct group
+            res[groups[i]].push(exec);
+        }
+        
+        
+        res
     }
+   
+
+    
+    
+    /// Compute the invariant and stores result in the database
+    pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(grouped_exec: Vec<Vec<InvariantsExecutable>>, db: &T)
+    {
+        // get min size
+        
+        let mut nb_of_data = 
+        {
+            //let mut table_vec:Vec<String> = vec![];
+            //for inv_name in &self.dependencies {
+                //    table_vec.push(InvariantsExecutable::get_table_name_from_string(inv_name));
+                //}
+                //db.get_min_dependency_size(&table_vec).await
+            db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap()
+        };
+        
+        
+        fn exec_command(exec: &InvariantsExecutable) -> Child 
+        { 
+            Command::new(format!("{}", exec.exec_path))
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .spawn().unwrap()
+        }
+
+        
+        let mut current_data = 0;
+
+        while nb_of_data > current_data
+        {
+            let mut stdout_vec: Vec<Vec<ChildStdout>> = vec![];
+            
+            // Push data
+            for group in &grouped_exec {
+                let mut stdout_tmp: Vec<ChildStdout> = vec![];
+                // We suppose that there is always at least one invariantsExecutable per group
+                
+                let mut stdin_vec: Vec<ChildStdin> = vec![];
+                
+                // Starts proccesses
+                for exec in group {
+                    let mut command = exec_command(exec); 
+                    stdin_vec.push(command.stdin.take().unwrap());
+                    stdout_tmp.push(command.stdout.take().unwrap());
+                }
+                stdout_vec.push(stdout_tmp);
+
+                // Write data to the database, and close the stdins 
+                db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, stdin_vec).await.unwrap();
+            }
+
+            // Read data
+            
+            for i in (0..stdout_vec.len()).rev() {
+                let mut stdout_v = stdout_vec.pop().unwrap();
+                for s in (0..stdout_v.len()).rev() {
+                    let stdout = stdout_v.pop().unwrap();
+                    let buf_read = BufReader::new(stdout);
+                    let exec: &InvariantsExecutable = &grouped_exec[i][s];
+                    println!("read data from buffer");
+                    db.push_data_from_buffer(exec, buf_read).await;
+                }
+            }
+            //println!("{:?}", stdout_vec);
+            current_data += BATCH_SIZE;
+        }        
+    }
+
+
+
+
+
+
 
 
     /// Gets a formatted string to help show the given topological sort

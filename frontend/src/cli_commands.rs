@@ -35,12 +35,10 @@ pub enum Modes {
     /// Compute invariants from a dataset
     Compute {
         #[command(flatten)]
+        programs : ComputeChoice,
+        #[command(flatten)]
         path : DatabasePath,
-        #[clap(default_value = "None")]
-        dependencies_file: std::path::PathBuf,
-        /// The list of programs to call
-        #[clap(long, short, value_parser, num_args = 1.., value_delimiter = ' ')]
-        programs: Vec<std::path::PathBuf>,
+        
     },
     /// Delete a table from a dataset
     Delete {
@@ -94,8 +92,6 @@ pub struct GengArgs {
     #[clap(long, short)]
     pub params : Option<String>,
 }
-   
-
 
 
 #[derive(Subcommand, Debug, Clone)]
@@ -131,4 +127,17 @@ struct  DatabaseInfoPath {
     /// The path or url to the database to access
     #[clap(short,long)]
     pub database_path_url: String,
+}
+
+
+#[derive(Debug, clap::Args, Clone)]
+#[group(required = true, multiple = false)] 
+pub struct ComputeChoice
+{
+    /// The file containing all the programs to execute and their dependencies   
+    #[clap(long, short)]
+    pub dependencies_file: Option<String>,
+    /// The list of programs to call
+    #[clap(long, short, value_parser, num_args = 1.., value_delimiter = ' ')]
+    pub programs: Vec<String>,
 }

@@ -124,23 +124,9 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     
     
-    async fn add_values_to_dataset(&self, signatures: &Vec<String>) {
-        // Then we add all signatures to the newly created table
-        let mut query = format!("INSERT INTO {DATASET_TABLE_NAME} VALUES ");
-        // Add all value to the query
-        for sign in signatures
-        {
-            query.push_str(format!("(\"{sign}\"),").as_str());
-        }
-        query.pop();        // remove the extra ','
-        query.push_str(";");
-        println!("query: {:?}", query);
-        panic!();
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, inv_names_to_join: Vec<String>, mut input: &ChildStdin) -> Result<(), TableNotFoundError>
+    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: Vec<ChildStdin>) -> Result<(), TableNotFoundError>
     {
+
         // Represents the query where we fetch the desired signatures
         let signatures_query = {
             let start = match start_index {
@@ -157,15 +143,15 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             
             tmp
         };
-
+        
         // Represents the query where we join the desired invariant tables
         let join_query_res: Result<String, TableNotFoundError> = {
             let mut tmp = format!("SELECT * FROM ({})", signatures_query);
             let mut inv_name;
-            for name in inv_names_to_join {
+            for name in dependencies_to_join {
                 inv_name = InvariantsExecutable::get_table_name_from_string(&name);
                 if let Err(t) = self.get_size_of_table(&inv_name).await {
-                   return Err(t);
+                    return Err(t);
                 }
                 tmp.push_str(format!(" INNER JOIN {} USING ({})", inv_name, DATASET_PK_NAME).as_str());
             }
@@ -175,20 +161,25 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         if let Err(t) = join_query_res{
             return Err(t);
         }
-
+        
         let join_query = join_query_res.unwrap();
         
+        println!("::->{}", join_query);
         
         // execute query
         let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&join_query).fetch(&self.pool);
+        
         // push result to the given stdout
         while let Some(res) = que_res.next().await
         {
             if let Ok(mut sign) = res 
             {
-                //println!("pushing sign: {}", sign);
+                
                 sign.push('\n');
-                input.write(sign.as_bytes()).unwrap();
+                // write in all inputs
+                for input in &mut inputs {
+                    input.write(sign.as_bytes()).unwrap();
+                }
             }
         }   
         Ok(())
@@ -226,7 +217,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
         query.pop();        // remove the extra ','
         query.push_str(";");
-        println!("query: {:?}", query);
+        
         // Try to push data
         if let Err(e) = sqlx::query(&query).execute(&self.pool).await
         {
@@ -259,26 +250,24 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
 
     //_________________________________INVARIANTS_______________________________________________________________________________
     
-    async fn create_invariant_table(&self, invariant: &InvariantsExecutable) {
-        // FIXME
-        //let query = format!("CREATE TABLE {} (
-        //                            {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
-        //                            value {}
-        //                        ); ", invariant.get_table_name(), SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
-        //sqlx::query(&query).execute(&self.pool).await.unwrap();
+    async fn create_invariant_table(&self, inv: &String) {
+        let query = format!("CREATE TABLE {} (
+                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
+                                    value {}); ", 
+                                    InvariantsExecutable::get_table_name_from_string(inv),
+                                    SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
+        sqlx::query(&query).execute(&self.pool).await.unwrap();
     }
     
-    async fn inv_already_added(&self, inv: &InvariantsExecutable) -> bool {
+    async fn inv_already_added(&self, inv: &String) -> bool {
+        let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", InvariantsExecutable::get_table_name_from_string(inv));
+        let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
 
-        // FIXME
-        //let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", inv.get_table_name());
-        //let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
-//
-        //match res {
-        //    Ok(count) => count == 1,
-        //    Err(e) => {react_to_database_error(&e); false},
-        //}
-        todo!()
+        match res {
+            Ok(count) => count == 1,
+            Err(e) => {react_to_database_error(&e); false},
+        }
+
     }
     
     async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError> {
@@ -306,12 +295,6 @@ impl<'a> SqliteGraphDatabase<'a> {
     fn _get_pool(&self) -> &Pool<Sqlite>
     {
         &self.pool
-    }
-
-
-    async fn kill_me(&self) -> Self
-    {
-        todo!()
     }
 }
 

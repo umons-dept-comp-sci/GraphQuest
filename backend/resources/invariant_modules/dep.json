@@ -21,7 +21,7 @@
     {
       "exec_path": "theta.py",
       "names": ["t"],
-      "dependencies": []
+      "dependencies": ["a3", "a1"]
     },
     {
       "exec_path": "p.py",

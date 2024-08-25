@@ -54,7 +54,7 @@ pub trait DBColumnTypes
     fn get_integer_column() -> Self;
 } 
 
-// TODO perhaps it would be usefull to specify the return value as a Result<..> ?
+
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
 pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send 
@@ -89,7 +89,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn create_dataset_table(&self);
 
 
-    async fn add_values_to_dataset(&self, signatures: &Vec<String>);
+    
 
     /// Adds a metadata table to the database that will be used to store all initial signatures.
     /// 
@@ -129,7 +129,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// ## Exceptions
     /// Must panic when:
     /// * The given indexes are not valid
-    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: Vec<String>, input: &ChildStdin) -> Result<(), TableNotFoundError>;
+    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: Vec<ChildStdin>) -> Result<(), TableNotFoundError>;
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -183,39 +183,53 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         }
     }
 
-    /// Push received data to an invariant table
-    async fn push_data_from_buffer(&self, inv: &InvariantsExecutable, reader: impl BufRead)
+    /// Push received data to the invariants table
+    async fn push_data_from_buffer(&self, inv_exec: &InvariantsExecutable, reader: impl BufRead)
     {
-        // FIXME
-        let mut signature_value_buffer : Vec<(String, String)> = Vec::new();
+        // we use a vector of vec in order to store each (signature, value) for each computed invariants
+        let mut signature_value_buffer : Vec<Vec<(String, String)>> = Vec::new();
         
+        for _ in 0..inv_exec.names.len() {
+            signature_value_buffer.push(vec![]);
+        }
+
+
         let mut notif_countdown = 1;
         let mut byte_buffer: u64 = 0;
+
+        // if the invariants were not already added
+        for inv in &inv_exec.names {
+            self.init_invariant(inv).await;
+        }
+
+
         for line in reader.lines() {
             
             if let Ok(sign_value) = line {
-                
-                byte_buffer += (sign_value.len() + 1) as u64; // Count bytes read, (+ 1 because we also read the '\n' char)
-                let (sign, value) = {
-                    let v: Vec<&str> = sign_value.split_ascii_whitespace().collect();
-                    if v.len() > 2 {
-                        panic!("Read {} values on a line, expected 2: (signature value)", v.len());
+                //println!("Reading : {sign_value}");
+                if sign_value != "\n" && sign_value != "" {
+                    byte_buffer += (sign_value.len() + 1) as u64; // Count bytes read, (+ 1 because we also read the '\n' char)
+                    
+                    
+                    let values: Vec<&str> = sign_value.split_ascii_whitespace().collect(); // TODO We could change the split char with something else
+                    if values.len() != inv_exec.names.len() + 1 {
+                        panic!("Expected {} values from the executable \"{}\" but only read {}: {:?}", inv_exec.names.len() + 1, inv_exec.exec_path, values.len(), sign_value);
                     }
-                    if v.len() == 0
-                    {
-                        break;
+                    // Store data in the
+                    for i in 0..values.len()-1 {
+                        // Add a signature and the value to the corresponding table
+                        signature_value_buffer[i].push((values[0].to_string(), values[i+1].to_string()));   
                     }
-                    (v[0].to_string(), v[1].to_string())
-                };
-                
-                signature_value_buffer.push((sign,value));
+                }
             }else {
                 panic!("Could not read next buffer line");
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                //self.add_values_to_table(&inv.get_table_name(), &signature_value_buffer).await; // add already stored signatures to the database
-                signature_value_buffer.clear();   // free the *buffer*
+                for (i, inv) in inv_exec.names.iter().enumerate() {
+                    self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                    signature_value_buffer[i].clear();   // free the *buffer*
+                }
             }
             notif_countdown -= 1;   // Update countdown
             // If it is time to notify the observor
@@ -228,7 +242,10 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         if signature_value_buffer.len() != 0
         {                
             self.update_observator(byte_buffer);   // Last notifications
-            //self.add_values_to_table(&inv.get_table_name(), &signature_value_buffer).await;  // add remaining values to the database
+            for (i, inv) in inv_exec.names.iter().enumerate() {
+                self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                signature_value_buffer[i].clear();   // free the *buffer*
+            }
         }
     }
 
@@ -239,7 +256,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
 
     /// Creates the given invariant table and adds it to the meta data table,
     /// if it wasn't already added
-    async fn init_invariant(&self, inv: &InvariantsExecutable)
+    async fn init_invariant(&self, inv: &String)
     {
         if !self.inv_already_added(inv).await
         {
@@ -247,13 +264,12 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             // TODO, by default we use an int but we do need to check the return type of this invariant
             self.create_invariant_table(inv).await;
             // Add Metadata line
-            // FIXME
-            //self.update_meta_data(&inv.get_table_name(), 0).await;
+            self.update_meta_data(&InvariantsExecutable::get_table_name_from_string(inv), 0).await;
         }
     }
 
     /// Checks if the invariant was already added to the database
-    async fn inv_already_added(&self, inv: &InvariantsExecutable) -> bool;
+    async fn inv_already_added(&self, inv: &String) -> bool;
     
     /// Adds an table to the database to later store the value of an invariant for each graph of the database.
     /// 
@@ -273,7 +289,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// ## Exceptions
     /// Must panic when:
     /// * The given table name is already used
-    async fn create_invariant_table(&self, invariant: &InvariantsExecutable);
+    async fn create_invariant_table(&self, invariant: &String);
 
 
     /// Simply returns the length of the table with the given name
@@ -370,12 +386,12 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
     pub async fn test(&self, inv: &InvariantsExecutable)
     {
-        inv.exec_inv(&self.db).await;
+        //inv.exec_invariants(&self.db).await;
     }
     
 
     pub async fn compute_invariants(&self, inv_manager : InvariantsExecManager, process_available: usize)
     {
-        inv_manager.handle_process_executions(process_available).await;
+        inv_manager.handle_process_executions(&self.db, process_available).await;
     }
 }
