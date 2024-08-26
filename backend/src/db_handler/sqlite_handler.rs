@@ -47,7 +47,7 @@ impl DBColumnTypes for SqliteColumnType {
 pub struct SqliteGraphDatabase<'a>
 {
     pool: Pool<Sqlite>,
-    obs: Vec<&'a dyn Observer>
+    obs: Option<&'a dyn Observer>
 }
 
 unsafe impl<'a> Send for SqliteGraphDatabase<'a> {}
@@ -60,22 +60,22 @@ impl<'a> Clone for SqliteGraphDatabase<'a> {
 
 impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
     fn set_graph_db_observer(&mut self, obs: &'a dyn Observer) {
-        self.obs.push(obs);
+        self.obs = Some(obs);
     }
 
     fn remove_graph_db_observer(&mut self) {
-        self.obs = vec![];
+        self.obs = None;
     }
 
-    fn update_observator(&self, progression: u64) {
-        if self.obs.len() != 0 {
-            self.obs[0].notify_data_pushed(progression);
+    fn update_observator(&self, progression: u64, index: Option<usize>) {
+        if let Some(o) = self.obs {
+            o.notify_data_pushed(progression, index);
         }
     }
     
-    fn tick_observator(&self) {
-        if self.obs.len() != 0 {
-            self.obs[0].notify_tick();
+    fn tick_observator(&self, index: Option<usize>) {
+        if let Some(o) = self.obs {
+            o.notify_tick(index);
         }
     }
 }
@@ -98,7 +98,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                     panic!("The given database url is not valid")
                 }
             },
-            obs : Vec::new()
+            obs : None
         };
         
         db
@@ -164,7 +164,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
         let join_query = join_query_res.unwrap();
         
-        println!("::->{}", join_query);
+        //println!("::->{}", join_query);
         
         // execute query
         let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&join_query).fetch(&self.pool);
@@ -199,7 +199,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                     panic!("The given database url is not valid")
                 }
             },
-            obs: Vec::new()
+            obs: None
         }
         // TODO Check if the workspace is valid, if it wasn't tempered with
     }
@@ -272,7 +272,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError> {
         let query = format!("SELECT count({}) FROM {};", DATASET_PK_NAME, name);
-        println!("query: {:?}", &query);
+        //println!("query: {:?}", &query);
 
         let res: Result<u64, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
 
@@ -339,7 +339,7 @@ pub async fn connect_graph_database<'a>(db_path : & str) -> SqliteGraphDatabase<
                 panic!("The given database path is not valid")
             }
         },
-        obs: Vec::new(), 
+        obs: None, 
     }
 }
 

@@ -21,7 +21,7 @@ pub async fn init(path: DatabasePath, choice: DatasetChoice)
     // Create workspace
     
     // pb lifeline must end with workspace's !
-    let mut pb = DatasetPbObs::create();
+    let mut pb = DatasetPbObs::new();
     
     let mut wp : Workspace<SqliteGraphDatabase> = Workspace::init_workspace(&path.url).await;
 
@@ -39,7 +39,7 @@ pub async fn add(path: DatabasePath, choice: DatasetChoice)
 {
     // Connect to workspace
     info!("Connecting to database at path : {:?}", path.url);
-    let mut pb = DatasetPbObs::create();
+    let mut pb = DatasetPbObs::new();
     let mut wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
     info!("Connected to database");
     match_import_data(&mut wp, choice, &mut pb).await;
@@ -143,7 +143,7 @@ async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args:
     for order in iterator 
     {
         wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_bound: edges }, progress_bar ).await;
-        progress_bar.notify_iteration();    // Update progress bar
+        progress_bar.notify_iteration(None);    // Update progress bar
     }
     
 } 

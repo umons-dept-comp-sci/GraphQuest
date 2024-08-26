@@ -2,7 +2,7 @@ use std::{cmp::min, thread::sleep, time::Duration};
 
 use clap_verbosity_flag::*;
 use gquest_core::utils::subject::*;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 
 
@@ -37,6 +37,79 @@ pub fn startup_log<T: LogLevel>(verb: Verbosity<T>)
     
 }
 
+pub struct ExecutableGroupObs 
+{
+    multi_progress: MultiProgress,
+    pb_vec: Vec<DatasetPbObs>
+}
+
+impl ExecutableGroupObs {
+    pub fn new() -> Self
+    {
+        let multi_progress = MultiProgress::new();
+        let pb_vec: Vec<DatasetPbObs> = vec![];
+
+        Self {
+            multi_progress,
+            pb_vec
+        }
+    }
+
+    /// Clears, initialises and hides the progress bars
+    pub fn change_settings(&mut self, dataset_length: usize, inv_execs_path: Vec<String>)
+    {
+        self.multi_progress.clear().unwrap();
+        self.pb_vec.clear();
+        for name in inv_execs_path {
+            let pb = self.multi_progress.add(ProgressBar::new(dataset_length as u64));
+            // hide progress bar
+            pb.set_draw_target(ProgressDrawTarget::hidden());
+            let dataset_obs = DatasetPbObs::new_from_pb(pb, ProgressBarType::Download, name);
+            self.pb_vec.push(dataset_obs);
+        }
+    }
+
+    /// Unhides the progress bars
+    pub fn start(&self)
+    {
+        for pb in &self.pb_vec {
+            if let Some(p) = &pb.progress_bar
+            {
+                p.set_draw_target(ProgressDrawTarget::stdout());
+            }
+        }
+    }
+}
+
+impl Observer for ExecutableGroupObs {
+    fn notify_tick(&self, index: Option<usize>) {
+        if let Some(i) = index {    
+            self.pb_vec[i].notify_tick(None);
+        }
+        else {
+            // tick all of them
+            for pb in &self.pb_vec {
+                pb.notify_tick(None);
+            }
+        }
+    }
+
+    fn notify_data_pushed(&self, progression: u64, index: Option<usize>) {
+        if let Some(i) = index {
+            
+            self.pb_vec[i].notify_data_pushed(progression, None);
+            
+        }
+    }
+
+    fn notify_iteration(&self, index: Option<usize>) {
+        if let Some(i) = index {
+            self.pb_vec[i].notify_tick(None);
+        }
+    }
+}
+
+
 /// An observer that tracks the progression of the dataset
 pub struct DatasetPbObs
 {
@@ -49,13 +122,13 @@ pub struct DatasetPbObs
 
 impl Observer for DatasetPbObs {
     
-    fn notify_tick(&self) {
+    fn notify_tick(&self, _: Option<usize>) {
         if let Some(pb) = &self.progress_bar {
             pb.tick();  // Simply update without progressing
         }
     }
     
-    fn notify_data_pushed(&self, progression: u64) {
+    fn notify_data_pushed(&self, progression: u64, _: Option<usize>) {
         if let Some(pb) = &self.progress_bar
         {
             // If the read data is what is observed, then update the bar
@@ -70,7 +143,7 @@ impl Observer for DatasetPbObs {
         }
     }
     
-    fn notify_iteration(&self) {
+    fn notify_iteration(&self, _: Option<usize>) {
         if let Some(pb) = &self.progress_bar {
             increase_progress_bar(pb, 1);
         }
@@ -81,13 +154,28 @@ impl Observer for DatasetPbObs {
 impl DatasetPbObs {
     
     /// Creates a dataset process by creating a progress bar with a defined style and the given len
-    pub fn create() -> Self {
-
-        
+    pub fn new() -> Self 
+    {        
         Self {
             progress_bar : None,
             bar_type : None
         }
+    }
+    
+    fn new_from_pb(pb: ProgressBar, bar_type: ProgressBarType, message: String) -> Self 
+    {
+
+        let sty = ProgressStyle::with_template(&bar_type.to_string())
+            .unwrap()
+            .progress_chars("#|-");
+        pb.set_style(sty.clone());
+        pb.set_message(message);
+        
+        Self {
+            progress_bar : Some(pb),
+            bar_type : Some(bar_type),
+        }
+
     }
 
     /// Starts the progress bar using the given parameters

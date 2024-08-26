@@ -163,7 +163,7 @@ impl InvariantsOrderHandler {
         let mut handler = Self::new();
         let p = Path::new(&path);
         let f = File::open(p).expect(format!("The given dependency file path (\"{path}\") is not valid").as_str());
-        println!("{:?}", p.parent());
+        //println!("{:?}", p.parent());
         
         let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
         let mut inv_path: &Path;
@@ -189,11 +189,24 @@ impl InvariantsOrderHandler {
         handler
     }
 
+    /// Returns the executable that produces the invariant with the given name
     fn get_executable(&self, name: &String) -> &InvariantsExecutable
     {
         &self.path_exec_hashmap[&self.name_path_hashmap[name]]
     }
+ 
 
+    /// Returns all file names of the currently stored executables
+    pub fn get_all_file_names(&self) -> Vec<String>
+    {
+        let mut res: Vec<String> = vec![];
+
+        for p in self.path_exec_hashmap.keys() {
+            let path = Path::new(p);
+            res.push(String::from(path.file_name().unwrap().to_str().unwrap()));
+        }
+        res
+    }
     
 
     /// Adds an [InvariantsExecutable] to the [InvariantsHandler] 
@@ -320,14 +333,15 @@ impl InvariantsExecManager {
         self.dep_index[dep_index as usize].push(inv_index);
     }
 
-    /// 
-    pub async fn handle_process_executions<'a, T: GraphDatabase<'a>>(mut self, db: &T, mut proccess_available: usize)
+    /// Groups all [InvariantsExecutable] by their dependencies and the number of simultaneous processes
+    pub fn group_process_executions(mut self, mut proccess_available: usize) -> Vec<InvariantExecGroup>
     {
         let n = self.dep_index.len();
         if proccess_available < 1 {
             panic!("At least one proccess must be used to work with");
         }
         
+        let mut res: Vec<InvariantExecGroup> = vec![];
         
         // Vector used in order to keep track of what executable are left to execute
         let mut todo : Vec<bool> = {
@@ -364,8 +378,8 @@ impl InvariantsExecManager {
             };
             let groups = Self::group_by_dependencies(task_copy);
             
-            Self::exec_invariants(groups, db).await;
-            
+            //Self::exec_invariants(groups, db).await;
+            res.push(groups);
 
             // update dependencies
             for j in &can_exec {    // for all executed programs
@@ -376,13 +390,14 @@ impl InvariantsExecManager {
                 }
             }
         }
+        res
 
     }
 
     /// Group all invariant executable using their dependencies 
-    fn group_by_dependencies(mut inv_executables: Vec<InvariantsExecutable>) -> Vec<Vec<InvariantsExecutable>>
+    fn group_by_dependencies(mut inv_executables: Vec<InvariantsExecutable>) -> InvariantExecGroup
     {
-        let mut res: Vec<Vec<InvariantsExecutable>> = vec![];
+        let mut res = InvariantExecGroup::new();
         
         let mut i = 0;
         let mut groups = {
@@ -401,7 +416,7 @@ impl InvariantsExecManager {
             // if not yet grouped
             if groups[i] == inv_executables.len() {
                 // new group formed
-                res.push(vec![]);
+                res.group.push(vec![]);
                 groups[i] = current_group;
                 let mut j = i + 1;
                 while j < inv_executables.len() {
@@ -423,7 +438,7 @@ impl InvariantsExecManager {
         {
             let exec = inv_executables.pop().unwrap();
             // push exec to correct group
-            res[groups[i]].push(exec);
+            res.group[groups[i]].push(exec);
         }
         
         
@@ -432,9 +447,42 @@ impl InvariantsExecManager {
    
 
     
-    
+
+    /// Gets a formatted string to help show the given topological sort
+    pub fn pretty_string(&self) -> String
+    {
+        let mut to_print = String::new();
+        for (i, inv) in self.executables.iter().enumerate() {
+            to_print += inv.to_string().as_str();
+            if i != self.executables.len()-1 {
+                to_print.push_str(" => ");
+            }
+        }
+        to_print
+    }
+
+     
+}
+
+
+pub struct InvariantExecGroup
+{
+    group: Vec<Vec<InvariantsExecutable>>
+}
+
+
+impl InvariantExecGroup {
+
+    fn new() -> InvariantExecGroup
+    {
+        Self {
+            group: vec![]
+        }
+    }
+
+
     /// Compute the invariant and stores result in the database
-    pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(grouped_exec: Vec<Vec<InvariantsExecutable>>, db: &T)
+    pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&self, db: &T)
     {
         // get min size
         
@@ -465,7 +513,7 @@ impl InvariantsExecManager {
             let mut stdout_vec: Vec<Vec<ChildStdout>> = vec![];
             
             // Push data
-            for group in &grouped_exec {
+            for group in &self.group {
                 let mut stdout_tmp: Vec<ChildStdout> = vec![];
                 // We suppose that there is always at least one invariantsExecutable per group
                 
@@ -490,33 +538,28 @@ impl InvariantsExecManager {
                 for s in (0..stdout_v.len()).rev() {
                     let stdout = stdout_v.pop().unwrap();
                     let buf_read = BufReader::new(stdout);
-                    let exec: &InvariantsExecutable = &grouped_exec[i][s];
-                    println!("read data from buffer");
-                    db.push_data_from_buffer(exec, buf_read).await;
+                    let exec: &InvariantsExecutable = &self.group[i][s];
+                    
+                    db.push_data_from_buffer(exec, s, buf_read).await;
                 }
             }
-            //println!("{:?}", stdout_vec);
+            
+            
             current_data += BATCH_SIZE;
         }        
     }
 
 
-
-
-
-
-
-
-    /// Gets a formatted string to help show the given topological sort
-    pub fn pretty_string(&self) -> String
+    /// Returns all file names of the currently stored executables
+    pub fn get_group_file_names(&self) -> Vec<String>
     {
-        let mut to_print = String::new();
-        for (i, inv) in self.executables.iter().enumerate() {
-            to_print += inv.to_string().as_str();
-            if i != self.executables.len()-1 {
-                to_print.push_str(" => ");
-            }
-        }
-        to_print
+       let mut res: Vec<String> = vec![];
+       for vec in &self.group {
+           for exec in vec{
+               let path = Path::new(&exec.exec_path);
+               res.push(String::from(path.file_name().unwrap().to_str().unwrap()));
+           }
+       }
+       res
     }
 }

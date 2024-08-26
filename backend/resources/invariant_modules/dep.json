@@ -11,7 +11,7 @@
     {
       "exec_path": "beta.py",
       "names": ["b1", "b2"],
-      "dependencies": ["d1"]
+      "dependencies": ["a3"]
     },
     {
       "exec_path": "delta.py",

@@ -171,20 +171,20 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             notif_countdown -= 1;   // Update countdown
             // If it is time to notify the observor
             if notif_countdown == 0 {
-                self.update_observator(byte_buffer);   
+                self.update_observator(byte_buffer, None);   
                 notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
                 byte_buffer = 0;
             }
         }
         if signature_value_buffer.len() != 0
         {                
-            self.update_observator(byte_buffer);   // Last notifications
+            self.update_observator(byte_buffer, None);   // Last notifications
             self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await;  // add remaining values to the database
         }
     }
 
     /// Push received data to the invariants table
-    async fn push_data_from_buffer(&self, inv_exec: &InvariantsExecutable, reader: impl BufRead)
+    async fn push_data_from_buffer(&self, inv_exec: &InvariantsExecutable, index_in_group: usize, reader: impl BufRead)
     {
         // we use a vector of vec in order to store each (signature, value) for each computed invariants
         let mut signature_value_buffer : Vec<Vec<(String, String)>> = Vec::new();
@@ -192,11 +192,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         for _ in 0..inv_exec.names.len() {
             signature_value_buffer.push(vec![]);
         }
-
-
-        let mut notif_countdown = 1;
-        let mut byte_buffer: u64 = 0;
-
         // if the invariants were not already added
         for inv in &inv_exec.names {
             self.init_invariant(inv).await;
@@ -208,9 +203,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             if let Ok(sign_value) = line {
                 //println!("Reading : {sign_value}");
                 if sign_value != "\n" && sign_value != "" {
-                    byte_buffer += (sign_value.len() + 1) as u64; // Count bytes read, (+ 1 because we also read the '\n' char)
-                    
-                    
+
                     let values: Vec<&str> = sign_value.split_ascii_whitespace().collect(); // TODO We could change the split char with something else
                     if values.len() != inv_exec.names.len() + 1 {
                         panic!("Expected {} values from the executable \"{}\" but only read {}: {:?}", inv_exec.names.len() + 1, inv_exec.exec_path, values.len(), sign_value);
@@ -220,29 +213,30 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                         // Add a signature and the value to the corresponding table
                         signature_value_buffer[i].push((values[0].to_string(), values[i+1].to_string()));   
                     }
+
+                    self.tick_observator(None);
                 }
             }else {
                 panic!("Could not read next buffer line");
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
+                // update observator
+                self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));
                 for (i, inv) in inv_exec.names.iter().enumerate() {
+
                     self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
                     signature_value_buffer[i].clear();   // free the *buffer*
                 }
             }
-            notif_countdown -= 1;   // Update countdown
-            // If it is time to notify the observor
-            if notif_countdown == 0 {
-                self.update_observator(byte_buffer);   
-                notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
-                byte_buffer = 0;
-            }
+            
         }
         if signature_value_buffer.len() != 0
         {                
-            self.update_observator(byte_buffer);   // Last notifications
+            // update obs
+            self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));   // Last notifications
             for (i, inv) in inv_exec.names.iter().enumerate() {
+
                 self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
                 signature_value_buffer[i].clear();   // free the *buffer*
             }
@@ -374,7 +368,11 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
 
 
-
+    // Returns the length of the dataset
+    pub async fn get_dataset_length(&self) -> usize
+    {
+        self.db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap()
+    }
 
     
 
@@ -384,14 +382,18 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         self.db.close_connection().await;
     }
 
-    pub async fn test(&self, inv: &InvariantsExecutable)
+    pub async fn exec_invariants(&self, inv_manager: InvariantsExecManager)
     {
-        //inv.exec_invariants(&self.db).await;
+        inv_manager.group_process_executions( 3);      
     }
     
 
-    pub async fn compute_invariants(&self, inv_manager : InvariantsExecManager, process_available: usize)
+    pub async fn execute_group(&mut self, group: InvariantExecGroup, temp_obs: Option<&'a dyn Observer>)
     {
-        inv_manager.handle_process_executions(&self.db, process_available).await;
+        if let Some(obs) = temp_obs {
+            self.db.set_graph_db_observer(obs);
+        }
+        group.exec_invariants(&self.db).await;
     }
+    
 }

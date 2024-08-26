@@ -15,7 +15,7 @@ async fn main() {
     match args.cmd {
         Modes::Init{path,input_method}=>init(path,input_method).await,
         Modes::Add{path,input_method}=>add(path,input_method).await,
-        Modes::Compute { path, programs } => compute(path, programs).await, 
+        Modes::Compute { path, programs, max_processes } => compute(path, programs, max_processes).await, 
         Modes::Delete{path,table_name}=>todo!(),
         Modes::Query{hide_output,do_not_save,formula,path}=>todo!(),
         Modes::Summary{path}=>todo!(),

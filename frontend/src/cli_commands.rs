@@ -36,6 +36,8 @@ pub enum Modes {
     Compute {
         #[command(flatten)]
         programs : ComputeChoice,
+        #[clap(short, default_value="3")]
+        max_processes : usize,
         #[command(flatten)]
         path : DatabasePath,
         

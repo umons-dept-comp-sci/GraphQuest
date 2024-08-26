@@ -15,8 +15,7 @@ async fn main() {
     
     let top = inv.get_topological_order();
 
-    println!("{}", top.pretty_string());
-    wp.compute_invariants(top, 3).await;
 
+    
     wp.close_workspace().await;
 }
