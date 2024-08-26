@@ -376,7 +376,7 @@ impl InvariantsExecManager {
                 }
                 tmp
             };
-            let groups = Self::group_by_dependencies(task_copy);
+            let groups = InvariantExecGroup::group_by_dependencies(task_copy);
             
             //Self::exec_invariants(groups, db).await;
             res.push(groups);
@@ -394,8 +394,52 @@ impl InvariantsExecManager {
 
     }
 
+    
+
+    
+
+    /// Gets a formatted string to help show the given topological sort
+    pub fn pretty_string(&self) -> String
+    {
+        let mut to_print = String::new();
+        for (i, inv) in self.executables.iter().enumerate() {
+            to_print += inv.to_string().as_str();
+            if i != self.executables.len()-1 {
+                to_print.push_str(" => ");
+            }
+        }
+        to_print
+    }
+
+     
+}
+
+
+pub struct InvariantExecGroup
+{
+    group: Vec<Vec<InvariantsExecutable>>,
+    min_values: Option<Vec<Vec<usize>>>,
+    pub smallest_min: Option<usize>,
+    pub dataset_len: Option<usize>,
+    pub data_to_process: Option<usize>
+}
+
+
+impl InvariantExecGroup {
+
+    fn new() -> Self
+    {
+        Self {
+            group: vec![],
+            min_values: None,
+            dataset_len: None,
+            smallest_min: None,
+            data_to_process: None,
+        }
+    }
+
     /// Group all invariant executable using their dependencies 
-    fn group_by_dependencies(mut inv_executables: Vec<InvariantsExecutable>) -> InvariantExecGroup
+    fn group_by_dependencies(mut inv_executables: Vec<InvariantsExecutable>) -> Self
     {
         let mut res = InvariantExecGroup::new();
         
@@ -446,40 +490,6 @@ impl InvariantsExecManager {
     }
    
 
-    
-
-    /// Gets a formatted string to help show the given topological sort
-    pub fn pretty_string(&self) -> String
-    {
-        let mut to_print = String::new();
-        for (i, inv) in self.executables.iter().enumerate() {
-            to_print += inv.to_string().as_str();
-            if i != self.executables.len()-1 {
-                to_print.push_str(" => ");
-            }
-        }
-        to_print
-    }
-
-     
-}
-
-
-pub struct InvariantExecGroup
-{
-    group: Vec<Vec<InvariantsExecutable>>
-}
-
-
-impl InvariantExecGroup {
-
-    fn new() -> InvariantExecGroup
-    {
-        Self {
-            group: vec![]
-        }
-    }
-
     // Returns the len of the group
     pub fn len(&self) -> usize
     {
@@ -492,21 +502,54 @@ impl InvariantExecGroup {
         count
     }
 
+    /// Fetches the current progression of the invariants
+    pub async fn fetch_progress_info<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
+    {
+        let max_size = db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap();
+        let mut smallest_min = max_size;
+        let mut res:Vec<Vec<usize>> = vec![];
+        let mut total_data = 0;
+        for v in &self.group {
+            let mut tmp_vec: Vec<usize> = vec![];
+            for exec in v {
+                let mut min = max_size;
+                // We need to check the invariant that has the lowest number of values in its table
+                for inv_name in &exec.names {
+                    let size = {
+                        match db.get_size_of_table(&InvariantsExecutable::get_table_name_from_string(inv_name)).await {
+                            Ok(nb) => nb,
+                            Err(_) => 0,    // Invariant was not computed before
+                        }
+                    };
+                    if min > size {
+                        min = size;
+                    }   
+                    total_data += max_size - min;
+                }
+                tmp_vec.push(min);
+                // Check if it is the smallest of the entire group
+                if smallest_min > min {
+                    smallest_min = min;
+                }
+                
+            }
+            res.push(tmp_vec);
+        }
+        self.min_values = Some(res);
+        self.dataset_len = Some(max_size);
+        self.smallest_min = Some(smallest_min);
+        self.data_to_process = Some(total_data);
+
+    }
 
     /// Compute the invariant and stores result in the database
-    pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&self, db: &T)
+    pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
     {
         // get min size
+        if let None = self.smallest_min {
+            self.fetch_progress_info(db).await;
+        }
         
-        let mut nb_of_data = 
-        {
-            //let mut table_vec:Vec<String> = vec![];
-            //for inv_name in &self.dependencies {
-                //    table_vec.push(InvariantsExecutable::get_table_name_from_string(inv_name));
-                //}
-                //db.get_min_dependency_size(&table_vec).await
-            db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap()
-        };
         
         
         fn exec_command(exec: &InvariantsExecutable) -> Child 
@@ -518,13 +561,14 @@ impl InvariantExecGroup {
         }
 
         
-        let mut current_data = 0;
+        let mut current_data = self.smallest_min.unwrap();
 
-        while nb_of_data > current_data
+        while self.dataset_len.unwrap() > current_data
         {
             let mut stdout_vec: Vec<Vec<ChildStdout>> = vec![];
             
             // Push data
+            let mut i = 0;
             for group in &self.group {
                 let mut stdout_tmp: Vec<ChildStdout> = vec![];
                 // We suppose that there is always at least one invariantsExecutable per group
@@ -538,9 +582,9 @@ impl InvariantExecGroup {
                     stdout_tmp.push(command.stdout.take().unwrap());
                 }
                 stdout_vec.push(stdout_tmp);
-
                 // Write data to the database, and close the stdins 
                 db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, stdin_vec).await.unwrap();
+                i += 1;
             }
 
             // Read data
@@ -574,6 +618,7 @@ impl InvariantExecGroup {
        }
        res
     }
+
 }
 
 

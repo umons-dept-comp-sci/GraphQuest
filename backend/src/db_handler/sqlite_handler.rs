@@ -200,7 +200,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) {
         // Then we add all signatures to the newly created table
-        let mut query = format!("INSERT INTO {table_name} VALUES ");
+        let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
 
         
         // Add all value to the query

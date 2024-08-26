@@ -387,8 +387,17 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         inv_manager.group_process_executions( 3);      
     }
     
+    
+    pub async fn prepare_groups(&self, exec: InvariantsExecManager, process_available: usize) -> Vec<InvariantExecGroup>
+    {
+        let mut groups = exec.group_process_executions(process_available);
+        for group in &mut groups {
+            group.fetch_progress_info(&self.db).await;
+        }
+        groups
+    }
 
-    pub async fn execute_group(&mut self, group: InvariantExecGroup, temp_obs: Option<&'a dyn Observer>)
+    pub async fn execute_group(&mut self, mut group: InvariantExecGroup, temp_obs: Option<&'a dyn Observer>)
     {
         if let Some(obs) = temp_obs {
             self.db.set_graph_db_observer(obs);

@@ -179,7 +179,7 @@ impl DatasetPbObs {
     }
 
     /// Starts the progress bar using the given parameters
-    pub fn change_settings(&mut self, len: u64, message: String, bar_type: ProgressBarType, is_hidden: bool)
+    pub fn change_settings(&mut self, len: u64, start_position: Option<u64>, message: String, bar_type: ProgressBarType, is_hidden: bool)
     {
         let pb = ProgressBar::new(len);
         
@@ -191,6 +191,9 @@ impl DatasetPbObs {
             .progress_chars("#|-");
         pb.set_style(sty.clone());
         pb.set_message(message);
+        if let Some(pos) = start_position {
+            pb.set_position(pos);
+        }
         self.progress_bar = Some(pb);
         
         self.bar_type = Some(bar_type);

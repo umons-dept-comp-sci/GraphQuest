@@ -44,20 +44,17 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     // connect to database
     let mut wp: Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
     
-    // get length of the dataset
-    let dataset_len = wp.get_dataset_length().await;
+    
 
     // Get executable groups
-    let groups = execution_manager.group_process_executions(max_processes);
+    let groups = wp.prepare_groups(execution_manager, max_processes).await;
     
     info!("Grouped executables, now starting the computation of invariants");
     // Init executables progress bar observer
     let mut progress_bars: Vec<DatasetPbObs> = vec![]; 
     for group in &groups {
         let mut t = DatasetPbObs::new();
-        t.change_settings((dataset_len * group.len()) as u64, group.to_string(), ProgressBarType::Download, true);
-        
-        
+        t.change_settings((group.dataset_len.unwrap()) as u64, Some(group.smallest_min.unwrap() as u64), group.to_string(), ProgressBarType::Download, true);   
         progress_bars.push(t);
     }
 
