@@ -1,11 +1,16 @@
 use std::io::Write;
 use std::pin::Pin;
 use std::process::ChildStdin;
+use std::str::FromStr;
+use std::time::Duration;
 
 use crate::{db_handler::graph_database::*, utils::subject::*};
 use crate::data_handler::invariant_handlers::*;
 
 use futures::{Stream, StreamExt};
+use sqlx::pool::PoolOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::ConnectOptions;
 use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
 
 use super::db_errors::TableNotFoundError;
@@ -86,22 +91,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         // Creates the database if it didn't already exists
         create_graph_database(db_url).await;
         // Create the object
-        let db = SqliteGraphDatabase{
-            pool:
-            {
-                // if managed to connected then return the value
-                if let Ok(pool) = SqlitePool::connect(db_url).await{
-                    pool
-                }
-                // else panic
-                else {
-                    panic!("The given database url is not valid")
-                }
-            },
-            obs : None
-        };
-        
-        db
+        connect_graph_database(db_url).await
     }
 
     async fn create_dataset_table(&self) {
@@ -190,13 +180,17 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         SqliteGraphDatabase{
             pool:
             {
+                // disables the log slow statements
+                let c = SqliteConnectOptions::from_str(db_url).expect(format!("The given database url is not valid \"{db_url}\"").as_str())
+                                        .log_slow_statements(log::LevelFilter::Off, Duration::from_secs(10));
+                
                 // if managed to connected then return the value
-                if let Ok(pool) = SqlitePool::connect(db_url).await{
+                if let Ok(pool) = SqlitePool::connect_with(c).await{
                     pool
                 }
                 // else panic
                 else {
-                    panic!("The given database url is not valid")
+                    panic!("The given database url is not valid \"{db_url}\"")
                 }
             },
             obs: None

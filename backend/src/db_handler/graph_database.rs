@@ -214,7 +214,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                         signature_value_buffer[i].push((values[0].to_string(), values[i+1].to_string()));   
                     }
 
-                    self.tick_observator(None);
+                    //self.tick_observator(None);
                 }
             }else {
                 panic!("Could not read next buffer line");
@@ -222,7 +222,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
                 // update observator
-                self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));
+                self.update_observator(1 as u64, Some(index_in_group));
                 for (i, inv) in inv_exec.names.iter().enumerate() {
 
                     self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;

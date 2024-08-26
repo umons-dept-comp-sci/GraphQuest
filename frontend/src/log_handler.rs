@@ -128,7 +128,7 @@ impl Observer for DatasetPbObs {
         }
     }
     
-    fn notify_data_pushed(&self, progression: u64, _: Option<usize>) {
+    fn notify_data_pushed(&self, progression: u64, index: Option<usize>) {
         if let Some(pb) = &self.progress_bar
         {
             // If the read data is what is observed, then update the bar
@@ -179,18 +179,31 @@ impl DatasetPbObs {
     }
 
     /// Starts the progress bar using the given parameters
-    pub fn start_progress(&mut self, len: u64, message: String, bar_type: ProgressBarType)
+    pub fn change_settings(&mut self, len: u64, message: String, bar_type: ProgressBarType, is_hidden: bool)
     {
         let pb = ProgressBar::new(len);
+        
+        if is_hidden {
+            pb.set_draw_target(ProgressDrawTarget::hidden());
+        }
         let sty = ProgressStyle::with_template(&bar_type.to_string())
             .unwrap()
             .progress_chars("#|-");
         pb.set_style(sty.clone());
         pb.set_message(message);
         self.progress_bar = Some(pb);
+        
         self.bar_type = Some(bar_type);
     }
 
+    /// Unhides the bar and resets the elapse time if it was initialised
+    pub fn unhide_bar(&self)
+    {
+        if let Some(pb) = &self.progress_bar {
+            pb.reset_elapsed();
+            pb.set_draw_target(ProgressDrawTarget::stdout());
+        }
+    }
 
     /// Forces the current progress bar to finish even if it still is running
     pub fn force_finish(& self)

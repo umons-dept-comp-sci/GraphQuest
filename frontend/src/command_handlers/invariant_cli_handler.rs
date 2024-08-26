@@ -1,18 +1,10 @@
-
-use clap::{ArgAction, Args, Parser, Subcommand};
-
-use clap_verbosity_flag::{InfoLevel, WarnLevel};
 use gquest_core::data_handler::invariant_handlers::{InvariantsExecManager, InvariantsExecutable, InvariantsOrderHandler};
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
-use gquest_core::data_handler::data_loaders::Method::*;
-use gquest_core::utils::subject::Observer;
+
 use log::{debug, info};
-use std::ops::Range;
-use std::fmt::Debug;
-use std::fs::File;
+
 use std::path::Path;
-use std::thread::sleep;
-use std::time::Duration;
+
 
 
 use crate::log_handler::*;
@@ -26,7 +18,6 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     println!("{:?}", choice);
 
     let mut inv_execs = InvariantsOrderHandler::new();
-
 
     // If user provided a list of programs, and he must at least provide one
     if choice.programs.len() != 0 {
@@ -61,10 +52,11 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     
     info!("Grouped executables, now starting the computation of invariants");
     // Init executables progress bar observer
-    let mut progress_bars: Vec<ExecutableGroupObs> = vec![]; 
+    let mut progress_bars: Vec<DatasetPbObs> = vec![]; 
     for group in &groups {
-        let mut t = ExecutableGroupObs::new();
-        t.change_settings( dataset_len, group.get_group_file_names());
+        let mut t = DatasetPbObs::new();
+        t.change_settings((dataset_len * group.len()) as u64, group.to_string(), ProgressBarType::Download, true);
+        
         
         progress_bars.push(t);
     }
@@ -73,9 +65,10 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     let mut i = 0;
 
     for group in groups {
-        progress_bars[i].start();
+        // show bar
+        progress_bars[i].unhide_bar();
+        // execute 
         wp.execute_group(group, Some(&progress_bars[i])).await;
-        info!("next");
         i += 1;
     }
     

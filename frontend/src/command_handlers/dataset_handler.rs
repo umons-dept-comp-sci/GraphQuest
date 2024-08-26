@@ -139,7 +139,7 @@ async fn geng_choice<'a, T:  GraphDatabase<'a>> (wp: &mut Workspace<'a,T>, args:
     }
     
 
-    progress_bar.start_progress(iterator.len() as u64, format!("Order"), ProgressBarType::Iterating);
+    progress_bar.change_settings(iterator.len() as u64, format!("Order"), ProgressBarType::Iterating, false);
     for order in iterator 
     {
         wp.add_dataset(GengAPI { nb_of_vertices: order, graph_settings: params_arg.clone(), edges_bound: edges }, progress_bar ).await;
@@ -157,14 +157,14 @@ async fn import_choice<'a,  T: GraphDatabase<'a>> (wp: &mut Workspace<'a, T>,  a
     {
         {
             let f = File::open(&path).expect(format!("The given file path \"{path}\" is not valid").as_str());
-            progress_bar.start_progress(f.metadata().unwrap().len(), String::from("bytes"), ProgressBarType::Download);
+            progress_bar.change_settings(f.metadata().unwrap().len(), String::from("bytes"), ProgressBarType::Download, false);
         }
         
         wp.add_dataset(File(path.clone()), progress_bar).await;
     }
     // if no file is given we suppose the input will arrive from stdin
     else {
-        progress_bar.start_progress(10, String::from("reading"), ProgressBarType::Reading);
+        progress_bar.change_settings(10, String::from("reading"), ProgressBarType::Reading, false);
         wp.add_dataset(Stdin, progress_bar).await;
         // Since we don't know the actual end of the pb, we need to manually finish it
         progress_bar.force_finish();

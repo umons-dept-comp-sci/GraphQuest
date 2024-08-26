@@ -480,6 +480,18 @@ impl InvariantExecGroup {
         }
     }
 
+    // Returns the len of the group
+    pub fn len(&self) -> usize
+    {
+        let mut count = 0;
+        for vec in &self.group{
+            for _ in vec{
+                count += 1;
+            }
+        }
+        count
+    }
+
 
     /// Compute the invariant and stores result in the database
     pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&self, db: &T)
@@ -561,5 +573,18 @@ impl InvariantExecGroup {
            }
        }
        res
+    }
+}
+
+
+impl Display for InvariantExecGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut res = String::new();
+        let names = self.get_group_file_names();
+        for name in names {
+            res.push_str(&format!("{name}, "));
+        }
+        res.pop();res.pop();   // remove ", "
+        write!(f, "({})", res)
     }
 }
