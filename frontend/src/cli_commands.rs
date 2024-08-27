@@ -52,12 +52,8 @@ pub enum Modes {
     },
     /// Send querries to a database
     Query {
-        /// Do not output the result
-        #[clap(short='u', long, action=ArgAction::SetTrue)]
-        hide_output : bool,
-        /// Do not saves the result
-        #[clap(short, action=ArgAction::SetTrue)]
-        do_not_save : bool,
+        #[command(flatten)]
+        output: OutputQueryArgs,
         /// The query to ask the database
         #[clap()]
         formula : String,
@@ -78,6 +74,9 @@ pub struct DatabasePath {
     #[clap(default_value = DEFAULT_URL)]
     pub url: String  
 }
+
+
+
 
 
 
@@ -142,4 +141,34 @@ pub struct ComputeChoice
     /// The list of programs to call
     #[clap(long, short, value_parser, num_args = 1.., value_delimiter = ' ')]
     pub programs: Vec<String>,
+}
+
+
+
+#[derive(Debug, clap::Args, Clone)]
+#[group(required = false, multiple = true)] 
+pub struct OutputQueryArgs 
+{
+    /// Changes the csv separator character
+    #[clap(long, short, default_value = ";")]
+    pub separator: char,
+    #[command(flatten)]
+    pub choice: OutputChoice,
+    /// Saves the result to a file 
+    #[clap(short, long, default_value="./results.csv")]
+    pub file: String,
+}
+
+
+
+#[derive(Debug, clap::Args, Clone)]
+#[group(required = false, multiple = false)] 
+pub struct OutputChoice
+{
+    /// Prints result line by line to the standart output
+    #[clap(short, long, action=ArgAction::SetTrue, default_value="false")]
+    pub csv_stream: bool,
+    /// Prints the result as a table
+    #[clap(short, long, action=ArgAction::SetTrue, default_value="true")]
+    pub pretty_print: bool,
 }

@@ -1,12 +1,7 @@
-use gquest_core::data_handler::invariant_handlers::{InvariantsExecManager, InvariantsExecutable, InvariantsOrderHandler};
+use gquest_core::data_handler::invariant_handlers::{InvariantsExecutable, InvariantsOrderHandler};
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
-
-use log::{debug, info};
-
+use log::info;
 use std::path::Path;
-
-
-
 use crate::log_handler::*;
 use crate::cli_commands::*;
 
@@ -15,8 +10,6 @@ use crate::cli_commands::*;
 /// Creates a workspace and adds a dataset using the prefered way of the user
 pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: usize)
 {
-    println!("{:?}", choice);
-
     let mut inv_execs = InvariantsOrderHandler::new();
 
     // If user provided a list of programs, and he must at least provide one
@@ -71,11 +64,6 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     
     info!("Finished computing invariants, closing database");
     wp.close_workspace().await;
-
-    
-
-
-
 }
 
 // cargo run -- compute -d "/home/axel/Desktop/bir/GraphQuest/backend/resources/invariant_modules/dep.json"
