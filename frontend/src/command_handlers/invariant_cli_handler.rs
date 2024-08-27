@@ -54,7 +54,7 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     let mut progress_bars: Vec<DatasetPbObs> = vec![]; 
     for group in &groups {
         let mut t = DatasetPbObs::new();
-        t.change_settings((group.dataset_len.unwrap()) as u64, Some(group.smallest_min.unwrap() as u64), group.to_string(), ProgressBarType::Download, true);   
+        t.change_settings((group.dataset_len.unwrap() * group.len()) as u64, Some(group.data_to_process.unwrap() as u64), group.to_string(), ProgressBarType::Download, true);   
         progress_bars.push(t);
     }
 

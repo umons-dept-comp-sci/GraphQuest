@@ -1,5 +1,6 @@
 use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
 use std::io::BufReader;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
 
@@ -502,7 +503,7 @@ impl InvariantExecGroup {
         count
     }
 
-    /// Fetches the current progression of the invariants
+    /// Fetches the current progression of the invariants by checking their table length (if they have one)
     pub async fn fetch_progress_info<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
     {
         let max_size = db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap();
@@ -524,8 +525,8 @@ impl InvariantExecGroup {
                     if min > size {
                         min = size;
                     }   
-                    total_data += max_size - min;
                 }
+                total_data += min;
                 tmp_vec.push(min);
                 // Check if it is the smallest of the entire group
                 if smallest_min > min {
@@ -574,21 +575,25 @@ impl InvariantExecGroup {
                 // We suppose that there is always at least one invariantsExecutable per group
                 
                 let mut stdin_vec: Vec<ChildStdin> = vec![];
-                
+                let mut j = 0;
                 // Starts proccesses
                 for exec in group {
-                    let mut command = exec_command(exec); 
-                    stdin_vec.push(command.stdin.take().unwrap());
-                    stdout_tmp.push(command.stdout.take().unwrap());
+                    if  self.min_values.clone().unwrap()[i][j] <= current_data {
+                        let mut command = exec_command(exec); 
+                        stdin_vec.push(command.stdin.take().unwrap());
+                        stdout_tmp.push(command.stdout.take().unwrap());
+                    }
+                    j += 1;
                 }
                 stdout_vec.push(stdout_tmp);
+                
+                
                 // Write data to the database, and close the stdins 
                 db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, stdin_vec).await.unwrap();
                 i += 1;
             }
 
             // Read data
-            
             for i in (0..stdout_vec.len()).rev() {
                 let mut stdout_v = stdout_vec.pop().unwrap();
                 for s in (0..stdout_v.len()).rev() {
