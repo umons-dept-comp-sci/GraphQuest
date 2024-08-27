@@ -13,7 +13,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::ConnectOptions;
 use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
 
-use super::db_errors::TableNotFoundError;
+use super::db_errors::GraphDatabaseError::{self, *};
 
 
 const DEBUG_MODE: bool = true;
@@ -37,10 +37,6 @@ impl DBColumnTypes for SqliteColumnType {
         };
 
         String::from(res)
-    }
-    
-    fn get_integer_column() -> Self {
-        SqliteColumnType::Integer
     }
 }
 
@@ -114,7 +110,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     
     
-    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: Vec<ChildStdin>) -> Result<(), TableNotFoundError>
+    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
     {
 
         // Represents the query where we fetch the desired signatures
@@ -135,7 +131,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         };
         
         // Represents the query where we join the desired invariant tables
-        let join_query_res: Result<String, TableNotFoundError> = {
+        let join_query_res: Result<String, GraphDatabaseError> = {
             let mut tmp = format!("SELECT * FROM ({})", signatures_query);
             let mut inv_name;
             for name in dependencies_to_join {
@@ -264,7 +260,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
 
     }
     
-    async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError> {
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError> {
         let query = format!("SELECT count({}) FROM {};", DATASET_PK_NAME, name);
         //println!("query: {:?}", &query);
 
@@ -272,9 +268,10 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
 
         match res {
             Ok(count) => Ok(count as usize),
-            Err(_) => Err(TableNotFoundError::new(name.to_string())),
+            Err(_) => Err(GraphDatabaseError::TableNotFoundError{table_name : name.to_string()}),
         }
     }
+    
 }
 
 

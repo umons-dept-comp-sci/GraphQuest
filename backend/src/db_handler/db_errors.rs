@@ -1,28 +1,34 @@
 use core::fmt;
 
-pub struct TableNotFoundError
+
+pub enum GraphDatabaseError
 {
-    table_name: String
+    TableNotFoundError{
+        table_name: String
+    }
 }
 
-impl TableNotFoundError {
-    pub fn new(table_name: String) -> Self
-    {
-        Self {
-            table_name
+
+impl fmt::Display for GraphDatabaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_error_message())
+    }
+}
+
+impl fmt::Debug for GraphDatabaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TableNotFoundError { table_name } => f.debug_struct("TableNotFoundError").field("table_name", table_name).finish(),
         }
     }
 }
 
-impl fmt::Display for TableNotFoundError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "The given table name does not exist: {}", self.table_name)
-    }
-}
-
-
-impl fmt::Debug for TableNotFoundError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{{ table: {} }}", self.table_name) // programmer-facing output
+impl GraphDatabaseError {
+    /// Gets the error message of this error 
+    fn get_error_message(&self) -> String
+    {
+        match self {
+            GraphDatabaseError::TableNotFoundError { table_name } => format!("The given table name does not exist: {}", table_name),
+        }
     }
 }

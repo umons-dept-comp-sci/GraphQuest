@@ -1,8 +1,14 @@
 
+use std::fs::File;
+use std::io::{stdout, Write};
+use std::path::Path;
 use std::process::ChildStdin;
 use std::{io::BufRead, marker::PhantomData};
 
+
 use crate::utils::subject::{Subject, Observer};
+use crate::utils::table_handler::TableQuery;
+use crate::utils::write_csv::CsvFile;
 
 use super::super::data_handler::data_loaders::*;
 use super::super::data_handler::invariant_handlers::*;
@@ -49,11 +55,19 @@ pub trait DBColumnTypes
     /// Translates the given struct as a string which can be used in a query in order to 
     /// represent a type from a database
     fn translate(&self) -> String;
-
-    /// Returns the integer enum
-    fn get_integer_column() -> Self;
 } 
 
+
+/// Printing options for the query executions
+pub enum OutputOptions
+{
+    /// Will not output anything
+    None,
+    /// Will output to the standart output and will separate the values using the given char 
+    Stdout(char),
+    /// Will print a table containing a summary of the result of the query
+    PrettyTable
+}
 
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
@@ -129,7 +143,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// ## Exceptions
     /// Must panic when:
     /// * The given indexes are not valid
-    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: Vec<ChildStdin>) -> Result<(), TableNotFoundError>;
+    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: Vec<ChildStdin>) -> Result<(), GraphDatabaseError>;
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -246,6 +260,38 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Closes the connection with the database
     async fn close_connection(self);
 
+    /// Executes the query to the database
+    async fn execute_query(&self, query: &String, output_file: Option<CsvFile>, optput_opt: OutputOptions) -> Result<String, GraphDatabaseError>
+    {
+    
+        let write_lines = move |column_names: Vec<String>, values: Vec<Vec<String>>|
+        {
+            if let Some(mut file) = output_file
+            {
+                file.write_lines_to_file(column_names, values).expect("Could not write to result file");
+            }
+        };
+
+
+        let stdout = stdout(); // get the global stdout entity
+        let mut handle = stdout.lock();
+        
+        let x = move |x: String|
+        {
+            writeln!( handle, "foo: {}, x: {}", 42, x); // add `?` if you care about errors here
+            
+        };
+        
+        Self::test(x).await;
+
+        Ok(String::from(":)"))
+    }
+
+    async fn test(mut f: impl FnMut(String))
+    {
+        f(String::from("Verry cool lambda axel"));
+    }
+
     //_________________________________INVARIANTS_______________________________________________________________________________
 
     /// Creates the given invariant table and adds it to the meta data table,
@@ -289,7 +335,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Simply returns the length of the table with the given name
     /// ## Exceptions
     /// Must return a TableNotFoundError if the given table is not found
-    async fn get_size_of_table(&self, name: &str) -> Result<usize, TableNotFoundError>;
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError>;
     
 
     /// Gets the minimum size between all given tables and the dataset table 
@@ -309,9 +355,10 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                 min_size = table_size;
             }
         }
-
         min_size
     }
+
+    
 }
 
 
@@ -357,7 +404,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         }
     }
 
-
+    /// Adds the given dataset to the workplace
     pub async fn add_dataset(&mut self, method: Method, temp_obs: &'a dyn Observer )
     {
         self.db.set_graph_db_observer(temp_obs);
@@ -381,13 +428,8 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     {
         self.db.close_connection().await;
     }
-
-    pub async fn exec_invariants(&self, inv_manager: InvariantsExecManager)
-    {
-        inv_manager.group_process_executions( 3);      
-    }
     
-    
+    /// Gets the different groups to later execute using the given [InvariantExecManager], and calls [InvariantExecGroup::fetch_progress_info] for each one 
     pub async fn prepare_groups(&self, exec: InvariantsExecManager, process_available: usize) -> Vec<InvariantExecGroup>
     {
         let mut groups = exec.group_process_executions(process_available);
@@ -397,12 +439,24 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         groups
     }
 
+    /// Executes the given invariant groups and adds (if given) an observer to the database
     pub async fn execute_group(&mut self, mut group: InvariantExecGroup, temp_obs: Option<&'a dyn Observer>)
     {
         if let Some(obs) = temp_obs {
             self.db.set_graph_db_observer(obs);
         }
         group.exec_invariants(&self.db).await;
+    }
+
+
+    /// Executes the given query to the database
+    pub async fn execute_query(&self, query: &String, separator: Option<char>, output_file: Option<String>, output_opt: OutputOptions)
+    {
+        let mut f: CsvFile = CsvFile::new(&output_file.unwrap(), separator).unwrap();
+
+        let mut table_query = TableQuery::new();
+        
+        self.db.execute_query(query, Some(f),  output_opt).await;
     }
     
 }

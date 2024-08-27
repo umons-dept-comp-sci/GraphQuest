@@ -11,11 +11,7 @@ async fn main() {
     
     let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     
-    let inv = InvariantsOrderHandler::read_json(&String::from("resources/invariant_modules/dep.json"));
-    
-    let top = inv.get_topological_order();
-
-
+    wp.execute_query(&String::new(), Some(';'), Some("res.csv".to_string()), OutputOptions::None).await;
     
     wp.close_workspace().await;
 }

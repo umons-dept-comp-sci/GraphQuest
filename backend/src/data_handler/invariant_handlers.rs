@@ -8,7 +8,7 @@ use crate::db_handler::{graph_database::{GraphDatabase, DATASET_TABLE_NAME}, sql
 
 
 /// The prefix of all the invariant tables 
-pub const INVARIANT_PREFIX : &str = "inv_";
+pub const INVARIANT_PREFIX : &str = "";
 /// The quantity of data to send to the invariant executable
 pub const BATCH_SIZE: usize = 3000;
 
