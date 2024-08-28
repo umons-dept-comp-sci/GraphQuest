@@ -9,8 +9,8 @@ use crate::data_handler::invariant_handlers::*;
 
 use futures::{Stream, StreamExt};
 use sqlx::pool::PoolOptions;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::ConnectOptions;
+use sqlx::sqlite::{SqliteColumn, SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
+use sqlx::{Column, ConnectOptions, Row};
 use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
 
 use super::db_errors::GraphDatabaseError::{self, *};
@@ -270,6 +270,44 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             Ok(count) => Ok(count as usize),
             Err(_) => Err(GraphDatabaseError::TableNotFoundError{table_name : name.to_string()}),
         }
+    }
+    
+
+    //_________________________________QUERIES_______________________________________________________________________________
+    async fn execute_query(&self, query: &String, mut f: impl FnOnce(Vec<String>, Vec<Vec<String>>)) {
+        
+        
+        let mut que_res = sqlx::query(&query).fetch(&self.pool);
+        
+        // push result to the given stdout
+        let mut c : Vec<String> = vec![];
+        let mut v : Vec<String> = vec![];
+        let mut flag: bool = true;
+        while let Some(res) = que_res.next().await
+        {
+            if let Ok(mut sign) = res 
+            {
+                // get vector with the column names
+                for col in sign.columns() {
+                    if flag {
+                        c.push(col.name().to_string());
+                        flag = false;
+                    }
+                    let i: String = sign.get(col.name());
+                    println!("READ : {:?}", i);
+                    let i: i64 = sign.get(col.name());
+                    println!("READ : {:?}", i);
+                    
+                    v.push(i.to_string());
+                }
+
+                //println!("columns: {:?}", sign.columns());    
+            }
+            //SqliteRow::columns(&sign);
+        }   
+        f(c,vec!(v));
+        
+        
     }
     
 }

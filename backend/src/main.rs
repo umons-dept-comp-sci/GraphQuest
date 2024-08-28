@@ -11,7 +11,7 @@ async fn main() {
     
     let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     
-    wp.execute_query(&String::new(), Some(';'), Some("res.csv".to_string()), OutputOptions::None).await;
+    wp.execute_query(&String::from("SELECT * FROM a1 WHERE value = 0 LIMIT 3"), Some(';'), Some("res.csv".to_string()), OutputOptions::None).await;
     
     wp.close_workspace().await;
 }

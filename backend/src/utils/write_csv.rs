@@ -10,7 +10,7 @@ pub struct CsvFile
     /// The path of the file
     file_path: String,
     /// True if the first line of the csv has not yet been written
-    is_first_line: bool,
+    columns_added: bool,
     /// The separator of the data stored in the csv
     separator: char
 
@@ -30,7 +30,7 @@ impl CsvFile  {
         Ok(Self {
             file,
             file_path: file_path.to_string(),
-            is_first_line : true,
+            columns_added : true,
             separator: match separator {
                 Some(s) => s,
                 None => ';',
@@ -45,9 +45,9 @@ impl CsvFile  {
     {
         
         // Write the column names
-        if self.is_first_line {
+        if self.columns_added {
             self.file.write_all(as_line(&column_names, self.separator).as_bytes()).unwrap();
-            self.is_first_line = false;
+            self.columns_added = false;
         }
         // Write the values
         for line in values {
