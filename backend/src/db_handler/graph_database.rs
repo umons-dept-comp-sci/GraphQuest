@@ -261,46 +261,47 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn close_connection(self);
 
     /// Executes the query to the database and fetches the output in a human readable way
-    async fn execute_fetch_query<'b>(&self, query: &String, output_file: Option<CsvFile>, query_table: Option<QueryTable>) -> Result<String, GraphDatabaseError>
+    async fn execute_fetch_query<'b>(&self, query: &String, mut output_file: CsvFile, mut query_table: QueryTable) -> Result<String, GraphDatabaseError>
     {    
+        let table_ref = &mut query_table;
+        let output_ref = &mut output_file;
 
-        let write_lines = move |column_names: Vec<String>, lines: Vec<Vec<String>>|
+        let write_lines = |column_names: Vec<String>, lines: Vec<Vec<String>>|
         {
-            if let Some(mut file) = output_file
-            {
-                file.write_lines_to_file(column_names.clone(), lines.clone()).expect("Could not write to result file");
-            }
+           
+            output_ref.write_lines_to_file(column_names.clone(), lines.clone()).expect("Could not write to result file");
+            
 
-            if let Some(mut table) = query_table
+            
             {
-                if !table.headers_added() {
-                    table.set_headers(column_names);
+                if !table_ref.headers_added() {
+                    table_ref.set_headers(column_names);
                     for line in lines {
                         
-                        table.push_line(line);
+                        table_ref.push_line(line);
                     }
                 }
-                println!("fucl");
+                
                 //println!("{}", table.as_string());
             }
                 
         };
-
+        let mut box_fn = Box::new(write_lines);
 
         let stdout = stdout(); // get the global stdout entity
         let mut handle = stdout.lock();
         
         
         //Self::test(x).await;
-        self.execute_query(query, write_lines).await;
+        self.execute_query(query, box_fn).await;
 
-        
+        println!("{}",query_table.as_string());
 
         Ok(String::from(":)"))
     }
 
     /// Executes a query and calls the given functions
-    async fn execute_query(&self, query: &String, f: impl FnOnce(Vec<String>, Vec<Vec<String>>));
+    async fn execute_query(&self, query: &String, f: impl FnMut(Vec<String>, Vec<Vec<String>>));
 
     async fn test(mut f: impl FnMut(String))
     {
@@ -469,14 +470,9 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     {
         let mut f: CsvFile = CsvFile::new(&output_file.unwrap(), separator).unwrap();
 
-        let mut table_query = QueryTable::new(QueryTableOptions::Partial { first_rows_count: 5, last_rows_count: 0 });
-        table_query.set_headers(vec![String::from("Column1"), String::from("Column2"), String::from("Column3")]);
-        table_query.push_line(vec![String::from("Value1"), String::from("Value2"), String::from("Value3")]);
-        
-        
-        //println!("{}", table_query.as_string());
+        let table_query: QueryTable = QueryTable::new(QueryTableOptions::Partial { first_rows_count: 0, last_rows_count: 5 });
 
-        self.db.execute_fetch_query(query, Some(f),  Some(table_query)).await;
+        self.db.execute_fetch_query(query, f,  table_query).await;
     }
     
 }

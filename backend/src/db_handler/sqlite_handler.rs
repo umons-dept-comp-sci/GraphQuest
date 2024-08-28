@@ -1,3 +1,4 @@
+use std::any::{Any, TypeId};
 use std::io::Write;
 use std::pin::Pin;
 use std::process::ChildStdin;
@@ -9,8 +10,8 @@ use crate::data_handler::invariant_handlers::*;
 
 use futures::{Stream, StreamExt};
 use sqlx::pool::PoolOptions;
-use sqlx::sqlite::{SqliteColumn, SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
-use sqlx::{Column, ConnectOptions, Row};
+use sqlx::sqlite::{SqliteColumn, SqliteConnectOptions, SqlitePoolOptions, SqliteRow, SqliteTypeInfo};
+use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
 
 use super::db_errors::GraphDatabaseError::{self, *};
@@ -281,31 +282,43 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
         // push result to the given stdout
         let mut c : Vec<String> = vec![];
-        let mut v : Vec<String> = vec![];
+        let mut lines : Vec<Vec<String>> = vec![];
         let mut flag: bool = true;
         while let Some(res) = que_res.next().await
         {
             if let Ok(mut sign) = res 
             {
+                let mut line: Vec<String> = vec![];
                 // get vector with the column names
-                for col in sign.columns() {
-                    if flag {
+                if c.len() == 0 {
+                    for col in sign.columns(){
                         c.push(col.name().to_string());
-                        flag = false;
                     }
-                    let i: String = sign.get(col.name());
-                    println!("READ : {:?}", i);
-                    let i: i64 = sign.get(col.name());
-                    println!("READ : {:?}", i);
-                    
-                    v.push(i.to_string());
                 }
+                for col in sign.columns() {
 
+                    
+                    match col.type_info().name() {
+                        "INTEGER" => {
+                            let value: i64 = sign.get(col.name());
+                            //println!("READ int : {:?}", value);
+                            line.push(value.to_string());
+                        },
+                        "TEXT" => {
+                            let value: String = sign.get(col.name());
+                            //println!("READ string : {:?}", value);
+                            line.push(value);
+                        },
+                        _ => ()
+                    }
+                    
+                }
+                lines.push(line);
                 //println!("columns: {:?}", sign.columns());    
             }
             //SqliteRow::columns(&sign);
         }   
-        f(c,vec!(v));
+        f(c, lines);
         
         
     }
