@@ -33,7 +33,7 @@ impl CsvFile  {
             columns_added : true,
             separator: match separator {
                 Some(s) => s,
-                None => ';',
+                None => ',',
             }
         })
 

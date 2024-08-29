@@ -1,6 +1,7 @@
 use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
 use std::io::BufReader;
 use log::{info, warn};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
 
@@ -85,11 +86,7 @@ impl InvariantsExecutable {
         let path = Path::new(exec_path);
         path.try_exists().expect(format!("The given invariant path \"{exec_path}\", is not valid").as_str());
 
-        for name in &names {
-            if !name.is_ascii() {
-                panic!("The given invariant name \"{name}\" is not valid")
-            }
-        }
+        
 
         let i = InvariantsExecutable {
             exec_path : exec_path.to_string(),
@@ -99,9 +96,24 @@ impl InvariantsExecutable {
             input_seperator,
             output_separator: output_seperator
         };
-        i.check_path();
+        i.check_validity();
+        
 
         i
+
+    }
+
+    /// Checks if the given executable is valid
+    /// ## Exceptions
+    /// Will perform the following checks : 
+    /// * [InvariantsExecutable::check_path]
+    /// * [InvariantsExecutable::check_invariant_name_validity] for all its invariant names
+    fn check_validity(&self)
+    {
+        self.check_path();
+        for name in &self.names {
+            Self::check_invariant_name_validity(name);
+        }
 
     }
 
@@ -121,11 +133,27 @@ impl InvariantsExecutable {
         }
     }
 
+    /// Checks if the given invariant name can be used to create a table and/or a column in a database
+    /// ## Exceptions
+    /// Will panic if :
+    /// * The given name is not ascii
+    /// * The given name does not match with the following regex: `^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$`
+    fn check_invariant_name_validity(name: &String)
+    {
+        if !name.is_ascii() {
+            panic!("The given invariant name \"{name}\" is not ascii")// ([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*
+        }
+        // check if name is valid
+        let re = Regex::new("^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$").unwrap();
+        if !re.is_match(&name) {
+            panic!("The given invariant name \"{name}\" is not valid, because it did not match with the following regex: {:?}", re.as_str())
+        }
+    }
 
     // Simply formats the name to what the invariant table name is
     pub fn get_table_name_from_string(name: &String) -> String 
     {
-        INVARIANT_PREFIX.to_string() + name
+        name.to_string()
     }
 }
 
@@ -169,22 +197,21 @@ impl InvariantsOrderHandler {
         let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
         let mut inv_path: &Path;
         let mut tmp_clone: String;
-        for mut inv in inv_vec.executables {
+        for mut exec in inv_vec.executables {
 
-            tmp_clone = inv.exec_path.clone();
+            tmp_clone = exec.exec_path.clone();
             inv_path = Path::new(&tmp_clone);
             // If the path given is not absolute
             // it means that the executable is related to the position of the given dependency file
             if !inv_path.is_absolute() {
                 // If the given dependency file has a parent dir path, we can add it
                 if let Some(s) = p.parent() {
-                    inv.exec_path = format!("{}/{}", s.to_str().unwrap(), &inv.exec_path);
+                    exec.exec_path = format!("{}/{}", s.to_str().unwrap(), &exec.exec_path);
                 }
             }
-            // Checks if the given file path exists
-            inv.check_path();
-            
-            handler.add_inv_exec(inv);
+            // Checks validity
+            exec.check_validity();
+            handler.add_inv_exec(exec);
         }
 
         handler

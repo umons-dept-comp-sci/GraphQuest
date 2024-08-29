@@ -1,4 +1,5 @@
 use std::any::{Any, TypeId};
+use std::fmt::Debug;
 use std::io::Write;
 use std::pin::Pin;
 use std::process::ChildStdin;
@@ -9,6 +10,7 @@ use crate::{db_handler::graph_database::*, utils::subject::*};
 use crate::data_handler::invariant_handlers::*;
 
 use futures::{Stream, StreamExt};
+use log::{debug, log};
 use sqlx::pool::PoolOptions;
 use sqlx::sqlite::{SqliteColumn, SqliteConnectOptions, SqlitePoolOptions, SqliteRow, SqliteTypeInfo};
 use sqlx::{Column, ConnectOptions, Row, TypeInfo};
@@ -17,7 +19,6 @@ use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult
 use super::db_errors::GraphDatabaseError::{self, *};
 
 
-const DEBUG_MODE: bool = true;
 
 /// Simple enum to manipulate the different sqlite data types
 pub enum SqliteColumnType {
@@ -244,7 +245,8 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     async fn create_invariant_table(&self, inv: &String) {
         let query = format!("CREATE TABLE {} (
                                     {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
-                                    value {}); ", 
+                                    {} {}); ",
+                                    InvariantsExecutable::get_table_name_from_string(inv), 
                                     InvariantsExecutable::get_table_name_from_string(inv),
                                     SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
         sqlx::query(&query).execute(&self.pool).await.unwrap();
@@ -275,38 +277,36 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
 
     //_________________________________QUERIES_______________________________________________________________________________
-    async fn execute_query(&self, query: &String, mut f: impl FnOnce(Vec<String>, Vec<Vec<String>>)) {
+    async fn execute_query(&self, query: &String, mut f: impl FnMut(Vec<String>, Vec<Vec<String>>)) {
         
         
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
         
         // push result to the given stdout
-        let mut c : Vec<String> = vec![];
+        let mut headers : Vec<String> = vec![];
         let mut lines : Vec<Vec<String>> = vec![];
-        let mut flag: bool = true;
+
         while let Some(res) = que_res.next().await
         {
-            if let Ok(mut sign) = res 
+            if let Ok(sign) = res 
             {
                 let mut line: Vec<String> = vec![];
                 // get vector with the column names
-                if c.len() == 0 {
+                if headers.len() == 0 {
                     for col in sign.columns(){
-                        c.push(col.name().to_string());
+                        headers.push(col.name().to_string());
                     }
                 }
-                for col in sign.columns() {
+                for (i, col) in sign.columns().iter().enumerate() {
 
                     
                     match col.type_info().name() {
                         "INTEGER" => {
-                            let value: i64 = sign.get(col.name());
-                            //println!("READ int : {:?}", value);
+                            let value: i64 = sign.get(i);
                             line.push(value.to_string());
                         },
                         "TEXT" => {
                             let value: String = sign.get(col.name());
-                            //println!("READ string : {:?}", value);
                             line.push(value);
                         },
                         _ => ()
@@ -314,12 +314,18 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                     
                 }
                 lines.push(line);
-                //println!("columns: {:?}", sign.columns());    
             }
-            //SqliteRow::columns(&sign);
+            if lines.len() == BUFFER_VECTOR_MAX_SIZE {
+                println!("called f (inside)");     
+                f(headers.clone(), lines);
+                lines = vec![];
+            }
         }   
-        f(c, lines);
-        
+        // Push last lines
+        if lines.len() != 0 {
+            println!("called f (outside)");
+            f(headers.clone(), lines);
+        }
         
     }
     
@@ -342,20 +348,13 @@ impl<'a> SqliteGraphDatabase<'a> {
 
 
 
-fn debug_log(message: &str)
-{
-    if  DEBUG_MODE{
-        println!("{}", message);
-    }
-}
-
 
 async fn create_graph_database(db_path: &str)
 {
     if !Sqlite::database_exists(db_path).await.unwrap_or(false) {
-        debug_log(format!("Creating database {}", db_path).as_str());
+    debug!("Creating database {}", db_path);
         match Sqlite::create_database(db_path).await {
-            Ok(_) => debug_log("Successfully created the database"),
+            Ok(_) => debug!("Sucess creating the database {}", db_path),
             Err(error) => panic!("error: {}", error),
         }
     } else {

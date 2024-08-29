@@ -3,7 +3,7 @@
   [
     {
         "exec_path": "alpha.py",
-        "names": ["a1", "a2", "a3"],
+        "names": ["chromatic_number", "a2", "a3"],
         "dependencies": [],
         "return_type": "integer",
         "input_seperator": "\n"
@@ -16,12 +16,12 @@
     {
       "exec_path": "delta.py",
       "names": ["d1"],
-      "dependencies": ["a3", "a1"]
+      "dependencies": ["a3", "chromatic_number"]
     },
     {
       "exec_path": "theta.py",
       "names": ["t"],
-      "dependencies": ["a3", "a1"]
+      "dependencies": ["a3", "chromatic_number"]
     },
     {
       "exec_path": "p.py",

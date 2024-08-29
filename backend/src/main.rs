@@ -1,4 +1,5 @@
 use gquest_core::{data_handler::{self, invariant_handlers::{InvariantsExecutable, InvariantsOrderHandler}}, db_handler::{graph_database::*, sqlite_handler::*}};
+use log::info;
 
 const THREADS_AVAILABLE: usize = 4;
 
@@ -11,7 +12,7 @@ async fn main() {
     
     let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     
-    wp.execute_query(&String::from("SELECT * FROM a1 WHERE value = 0"), Some(';'), Some("res.csv".to_string()), OutputOptions::None).await;
-    
+    wp.execute_query(&String::from("SELECT * FROM chromatic_number JOIN a2 USING (signature) JOIN a3 USING (signature)"), Some(','), Some("res.csv".to_string()), OutputOptions::None).await;
+
     wp.close_workspace().await;
 }

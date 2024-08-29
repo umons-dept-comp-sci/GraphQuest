@@ -28,8 +28,8 @@ pub const METADATA_TABLE_NAME : &str = "Metadata";
 pub const METADATA_PK_NAME : &str = "table_name";
 /// The name of the second column of the metadata table
 pub const METADATA_VALUE_NAME : &str = "stopped_at";
-/// The name of the column in an invariant table where the values are stored 
-pub const INVARIANT_COLUMN_NAME : &str = "value";
+// The name of the column in an invariant table where the values are stored 
+//pub const INVARIANT_COLUMN_NAME : &str = "value";
 
 
 /// The maximum size of a signature to store in the dataset
@@ -276,13 +276,13 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             {
                 if !table_ref.headers_added() {
                     table_ref.set_headers(column_names);
-                    for line in lines {
-                        
-                        table_ref.push_line(line);
-                    }
+                }
+                for line in lines {
+                    
+                    table_ref.push_line(line);
                 }
                 
-                //println!("{}", table.as_string());
+                
             }
                 
         };
@@ -302,12 +302,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
 
     /// Executes a query and calls the given functions
     async fn execute_query(&self, query: &String, f: impl FnMut(Vec<String>, Vec<Vec<String>>));
-
-    async fn test(mut f: impl FnMut(String))
-    {
-        f(String::from("Verry cool lambda axel"));
-    }
-
     //_________________________________INVARIANTS_______________________________________________________________________________
 
     /// Creates the given invariant table and adds it to the meta data table,
@@ -335,12 +329,12 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// 
     /// ## Exemple of table
     /// ```text
-    /// Chromatic -> | signature | value |
-    /// Number       +-----------+-------+
-    ///              | I?ABCd[v? | ##### |
-    ///              | I?ABCd[n? | ##### |
-    ///              | I?ABCd[^? | ##### |
-    ///              |          ...      |
+    /// Chromatic -> | signature | Chromatic_Number |
+    /// Number       +-----------+------------------+
+    ///              | I?ABCd[v? | #####            |
+    ///              | I?ABCd[n? | #####            |
+    ///              | I?ABCd[^? | #####            |
+    ///              |          ...                 |
     /// ```
     /// ## Exceptions
     /// Must panic when:
@@ -470,7 +464,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     {
         let mut f: CsvFile = CsvFile::new(&output_file.unwrap(), separator).unwrap();
 
-        let table_query: QueryTable = QueryTable::new(QueryTableOptions::Partial { first_rows_count: 0, last_rows_count: 5 });
+        let table_query: QueryTable = QueryTable::new(QueryTableOptions::Partial { first_rows_count: 5, last_rows_count: 10 });
 
         self.db.execute_fetch_query(query, f,  table_query).await;
     }
