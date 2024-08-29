@@ -277,7 +277,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
 
     //_________________________________QUERIES_______________________________________________________________________________
-    async fn execute_query(&self, query: &String, mut f: impl FnMut(Vec<String>, Vec<Vec<String>>)) {
+    async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) {
         
         
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
@@ -316,15 +316,13 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 lines.push(line);
             }
             if lines.len() == BUFFER_VECTOR_MAX_SIZE {
-                println!("called f (inside)");     
-                f(headers.clone(), lines);
+                save_data(headers.clone(), lines);
                 lines = vec![];
             }
         }   
         // Push last lines
         if lines.len() != 0 {
-            println!("called f (outside)");
-            f(headers.clone(), lines);
+            save_data(headers.clone(), lines);
         }
         
     }
