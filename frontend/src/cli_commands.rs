@@ -150,25 +150,33 @@ pub struct ComputeChoice
 pub struct OutputQueryArgs 
 {
     /// Changes the csv separator character
-    #[clap(long, short, default_value = ";")]
+    #[clap(long, short, default_value = ",")]
     pub separator: char,
-    #[command(flatten)]
-    pub choice: OutputChoice,
+    #[command(subcommand)]
+    pub choice: Option<OutputChoice>,
     /// Saves the result to a file 
     #[clap(short, long, default_value="./results.csv")]
     pub file: String,
 }
 
 
-
-#[derive(Debug, clap::Args, Clone)]
-#[group(required = false, multiple = false)] 
-pub struct OutputChoice
+#[derive(Subcommand, Debug, Clone)]
+pub enum OutputChoice
 {
     /// Prints result line by line to the standart output
-    #[clap(short, long, action=ArgAction::SetTrue, default_value="false")]
-    pub csv_stream: bool,
+    Stream,
     /// Prints the result as a table
-    #[clap(short, long, action=ArgAction::SetTrue, default_value="true")]
-    pub pretty_print: bool,
+    
+    #[group(required = false, multiple = false)] 
+    Table
+    {
+        #[clap(long, action=ArgAction::SetTrue, default_value="true")]
+        /// Stores the entire query results in the table
+        full_table : bool,
+
+        /// [n:m] Only stores the n first and the m last rows
+        #[clap(long)]
+        partial : String,
+        
+    }
 }

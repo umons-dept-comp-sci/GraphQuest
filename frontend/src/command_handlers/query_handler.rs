@@ -9,7 +9,6 @@ pub async fn query(output: OutputQueryArgs, formula : String, path : DatabasePat
 {
     let wp: Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
 
-    
     println!("{:?}, {:?}, {:?}", output, formula, path); 
     wp.close_workspace().await;
 }
