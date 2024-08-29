@@ -155,8 +155,8 @@ pub struct OutputQueryArgs
     #[command(subcommand)]
     pub choice: Option<OutputChoice>,
     /// Saves the result to a file 
-    #[clap(short, long, default_value="./results.csv")]
-    pub file: String,
+    #[clap(short, long)]
+    pub file: Option<String>,
 }
 
 
@@ -164,19 +164,22 @@ pub struct OutputQueryArgs
 pub enum OutputChoice
 {
     /// Prints result line by line to the standart output
-    Stream,
+    Stream{
+        #[clap(default_value = ",")]
+        stream_separator: char,
+    },
     /// Prints the result as a table
     
     #[group(required = false, multiple = false)] 
     Table
     {
-        #[clap(long, action=ArgAction::SetTrue, default_value="true")]
+        #[clap(long, action=ArgAction::SetTrue, default_value="false")]
         /// Stores the entire query results in the table
-        full_table : bool,
+        full : bool,
 
         /// [n:m] Only stores the n first and the m last rows
         #[clap(long)]
-        partial : String,
+        partial : Option<String>,
         
     }
 }

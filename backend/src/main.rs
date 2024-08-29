@@ -12,7 +12,7 @@ async fn main() {
     
     let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(DB_URL).await;
     
-    wp.execute_query(&String::from("SELECT * FROM chromatic_number JOIN a2 USING (signature) JOIN a3 USING (signature)"), Some(','), Some("res.csv".to_string()), OutputOptions::None).await;
+    wp.execute_query(&String::from("SELECT * FROM chromatic_number JOIN a2 USING (signature) JOIN a3 USING (signature)"), Some(','), Some("res.csv".to_string()), StdoutOptions::Stdout(',')).await;
 
     wp.close_workspace().await;
 }

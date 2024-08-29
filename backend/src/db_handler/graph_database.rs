@@ -8,7 +8,7 @@ use std::{io::BufRead, marker::PhantomData};
 
 use crate::utils::subject::{Subject, Observer};
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
-use crate::utils::write_csv::CsvFile;
+use crate::utils::write_csv::{as_line, CsvFile};
 
 use super::super::data_handler::data_loaders::*;
 use super::super::data_handler::invariant_handlers::*;
@@ -59,14 +59,15 @@ pub trait DBColumnTypes
 
 
 /// Printing options for the query executions
-pub enum OutputOptions
+#[derive(Debug)]
+pub enum StdoutOptions
 {
     /// Will not output anything
     None,
-    /// Will output to the standart output and will separate the values using the given char 
+    /// Will output to the standart output and will separate the values using the given char and will add a '\n' char to each end of line
     Stdout(char),
     /// Will print a table containing a summary of the result of the query
-    PrettyTable
+    PrettyTable(QueryTableOptions)
 }
 
 
@@ -261,25 +262,45 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn close_connection(self);
 
     /// Executes the query to the database and fetches the output in a human readable way
-    async fn execute_fetch_query<'b>(&self, query: &String, mut output_file: Option<CsvFile>, mut query_table: Option<QueryTable>) -> Result<String, GraphDatabaseError>
-    {    
+    async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions) -> Result<String, GraphDatabaseError>
+    {  
+        
+        let mut query_table: Option<QueryTable> = None;
+        let mut output_file:  Option<CsvFile> = {
+            match output_path {
+                Some(path) => Some(CsvFile::new(&path, separator).expect("Could not create the output path")),
+                None => None,
+            }
+        };
+        let mut write_to_stdout = (false, ',', false);
+        match stdout_opt {
+            StdoutOptions::None => (),
+            StdoutOptions::Stdout(opt) => write_to_stdout = (true, opt, false),
+            StdoutOptions::PrettyTable(opt) => query_table = Some(QueryTable::new(opt)),
+        }
+
+        // Pointers used to call those struct inside the *lambda* function without losing ownerships
         let table_ref = &mut query_table;
         let output_ref = &mut output_file;
 
-
-        
         let stdout = stdout(); // get the global stdout entity
         let mut handle = stdout.lock();
         
         
         let write_lines = |column_names: Vec<String>, lines: Vec<Vec<String>>|
         {
-           if let Some(file) = output_ref{
+            if write_to_stdout.0 {
+                if !write_to_stdout.2{
+                    write!(handle, "{}", as_line(&column_names, write_to_stdout.1)).expect("Could not write column names to stdout");
+                    write_to_stdout.2 = true;
+                }
+                for line in &lines {
+                    write!(handle, "{}", as_line(line, write_to_stdout.1)).expect("Could not write column names to stdout");
+                }
+            }
+            if let Some(file) = output_ref{
                file.write_lines_to_file(column_names.clone(), lines.clone()).expect("Could not write to result file");
             }
-            
-            
-            
             
             if let Some(table) = table_ref{
                 if !table.headers_added() {
@@ -290,8 +311,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                     table.push_line(line);
                 }
             }
-            
-            
         };
 
         let box_fn = Box::new(write_lines);
@@ -470,13 +489,10 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
 
     /// Executes the given query to the database
-    pub async fn execute_query(&self, query: &String, separator: Option<char>, output_file: Option<String>, output_opt: OutputOptions)
+    pub async fn execute_query(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions)
     {
-        let mut f: CsvFile = CsvFile::new(&output_file.unwrap(), separator).unwrap();
-
-        let table_query: QueryTable = QueryTable::new(QueryTableOptions::Partial { first_rows_count: 5, last_rows_count: 10 });
-
-        self.db.execute_fetch_query(query, None,  Some(table_query)).await;
+        //println!("{:?}, {:?}, {:?}, {:?}", query, separator, output_path, stdout_opt);
+        self.db.execute_fetch_query(query, separator, output_path, stdout_opt).await;
     }
     
 }

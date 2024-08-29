@@ -63,8 +63,8 @@ impl CsvFile  {
 
 
 
-/// Correctly formats the vector as a cvs line
-fn as_line(values: &Vec<String>, separator: char) -> String
+/// Correctly formats the vector as a cvs line, (adds a '\n' to finish the line)
+pub fn as_line(values: &Vec<String>, separator: char) -> String
 {
     let mut to_write = String::new();
     for value in values {
