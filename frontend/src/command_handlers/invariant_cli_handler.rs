@@ -1,6 +1,6 @@
 use gquest_core::data_handler::invariant_handlers::{InvariantsExecutable, InvariantsOrderHandler};
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
-use log::info;
+use log::{debug, info};
 use std::path::Path;
 use crate::log_handler::*;
 use crate::cli_commands::*;
@@ -42,7 +42,6 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     // Get executable groups
     let groups = wp.prepare_groups(execution_manager, max_processes).await;
     
-    info!("Grouped executables, now starting the computation of invariants");
     // Init executables progress bar observer
     let mut progress_bars: Vec<DatasetPbObs> = vec![]; 
     for group in &groups {
@@ -50,11 +49,13 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
         t.change_settings((group.dataset_len.unwrap() * group.len()) as u64, Some(group.data_to_process.unwrap() as u64), group.to_string(), ProgressBarType::Download, true);   
         progress_bars.push(t);
     }
-
+    
     // Execute groups
     let mut i = 0;
-
+    
+    info!("Grouped executables, now starting the computation of invariants");
     for group in groups {
+        debug!("Starting group: {group}");
         // show bar
         progress_bars[i].unhide_bar();
         // execute 

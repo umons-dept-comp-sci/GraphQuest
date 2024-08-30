@@ -2,7 +2,7 @@ use clap::Parser;
 
 
 
-use gquest_cli::{cli_commands::*, command_handlers::{dataset_handler::*, invariant_cli_handler::compute, query_handler::query}, log_handler::*};
+use gquest_cli::{cli_commands::*, command_handlers::{dataset_handler::*, invariant_cli_handler::compute, query_handler::query, summary_handler::summary}, log_handler::*};
 
 
 #[tokio::main(flavor = "current_thread")]
@@ -16,7 +16,7 @@ async fn main() {
         Modes::Compute { path, programs, max_processes } => compute(path, programs, max_processes).await, 
         Modes::Query{formula,path, output: output_args } => query(output_args, formula, path).await,
         Modes::Delete{path,table_name} => todo!(),
-        Modes::Summary{path} => todo!(),
+        Modes::Summary{path} => summary(path).await,
     }
 }
 

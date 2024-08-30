@@ -17,7 +17,7 @@ use super::db_errors::*;
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
-pub const DATASET_TABLE_NAME : &str = "InitDataset";
+pub const DATASET_TABLE_NAME : &str = "Dataset";
 /// The column name of the primary key of the dataset
 pub const DATASET_PK_NAME : &str = "signature";
 /// The name of the second column of the dataset 
@@ -212,32 +212,31 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             self.init_invariant(inv).await;
         }
 
-
         for line in reader.lines() {
             
             if let Ok(sign_value) = line {
                 //println!("Reading : {sign_value}");
+                
                 if sign_value != "\n" && sign_value != "" {
 
                     let values: Vec<&str> = sign_value.split_ascii_whitespace().collect(); // TODO We could change the split char with something else
                     if values.len() != inv_exec.names.len() + 1 {
-                        panic!("Expected {} values from the executable \"{}\" but only read {}: {:?}", inv_exec.names.len() + 1, inv_exec.exec_path, values.len(), sign_value);
+                        panic!("Expected {} values from the executable \"{}\" but read {}: {:?}", inv_exec.names.len() + 1, inv_exec.exec_path, values.len(), sign_value);
                     }
                     // Store data in the
                     for i in 0..values.len()-1 {
                         // Add a signature and the value to the corresponding table
                         signature_value_buffer[i].push((values[0].to_string(), values[i+1].to_string()));   
                     }
-
-                    //self.tick_observator(None);
                 }
             }else {
                 panic!("Could not read next buffer line");
             }
+            self.tick_observator(Some(index_in_group));
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                // update observator
                 self.update_observator(1 as u64, Some(index_in_group));
+                // update observator
                 for (i, inv) in inv_exec.names.iter().enumerate() {
 
                     self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
@@ -262,8 +261,9 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn close_connection(self);
 
     /// Executes the query to the database and fetches the output in a human readable way
-    async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions) -> Result<String, GraphDatabaseError>
+    async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Result<Option<Vec<Vec<String>>>, GraphDatabaseError>
     {  
+        let mut saved_output: Vec<Vec<String>> = vec![];
         
         let mut query_table: Option<QueryTable> = None;
         let mut output_file:  Option<CsvFile> = {
@@ -282,6 +282,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         // Pointers used to call those struct inside the *lambda* function without losing ownerships
         let table_ref = &mut query_table;
         let output_ref = &mut output_file;
+        let saved_output_ref = &mut saved_output;
 
         let stdout = stdout(); // get the global stdout entity
         let mut handle = stdout.lock();
@@ -306,9 +307,14 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                 if !table.headers_added() {
                     table.set_headers(column_names);
                 }
+                for line in &lines {
+                    table.push_line(line.clone());
+                }
+            }
+
+            if return_result {
                 for line in lines {
-                    
-                    table.push_line(line);
+                    saved_output_ref.push(line)
                 }
             }
         };
@@ -323,7 +329,13 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             writeln!(handle, "{}",table.as_string()).unwrap();
         }
 
-        Ok(String::from(":)"))
+        Ok(
+            if return_result {
+               Some(saved_output) 
+            }else {
+                None
+            }
+        )
     }
 
     /// Executes a query and calls the given function which takes two parameters
@@ -359,7 +371,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// ## Exemple of table
     /// ```text
     /// Chromatic -> | signature | Chromatic_Number |
-    /// Number       +-----------+------------------+
+    /// _Number      +-----------+------------------+
     ///              | I?ABCd[v? | #####            |
     ///              | I?ABCd[n? | #####            |
     ///              | I?ABCd[^? | #####            |
@@ -388,7 +400,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         // Get minimum
         let mut table_size;
         for table in tables {
-            println!("going for : {:?}", table);
+            
             table_size = self.get_size_of_table(table).await.expect("One the given table does not exists");
             if table_size < min_size {
                 min_size = table_size;
@@ -396,7 +408,11 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         }
         min_size
     }
+    
 
+    /// Returns a query that can be used to retrieve all the tables from the database.
+    /// With this query, the only returned column should be the **names** of the tables
+    async fn get_all_table_names_query(&self) -> String;
     
 }
 
@@ -489,10 +505,55 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
 
     /// Executes the given query to the database
-    pub async fn execute_query(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions)
+    pub async fn execute_query(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Option<Vec<Vec<String>>>
     {
         //println!("{:?}, {:?}, {:?}, {:?}", query, separator, output_path, stdout_opt);
-        self.db.execute_fetch_query(query, separator, output_path, stdout_opt).await;
+        self.db.execute_fetch_query(query, separator, output_path, stdout_opt, return_result).await.unwrap()
+    }
+
+    /// Gets a table that will summarize this workplace.
+    /// 
+    /// For example :
+    /// ```b
+    ///╭───┬────────────┬────────┬─────╮
+    ///│ i │ Table Name │ Size   │ %   │
+    ///├───┼────────────┼────────┼─────┤
+    ///│ 0 │ Dataset    │ 288266 │ 100 │
+    ///│ 1 │ size       │ 13598  │ 5   │
+    ///│ 2 │ is_planar  │ 13598  │ 5   │
+    ///│ 3 │ num_col    │ 3000   │ 1   │
+    ///╰───┴────────────┴────────┴─────╯ 
+    /// ```
+    pub async fn summary(&self) -> QueryTable
+    {
+        let mut res = QueryTable::new(QueryTableOptions::Full);
+        let dataset_len = self.get_dataset_length().await;
+        // Create headers
+        res.set_headers(vec!["Table Name".to_string(), "Size".to_string(), "%".to_string()]);
+        // fetch all table names, if thet `get_all_table_names_query` is correct, the
+        // only data contained in a line should be the name of a table
+        let tables = self.db.execute_fetch_query(&self.db.get_all_table_names_query().await,
+                                                 None, None, StdoutOptions::None,
+                                                 true)
+                                                 .await.unwrap().unwrap(); 
+        // compute all relevent informations using those data
+        for mut table in tables {
+            // get size of the table
+            let name = table[0].clone();
+            // Skip the metadata table if it exists
+            if name != METADATA_TABLE_NAME
+            {
+                let size = self.db.get_size_of_table(&name).await.expect(format!("Could not read the length of the table {}", name).as_str());
+                
+                // compute completion percentage
+                let completion = ((size as f64 / dataset_len as f64) * 100 as f64).round();
+                table.push(size.to_string());
+                table.push(completion.to_string());
+    
+                res.push_line(table)
+            }
+        }
+        res
     }
     
 }

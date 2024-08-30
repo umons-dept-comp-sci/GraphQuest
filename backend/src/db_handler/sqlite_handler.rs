@@ -169,7 +169,8 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                     input.write(sign.as_bytes()).unwrap();
                 }
             }
-        }   
+        }
+        
         Ok(())
         
     }
@@ -299,17 +300,18 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 }
                 for (i, col) in sign.columns().iter().enumerate() {
 
-                    
                     match col.type_info().name() {
-                        "INTEGER" => {
+                        "INTEGER" | "NULL" => {
                             let value: i64 = sign.get(i);
+                            //println!("res : {:?}", value);
                             line.push(value.to_string());
                         },
                         "TEXT" => {
                             let value: String = sign.get(col.name());
+                            //println!("res : {:?}", value);
                             line.push(value);
                         },
-                        _ => ()
+                        _ => ()//println!("{}", col.type_info().name())
                     }
                     
                 }
@@ -325,6 +327,10 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             save_data(headers.clone(), lines);
         }
         
+    }
+    
+    async fn get_all_table_names_query(&self) -> String {
+        String::from("SELECT name FROM sqlite_master WHERE type='table';")
     }
     
 }
@@ -381,14 +387,6 @@ pub async fn connect_graph_database<'a>(db_path : & str) -> SqliteGraphDatabase<
         obs: None, 
     }
 }
-
-
-
-
-
-
-// TODO Change all unwrap with match cases
-// TODO Make better errors
 
 
 

@@ -1,5 +1,6 @@
 use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
 use std::io::BufReader;
+use duct::cmd;
 use log::{info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -582,10 +583,11 @@ impl InvariantExecGroup {
         
         fn exec_command(exec: &InvariantsExecutable) -> Child 
         { 
+            //let tmp: String = cmd(exec.exec_path, vec![]).stdin_bytes(bytes).unwrap();
             Command::new(format!("{}", exec.exec_path))
                                     .stdin(Stdio::piped())
                                     .stdout(Stdio::piped())
-                                    .spawn().unwrap()
+                                    .spawn().expect("Could not execute command")
         }
 
         
@@ -617,6 +619,7 @@ impl InvariantExecGroup {
                 
                 // Write data to the database, and close the stdins 
                 db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, stdin_vec).await.unwrap();
+                
                 i += 1;
             }
 
@@ -625,6 +628,7 @@ impl InvariantExecGroup {
                 let mut stdout_v = stdout_vec.pop().unwrap();
                 for s in (0..stdout_v.len()).rev() {
                     let stdout = stdout_v.pop().unwrap();
+                    
                     let buf_read = BufReader::new(stdout);
                     let exec: &InvariantsExecutable = &self.group[i][s];
                     
