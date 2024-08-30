@@ -426,7 +426,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn try_delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
     {
         // Check if the table is not critical
-        if table_name.to_lowercase() == DATASET_PK_NAME.to_lowercase() || table_name.to_lowercase() == METADATA_PK_NAME.to_lowercase() {
+        if table_name.to_lowercase() == DATASET_TABLE_NAME.to_lowercase() || table_name.to_lowercase() == DATASET_TABLE_NAME.to_lowercase() {
             return Err(GraphDatabaseError::ForbiddenActionError { action: format!("Tried to delete the table {}", table_name)})
         }
 

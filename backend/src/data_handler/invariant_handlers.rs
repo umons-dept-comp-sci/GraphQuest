@@ -1,6 +1,5 @@
 use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
 use std::io::BufReader;
-use duct::cmd;
 use log::{info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};

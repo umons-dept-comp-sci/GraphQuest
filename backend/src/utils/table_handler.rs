@@ -22,13 +22,18 @@ pub enum QueryTableOptions
 /// Used to store data when creating a partial query table
 struct TableData
 {
+    /// Tuple storing the maximum of the first and last rows to display
     max_first_last_rows_count: (usize, usize),
+    /// Checks if the max first rows was reached so that we can display `...` in the table  
     has_overflown: bool,
+    /// The first lines to store in the table
     first_lines: Vec<Vec<String>>,
+    /// The last lines to store in the table
     last_lines: VecDeque<Vec<String>>,
 }
 
 impl TableData {
+    /// Adds a line to first or last line vector, in function of the number of already stored lines
     fn add_line(&mut self, value: Vec<String>)
     {
         let (first_count, last_count) = self.max_first_last_rows_count;
@@ -51,6 +56,7 @@ impl TableData {
         }
     }
 
+    /// Fills the given builder with the stored data
     fn build(self, builder: &mut Builder)
     {
         // Add first lines
@@ -74,6 +80,32 @@ impl TableData {
 }
 
 
+/// Struct representing a stylized table that can be used to store and display informations in a clean way
+/// # Examples
+/// 
+/// ```
+/// // Create the table
+/// let mut table = QueryTable::new(gquest_core::utils::table_handler::QueryTableOptions::Full);
+/// // Add headers
+/// table.set_headers(vec!["Header 1".to_string(), "Header 2".to_string()]);
+/// // Add lines
+/// table.push_line(vec!["data 11".to_string(), "data 12".to_string()]);
+/// table.push_line(vec!["data 21".to_string(), "data 22".to_string()]);
+/// 
+/// // Get table as String (the ownership of the table will be lost)
+/// let s: String = table.as_string();
+/// println!("{s}");
+/// let expected = concat!(
+///     "╭───┬──────────┬──────────╮\n",
+///     "│ i │ Header 1 │ Header 2 │\n",
+///     "├───┼──────────┼──────────┤\n",
+///     "│ 0 │ data 11  │ data 12  │\n",
+///     "│ 1 │ data 21  │ data 22  │\n",
+///     "╰───┴──────────┴──────────╯",
+/// );
+/// 
+/// assert_eq!(expected, s);
+/// ``` 
 pub struct QueryTable
 {
     builder: Builder,
@@ -87,7 +119,7 @@ impl QueryTable {
     // Creates a new empty [QueryTable]
     pub fn new(options: QueryTableOptions) -> Self
     {
-        let mut builder = Builder::default();
+        let builder = Builder::default();
         
         let table_data: Option<TableData> = {
             match options{
@@ -109,7 +141,7 @@ impl QueryTable {
         }
     }
 
-
+    /// Sets the headers of the table, beware that using this method multiple times will not remove the previous headers
     pub fn set_headers(&mut self, mut columns: Vec<String>)
     {
         let mut col: Vec<String> = vec![String::from("i")];
@@ -118,12 +150,13 @@ impl QueryTable {
         self.builder.insert_record(0, col);
     }
 
+    /// Returns true if the headers were already added previously
     pub fn headers_added(&self) -> bool
     {
         return self.headers_added;
     }
 
-
+    /// Push the given lines in the table, while respecting the options of the table during its creation
     pub fn push_line(&mut self, mut values: Vec<String>)
     {
         let mut line: Vec<String> = vec![self.curr_index.to_string()];
@@ -139,7 +172,8 @@ impl QueryTable {
         self.curr_index += 1;
     }
 
-
+    /// Return the table as a [String].
+    /// After using this function, the struct will be out of the scope.
     pub fn as_string(mut self) -> String
     {
         if let Some(opt) = self.table_data {

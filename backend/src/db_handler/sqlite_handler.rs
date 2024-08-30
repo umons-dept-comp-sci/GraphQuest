@@ -278,7 +278,8 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
 
     //_________________________________QUERIES_______________________________________________________________________________
-    async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) {
+    async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) 
+    {
         
         
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
@@ -316,6 +317,9 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                     
                 }
                 lines.push(line);
+            }
+            else if let Err(e) = res{
+                panic!("Error occured while trying to execute the given query: \"{query}\": {}",e);
             }
             if lines.len() == BUFFER_VECTOR_MAX_SIZE {
                 save_data(headers.clone(), lines);

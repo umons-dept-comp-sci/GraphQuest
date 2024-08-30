@@ -2,7 +2,23 @@ use core::fmt;
 use std::{fs::File, io::Write, path::Path};
 
 
-/// Small structs used to make the create of a csv file easier
+/// Small structs used to make the creation of a *csv* type file easier
+/// 
+/// # Examples
+/// 
+/// ```
+/// let mut file = CsvFile::new(&String::from("tmp.csv"), Some(';')).expect("Could not create file");
+/// let column_names = vec!["column1".to_string(), "column2".to_string()];
+/// let values1 = vec![vec!["data 11".to_string(), "data 12".to_string()],
+///                    vec!["data 21".to_string(), "data 22".to_string()]];
+/// 
+/// let values2 = vec![vec!["data 31".to_string(), "data 32".to_string()],
+///                    vec!["data 41".to_string(), "data 42".to_string()]];
+/// 
+/// file.write_lines_to_file(column_names, values1).expect("An error occured while trying to write in the file");
+/// file.write_lines_to_file(vec![], values2).expect("An error occured while trying to write in the file");
+/// 
+/// ```
 pub struct CsvFile
 {
     /// The file where the data will be stored
@@ -17,7 +33,9 @@ pub struct CsvFile
 }
 
 impl CsvFile  {
-    /// Creates a new file (or crushes the previous one) 
+    /// Creates a new file at the given path (or crushes the one already present) 
+    /// # Errors
+    /// Will return a [CsvFileError] if there was a problem during the creation of the file
     pub fn new(file_path: &String, separator: Option<char>) -> Result<Self, CsvFileError>
     {
         let path = Path::new(&file_path);
@@ -40,7 +58,11 @@ impl CsvFile  {
 
     }
 
-    /// Writes lines to the csv 
+    /// Writes lines to the csv
+    /// 
+    /// The `column_names` vector will only be used for the first time this function is called on this struct, after this you can give an empty vec.
+    /// # Errors
+    /// Will return a [CsvFileError] if there was a problem during the creation of the file
     pub fn write_lines_to_file(&mut self, column_names: Vec<String>, values: Vec<Vec<String>>) -> Result<(), CsvFileError>
     {
         
@@ -64,6 +86,16 @@ impl CsvFile  {
 
 
 /// Correctly formats the vector as a cvs line, (adds a '\n' to finish the line)
+/// # Examples
+/// 
+/// ```
+/// let line: String = as_line(&vec!["data1".to_string(), 
+/// "data2".to_string(), 
+/// "data3".to_string()], ';');
+/// 
+/// assert_eq!("data1;data2;data3\n", line);
+/// ```
+
 pub fn as_line(values: &Vec<String>, separator: char) -> String
 {
     let mut to_write = String::new();
@@ -77,10 +109,12 @@ pub fn as_line(values: &Vec<String>, separator: char) -> String
 
 
 
-
+/// Enum used to report a [CsvFile] error
 pub enum CsvFileError
 {
+    /// Is used when there is an error during the creation of the file
     CreationError(String),
+    /// Is used when there is an error when trying to write in the file 
     WriteError(String)
 }
 
