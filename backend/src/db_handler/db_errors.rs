@@ -5,6 +5,9 @@ pub enum GraphDatabaseError
 {
     TableNotFoundError{
         table_name: String
+    },
+    ForbiddenActionError{
+        action: String
     }
 }
 
@@ -18,7 +21,8 @@ impl fmt::Display for GraphDatabaseError {
 impl fmt::Debug for GraphDatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TableNotFoundError { table_name } => f.debug_struct("TableNotFoundError").field("table_name", table_name).finish(),
+            GraphDatabaseError::TableNotFoundError { table_name } => f.debug_struct("TableNotFoundError").field("table_name", table_name).finish(),
+            GraphDatabaseError::ForbiddenActionError { action } => f.debug_struct("ForbiddenActionError").field("action", action).finish(),
         }
     }
 }
@@ -29,6 +33,7 @@ impl GraphDatabaseError {
     {
         match self {
             GraphDatabaseError::TableNotFoundError { table_name } => format!("The given table name does not exist: {}", table_name),
+            GraphDatabaseError::ForbiddenActionError { action } => format!("The following action is forbidden: {}", action),
         }
     }
 }

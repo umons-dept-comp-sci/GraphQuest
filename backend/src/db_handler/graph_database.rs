@@ -6,6 +6,8 @@ use std::process::ChildStdin;
 use std::{io::BufRead, marker::PhantomData};
 
 
+use sqlx::error::DatabaseError;
+
 use crate::utils::subject::{Subject, Observer};
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 use crate::utils::write_csv::{as_line, CsvFile};
@@ -88,6 +90,11 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// *   The given database url is not valid
     /// *   The database is not a valid workspace, meaning it was mostlikely tempered with (#TODO)
     async fn connect_graph_database(db_url: &str) -> Self;
+
+
+    /// Closes the connection with the database
+    async fn close_connection(self);
+
 
     /// Adds a dataset table to the database that will be used to store all initial signatures.
     /// The database table must only have one column (with it being the primary key).
@@ -257,8 +264,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         }
     }
 
-    /// Closes the connection with the database
-    async fn close_connection(self);
+    
 
     /// Executes the query to the database and fetches the output in a human readable way
     async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Result<Option<Vec<Vec<String>>>, GraphDatabaseError>
@@ -413,6 +419,27 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Returns a query that can be used to retrieve all the tables from the database.
     /// With this query, the only returned column should be the **names** of the tables
     async fn get_all_table_names_query(&self) -> String;
+
+
+    /// Deletes the given table if it is not critical for the database
+    /// 
+    async fn try_delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        // Check if the table is not critical
+        if table_name.to_lowercase() == DATASET_PK_NAME.to_lowercase() || table_name.to_lowercase() == METADATA_PK_NAME.to_lowercase() {
+            return Err(GraphDatabaseError::ForbiddenActionError { action: format!("Tried to delete the table {}", table_name)})
+        }
+
+        // Delete the table
+        self.delete_table(table_name).await
+        
+    }
+
+    /// Deletes the given table
+    /// ## Exceptions
+    /// Must return 
+    /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
+    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>;
     
 }
 
@@ -556,4 +583,10 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         res
     }
     
+
+
+    pub async fn delete_table(&self, table_name: &String) -> Result<(), GraphDatabaseError>
+    {
+        self.db.try_delete_table(table_name).await
+    }
 }

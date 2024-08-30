@@ -1,5 +1,5 @@
 use std::any::{Any, TypeId};
-use std::fmt::Debug;
+use std::fmt::{format, Debug};
 use std::io::Write;
 use std::pin::Pin;
 use std::process::ChildStdin;
@@ -331,6 +331,24 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn get_all_table_names_query(&self) -> String {
         String::from("SELECT name FROM sqlite_master WHERE type='table';")
+    }
+
+
+
+    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        // check if the table exists
+        if let Err(e) = self.get_size_of_table(table_name).await {
+            return Err(e);
+        }
+        
+        let query = format!("DROP TABLE {}", table_name);
+        let que_res = sqlx::query(&query).execute(&self.pool).await;
+ 
+        match que_res {
+            Ok(_) => Ok(()),
+            Err(e) => {react_to_database_error(&e); Ok(())},
+        }
     }
     
 }
