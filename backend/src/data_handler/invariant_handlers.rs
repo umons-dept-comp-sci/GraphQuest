@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
 
-use crate::db_handler::{graph_database::{GraphDatabase, DATASET_TABLE_NAME}, sqlite_handler::SqliteGraphDatabase};
+use crate::db_handler::graph_database::{GraphDatabase, DATASET_TABLE_NAME};
 
 
 /// The prefix of all the invariant tables 
@@ -28,30 +28,19 @@ pub struct InvariantsExecutable {
     /// Can be either a relative or absolute path
     pub exec_path: String,
 
-    /// The name of the computed invariants in the returned order
+    /// The name of the computed invariants in the order returned
     pub names: Vec<String>,
 
     /// The vector of dependencies requiered to compute this invariant.
-    /// A dependency can be either :
-    /// * The name of a required invariant 
-    /// * The name of the executable of an invariant
+    /// A dependency must be the name of a required invariant 
     dependencies: Vec<String>,
 
     ///// When specified, the program will be provided the needed input that matches the given query
     //input_query: Option<String>
 
-    /// The return type of the program, written in the standart output. Integers by default
-    return_type: Option<String>,
 
-    /// The character that separates two inputs being read by the executable of this invariant
-    /// 
-    /// By default, will be `\n`
-    input_seperator: Option<char>,
-
-    /// The character that separates two computed results of the executable of this invariant being read by this program
-    /// 
-    /// By default, will be `\n`
-    output_separator: Option<char>
+    //// The return type of the program, written in the standart output. Integers by default
+    //return_type: Option<String>,
 
 }
 
@@ -70,7 +59,7 @@ impl Debug for InvariantsExecutable {
 
 impl Clone for InvariantsExecutable {
     fn clone(&self) -> Self {
-        Self { exec_path: self.exec_path.clone(), names: self.names.clone(), dependencies: self.dependencies.clone(), return_type: self.return_type.clone(), input_seperator: self.input_seperator.clone(), output_separator: self.output_separator.clone() }
+        Self { exec_path: self.exec_path.clone(), names: self.names.clone(), dependencies: self.dependencies.clone() }
     }
 }
 
@@ -78,9 +67,10 @@ impl Clone for InvariantsExecutable {
 
 
 impl InvariantsExecutable {
-    /// Creates an invariant using the given name
-    pub fn new(exec_path: &String, names: Vec<String>, dependencies: Vec<String>, return_type: Option<String>, 
-               input_seperator: Option<char>, output_seperator: Option<char>) -> Self
+    /// Creates an invariant using the given parameters
+    /// # Panics
+    /// Will panic if one of the names or executable path is invalid.
+    pub fn new(exec_path: &String, names: Vec<String>, dependencies: Vec<String>) -> Self
     {
         
         let path = Path::new(exec_path);
@@ -92,9 +82,6 @@ impl InvariantsExecutable {
             exec_path : exec_path.to_string(),
             names,
             dependencies,
-            return_type,
-            input_seperator,
-            output_separator: output_seperator
         };
         i.check_validity();
         
@@ -134,11 +121,12 @@ impl InvariantsExecutable {
     }
 
     /// Checks if the given invariant name can be used to create a table and/or a column in a database
-    /// ## Exceptions
+    /// 
+    /// ## Panics
     /// Will panic if :
     /// * The given name is not ascii
     /// * The given name does not match with the following regex: `^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$`
-    fn check_invariant_name_validity(name: &String)
+    pub fn check_invariant_name_validity(name: &String)
     {
         if !name.is_ascii() {
             panic!("The given invariant name \"{name}\" is not ascii")// ([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*
@@ -150,7 +138,8 @@ impl InvariantsExecutable {
         }
     }
 
-    // Simply formats the name to what the invariant table name is
+    /// Simply formats the name to what the invariant table name is.
+    /// As of writing this, will simply clone the given string
     pub fn get_table_name_from_string(name: &String) -> String 
     {
         name.to_string()
@@ -161,7 +150,7 @@ impl InvariantsExecutable {
 /// Stores [InvariantsExecutable]s in order to prepare the later computations involving them.
 /// Such as by checking :
 /// * if an invariant was already added
-/// * if one of it's dependencies was not added 
+/// * if one of it's dependencies does not exists 
 /// * ...
 /// And can perform a topology sort
 pub struct InvariantsOrderHandler
@@ -189,27 +178,30 @@ impl InvariantsOrderHandler {
     /// * Or relative to the dependency file itself 
     pub fn read_json(path: &String) -> Self
     {
+        // Open file
         let mut handler = Self::new();
         let p = Path::new(&path);
         let f = File::open(p).expect(format!("The given dependency file path (\"{path}\") is not valid").as_str());
         //println!("{:?}", p.parent());
         
+        // Get vector of invariant executables
         let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
-        let mut inv_path: &Path;
+        let mut exec_path: &Path;
         let mut tmp_clone: String;
         for mut exec in inv_vec.executables {
 
             tmp_clone = exec.exec_path.clone();
-            inv_path = Path::new(&tmp_clone);
+            exec_path = Path::new(&tmp_clone);
             // If the path given is not absolute
             // it means that the executable is related to the position of the given dependency file
-            if !inv_path.is_absolute() {
+            // so we simply make it absolute using the dependencies path
+            if !exec_path.is_absolute() {
                 // If the given dependency file has a parent dir path, we can add it
                 if let Some(s) = p.parent() {
                     exec.exec_path = format!("{}/{}", s.to_str().unwrap(), &exec.exec_path);
                 }
             }
-            // Checks validity
+            // Checks validity of the created executable and adds it
             exec.check_validity();
             handler.add_inv_exec(exec);
         }
@@ -253,7 +245,11 @@ impl InvariantsOrderHandler {
     
     /// Performs a topological sort with the stored [InvariantsExecutable]s
     /// 
-    /// After this function, the [InvariantsOrderHandler] will go out of scope.
+    /// After this function, this struct instance will go out of scope.
+    /// # Panics
+    /// Will panic if 
+    /// * one of the dependencies from one executable was not found inside this manager.
+    /// * if the executable depends on itself 
     pub fn get_topological_order(mut self) -> InvariantsExecManager
     {
         // Init the topological sort
@@ -325,6 +321,8 @@ impl InvariantsOrderHandler {
 
 
 /// Manages the execution of invariants whose order has been determined by an [InvariantsOrderHandler]
+/// 
+/// To get an instance of this struct, use the [InvariantsOrderHandler::get_topological_order] function.
 pub struct InvariantsExecManager
 {
     /// The invariants sorted using a topological sort
@@ -361,11 +359,13 @@ impl InvariantsExecManager {
         self.dep_index[dep_index as usize].push(inv_index);
     }
 
-    /// Groups all [InvariantsExecutable] by their dependencies and the number of simultaneous processes
-    pub fn group_process_executions(mut self, mut proccess_available: usize) -> Vec<InvariantExecGroup>
+    /// Groups all [InvariantsExecutable] by their dependencies and the number of simultaneous processes 
+    /// in order to create a vector of [InvariantExecGroup] for later computations
+    
+    pub fn group_process_executions(mut self, mut proccesses_available: usize) -> Vec<InvariantExecGroup>
     {
         let n = self.dep_index.len();
-        if proccess_available < 1 {
+        if proccesses_available < 1 {
             panic!("At least one proccess must be used to work with");
         }
         
@@ -387,11 +387,11 @@ impl InvariantsExecManager {
             can_exec = vec![];
             i = 0;
             // Check which tasks can now be executed
-            while i < n && proccess_available > 0
+            while i < n && proccesses_available > 0
             {
                 if self.dep_left[i] == 0  && todo[i]{
                     can_exec.push(i);
-                    proccess_available -= 1;
+                    proccesses_available -= 1;
                     todo[i] = false;
                 }
                 i += 1;
@@ -411,7 +411,7 @@ impl InvariantsExecManager {
 
             // update dependencies
             for j in &can_exec {    // for all executed programs
-                proccess_available += 1;
+                proccesses_available += 1;
                 completed += 1;
                 for dep_index in &self.dep_index[*j] {   // for all programs currently waiting for this program to finish
                     self.dep_left[*dep_index as usize] -= 1;   // update them
@@ -443,6 +443,32 @@ impl InvariantsExecManager {
 }
 
 
+/// An [InvariantExecGroup] is a struct that holds a [Vec<Vec<InvariantsExecutable>>], 
+/// * with the outer vector representing an executable group, meaning they can all be executed at the same time, with the same dependencies
+/// * and the inner containing a vector of executable that should be executed simultaneously
+///  
+/// # Explanation using an example
+/// 
+/// Let 5 processes `[A, B, C, D, E]`, with the following dependencies (for example B1 means a dependency from the executable B)
+/// * `[A -> B1, C1; B -> /; C -> D1; D -> B1; E -> /]`
+/// 
+/// A topological order could be: 
+/// * `E => B => A => D => C`.
+/// 
+/// But since they don't all depend on each others and sometimes have the same dependencies, we could execute multiple ones at the same time like
+/// **E** and **B**, **A** and **D**. So the order of execution could be 
+/// * `[E, B] => [A, D] => [C]`
+/// 
+/// Meaning we now have 3 execution groups, but we also have to think about the max number of process allowed `m`. If `m = 1` then we would have the following execution order
+/// * `[ [E] => [B] ] => [ [A] => [D] ] => [ [C] ]`
+/// 
+/// Which is the orginal topological order.
+/// 
+/// We now have three [InvariantExecGroup], each containing:
+/// - `[[E], [B]]`
+/// - `[[A], [D]]`
+/// - `[[C]]`
+///  
 pub struct InvariantExecGroup
 {
     group: Vec<Vec<InvariantsExecutable>>,
@@ -530,7 +556,7 @@ impl InvariantExecGroup {
         count
     }
 
-    /// Fetches the current progression of the invariants by checking their table length (if they have one)
+    /// Fetches the current progression of the invariants by checking their table length (if they have one) inside a [GraphDatabase]
     pub async fn fetch_progress_info<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
     {
         let max_size = db.get_size_of_table(DATASET_TABLE_NAME).await.unwrap();
@@ -570,7 +596,7 @@ impl InvariantExecGroup {
 
     }
 
-    /// Compute the invariant and stores result in the database
+    /// Compute the executable and stores the results in the database
     pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
     {
         // get min size

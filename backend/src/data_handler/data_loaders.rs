@@ -69,7 +69,7 @@ pub async fn read_pipe_signatures<'a, T: GraphDatabase<'a>>(db: &T)
 }
 
 
-/// Reads a file by using a buffer, and stores it in the given database
+/// Reads a file, located at the given path, by using a buffer, and stores it in the given database
 async fn read_file<'a, T: GraphDatabase<'a>> (db: &T, path: &String)
 {
     let f = File::open(path).expect(format!("The given file path \"{path}\" is not valid").as_str());
@@ -85,8 +85,11 @@ pub enum Method
 {
     /// Read input from GengAPI
     GengAPI{
+        /// The number of vertices of the graphs to add
         nb_of_vertices: u32,
+        /// The graph parameters to give, they must follow the `geng` rules
         graph_settings: String,
+        /// The edges boundaries of the graph to generate
         edges_bound: (Option<u32>, Option<u32>)
     },
     /// Read input from stdin

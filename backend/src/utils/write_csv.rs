@@ -2,7 +2,7 @@ use core::fmt;
 use std::{fs::File, io::Write, path::Path};
 
 
-/// Small structs used to make the creation of a *csv* type file easier
+/// Small struct used to make the creation of a *csv* type file easier
 /// 
 /// # Examples
 /// 
@@ -135,6 +135,7 @@ impl fmt::Debug for CsvFileError {
 }
 
 impl CsvFileError {
+    /// Returns the error message to display for the user
     fn get_error_message(&self) -> String
     {
         match self {
