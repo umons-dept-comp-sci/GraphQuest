@@ -18,8 +18,7 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
             let inv_path = Path::new(&pro_path);
             let inv_name = String::from(inv_path.file_stem().expect(format!("Cannot get the non extension part of the given executable \"{pro_path}\"").as_str())
                                                 .to_str().expect(format!("The given executable path \"{pro_path}\" cannot be turned into an invariant name").as_str()));
-            let exec = InvariantsExecutable::new(&pro_path, vec![ inv_name],
-                                                                     vec![], None, None, None);
+            let exec = InvariantsExecutable::new(&pro_path, vec![ inv_name], vec![]);
 
             inv_execs.add_inv_exec(exec);
         }
