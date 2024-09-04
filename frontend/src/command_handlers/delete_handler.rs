@@ -1,13 +1,13 @@
 use gquest_core::db_handler::{graph_database::Workspace, sqlite_handler::SqliteGraphDatabase};
 use log::info;
 
-use crate::cli_commands::DatabasePath;
+use crate::{cli_commands::DatabasePath, try_connect_workspace};
 
 
 pub async fn delete(path: DatabasePath, table_name: String)
 {
     
-    let wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
+    let wp : Workspace<SqliteGraphDatabase> = try_connect_workspace(path).await;
 
     if let Err(e) = wp.delete_table(&table_name).await
     {   

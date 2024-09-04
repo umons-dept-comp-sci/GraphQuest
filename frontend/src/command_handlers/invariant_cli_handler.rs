@@ -2,7 +2,7 @@ use gquest_core::data_handler::invariant_handlers::{InvariantsExecutable, Invari
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
 use log::{debug, info};
 use std::path::Path;
-use crate::log_handler::*;
+use crate::{log_handler::*, try_connect_workspace};
 use crate::cli_commands::*;
 
 
@@ -34,7 +34,7 @@ pub async fn compute(path: DatabasePath, choice: ComputeChoice, max_processes: u
     info!("Topological order of the execution: {}", execution_manager.pretty_string());
     
     // connect to database
-    let mut wp: Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
+    let mut wp: Workspace<SqliteGraphDatabase> = try_connect_workspace(path).await;
     
     
 

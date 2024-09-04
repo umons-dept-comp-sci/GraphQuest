@@ -80,16 +80,15 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Creates the database that will be storing the project.
     /// 
     /// Returns a struct implementing the [GraphDatabase] trait.
-    async fn create_graph_database(db_url: &str) -> Self;
+    async fn create_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError>;
 
 
     /// Connects to the given database
     /// 
     /// ## Exceptions
-    /// Must panic when:
-    /// *   The given database url is not valid
-    /// *   The database is not a valid workspace, meaning it was mostlikely tempered with (#TODO)
-    async fn connect_graph_database(db_url: &str) -> Self;
+    /// Must return a:
+    /// *   [GraphDatabaseError::DatabaseNotFound] if the url is not valid
+    async fn connect_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError>;
 
 
     /// Closes the connection with the database
@@ -453,36 +452,45 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     /// * [GraphDatabase::create_graph_database] : to create the database
     /// * [GraphDatabase::create_dataset_table] : to create the dataset table
     /// * [GraphDatabase::create_meta_data_table] : to create the meta data table
-    pub async fn init_workspace(db_url: &str) -> Self
+    pub async fn init_workspace(db_url: &str) -> Result<Self, GraphDatabaseError>
     {
-
-        
         // Init database
         let db = T::create_graph_database(db_url).await;
-        
-        // Init dataset table
-        db.create_dataset_table().await;
-
-        // Init meta data table
-        db.create_meta_data_table().await;
-
-        // Return the db connection encapsulated
-        Workspace {
-            db,
-            _t : Default::default()
+        if let Err(e) = db {
+            Err(e)
         }
+        else {
+            let db = db.unwrap();
+            // Init dataset table
+            db.create_dataset_table().await;
+    
+            // Init meta data table
+            db.create_meta_data_table().await;
+    
+            // Return the db connection encapsulated
+            Ok(Workspace {
+                db,
+                _t : Default::default()
+            })
+        }
+        
     }
 
 
     /// Connects to the workspace using the given url
-    pub async fn connect_workspace(db_url: &str) -> Self
+    pub async fn connect_workspace(db_url: &str) -> Result<Self, GraphDatabaseError>
     {
         // Try to connect to the database
         let db = T::connect_graph_database(db_url).await;
-        // Return the db connection encapsulated
-        Workspace {
-            db,
-            _t : Default::default()
+        if let Err(e) = db {
+            Err(e)
+        }else {
+            let db = db.unwrap();
+            // Return the db connection encapsulated
+            Ok(Workspace {
+                db,
+                _t : Default::default()
+            })
         }
     }
 

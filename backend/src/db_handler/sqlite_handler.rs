@@ -85,11 +85,18 @@ impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
 
 impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     // TODO Also create meta data table
-    async fn create_graph_database(db_url: &str) -> Self {
+    async fn create_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError> {
         // Creates the database if it didn't already exists
-        create_graph_database(db_url).await;
+        if let Err(e) = create_graph_database(db_url).await {
+            return Err(e);
+        }
+        let res = Self::connect_graph_database(db_url).await;
+        if let Err(e) = res {
+            return Err(e);
+        }
+        
+        Ok(res.unwrap())
         // Create the object
-        connect_graph_database(db_url).await
     }
 
     async fn create_dataset_table(&self) {
@@ -175,26 +182,21 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
     }
     
-    async fn connect_graph_database(db_url: &str) -> Self {
-        SqliteGraphDatabase{
+    async fn connect_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError> {
+        Ok(SqliteGraphDatabase{
             pool:
             {
-                // disables the log slow statements
-                let c = SqliteConnectOptions::from_str(db_url).expect(format!("The given database url is not valid \"{db_url}\"").as_str())
-                                        .log_slow_statements(log::LevelFilter::Off, Duration::from_secs(10));
-                
                 // if managed to connected then return the value
-                if let Ok(pool) = SqlitePool::connect_with(c).await{
+                if let Ok(pool) = SqlitePool::connect(db_url).await{
                     pool
                 }
                 // else panic
                 else {
-                    panic!("The given database url is not valid \"{db_url}\"")
+                    return Err(GraphDatabaseError::DatabaseNotFound { database_name: db_url.to_string() });
                 }
             },
-            obs: None
-        }
-        // TODO Check if the workspace is valid, if it wasn't tempered with
+            obs: None, 
+        })
     }
     
     async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) {
@@ -280,7 +282,6 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     //_________________________________QUERIES_______________________________________________________________________________
     async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) 
     {
-        
         
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
         
@@ -375,40 +376,24 @@ impl<'a> SqliteGraphDatabase<'a> {
 
 
 
-async fn create_graph_database(db_path: &str)
+async fn create_graph_database(db_path: &str) -> Result<(), GraphDatabaseError>
 {
     if !Sqlite::database_exists(db_path).await.unwrap_or(false) {
     debug!("Creating database {}", db_path);
         match Sqlite::create_database(db_path).await {
-            Ok(_) => debug!("Sucess creating the database {}", db_path),
-            Err(error) => panic!("error: {}", error),
+            Ok(_) => {debug!("Sucess creating the database {}", db_path); Ok(())},
+            Err(error) => 
+            {
+                Err(GraphDatabaseError::UnknownError { error_message: error.to_string() })
+            }
         }
     } else {
-        panic!("The given database was already created");
+        Err(GraphDatabaseError::DatabaseAlreadyCreated { database_name: db_path.to_string() })
     }
 }
 
 
-/// Tries to connect to an already existing database using the given *db_path*. Returns a [GraphDatabase] struct.
-/// # Errors
-/// Will `panic!(..)` if the given data path is not valid
-pub async fn connect_graph_database<'a>(db_path : & str) -> SqliteGraphDatabase<'a>
-{
-    SqliteGraphDatabase{
-        pool:
-        {
-            // if managed to connected then return the value
-            if let Ok(pool) = SqlitePool::connect(db_path).await{
-                pool
-            }
-            // else panic
-            else {
-                panic!("The given database path is not valid")
-            }
-        },
-        obs: None, 
-    }
-}
+
 
 
 

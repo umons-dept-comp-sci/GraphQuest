@@ -2,15 +2,17 @@
 use clap::{ArgAction, Args, Parser, Subcommand};
 
 use clap_verbosity_flag::{InfoLevel, WarnLevel};
+use gquest_core::db_handler::db_errors::GraphDatabaseError;
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
 use gquest_core::data_handler::data_loaders::Method::*;
 use gquest_core::utils::subject::Observer;
-use log::{debug, info};
+use log::{debug, error, info};
 use std::ops::Range;
 use std::fmt::Debug;
 use std::fs::File;
 
 
+use crate::*;
 use crate::log_handler::*;
 use crate::cli_commands::*;
 
@@ -23,15 +25,20 @@ pub async fn init(path: DatabasePath, choice: DatasetChoice)
     // pb lifeline must end with workspace's !
     let mut pb = DatasetPbObs::new();
     
-    let mut wp : Workspace<SqliteGraphDatabase> = Workspace::init_workspace(&path.url).await;
+    match Workspace::<SqliteGraphDatabase>::init_workspace(&path.url).await {
+        Ok(mut wp) => {
+            info!("Database created");
+            // Only one can be chosen at a time
+            match_import_data(&mut wp, choice, &mut pb).await;
+            // Close workspace
+            info!("Closing database");
+            wp.close_workspace().await;
 
-    info!("Database created");
-
-    // Only one can be chosen at a time
-    match_import_data(&mut wp, choice, &mut pb).await;
-    // Close workspace
-    info!("Closing database");
-    wp.close_workspace().await;
+        },
+        Err(e) => {
+            error!("An error occured while trying to create the database : {}", e);
+        },
+    }
 }
 
 /// Connects to a workspace and complete a dataset using the prefered way of the user 
@@ -40,13 +47,17 @@ pub async fn add(path: DatabasePath, choice: DatasetChoice)
     // Connect to workspace
     info!("Connecting to database at path : {:?}", path.url);
     let mut pb = DatasetPbObs::new();
-    let mut wp : Workspace<SqliteGraphDatabase> = Workspace::connect_workspace(&path.url).await;
-    info!("Connected to database");
+    let mut wp = try_connect_workspace(path).await;
+    info!("Database created");
+    // Only one can be chosen at a time
     match_import_data(&mut wp, choice, &mut pb).await;
-    // close workspace
+    // Close workspace
     info!("Closing database");
     wp.close_workspace().await;
+    
 }
+
+
 
 
 /// Matches between the different dataset choices and calls the relevant function
