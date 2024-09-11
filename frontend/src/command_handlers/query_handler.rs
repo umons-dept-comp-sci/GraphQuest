@@ -1,3 +1,4 @@
+use gquest_core::db_handler::workplace::Workspace;
 use gquest_core::db_handler::{graph_database::*, sqlite_handler::*};
 use gquest_core::utils::table_handler::QueryTableOptions;
 

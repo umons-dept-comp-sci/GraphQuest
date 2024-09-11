@@ -1,4 +1,4 @@
-use gquest_core::db_handler::{graph_database::Workspace, sqlite_handler::SqliteGraphDatabase};
+use gquest_core::db_handler::{sqlite_handler::SqliteGraphDatabase, workplace::Workspace};
 use log::info;
 
 use crate::{cli_commands::DatabasePath, try_connect_workspace};
