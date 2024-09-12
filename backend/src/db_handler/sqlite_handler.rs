@@ -119,7 +119,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     
     
-    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
+    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
     {
 
         // Represents the query where we fetch the desired signatures
@@ -172,8 +172,9 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 
                 sign.push('\n');
                 // write in all inputs
-                for input in &mut inputs {
+                for mut input in inputs {
                     input.write(sign.as_bytes()).unwrap();
+                    input.flush().expect("Could not flush stdin of process");
                 }
             }
         }

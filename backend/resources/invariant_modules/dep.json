@@ -2,30 +2,18 @@
   "executables":
   [
     {
-        "exec_path": "alpha.py",
-        "names": ["chromatic_number", "a2", "a3"],
-        "dependencies": [],
-        "return_type": "integer",
-        "input_seperator": "\n"
+      "exec_path": "is_planar.py",
+      "names": ["is_planar"],
+      "dependencies": []
     },
     {
-      "exec_path": "beta.py",
-      "names": ["b1", "b2"],
-      "dependencies": ["a3"]
+      "exec_path": "size.py",
+      "names": ["size"],
+      "dependencies": []
     },
     {
-      "exec_path": "delta.py",
-      "names": ["d1"],
-      "dependencies": ["a3", "chromatic_number"]
-    },
-    {
-      "exec_path": "theta.py",
-      "names": ["t"],
-      "dependencies": ["a3", "chromatic_number"]
-    },
-    {
-      "exec_path": "p.py",
-      "names": ["p1"],
+      "exec_path": "num_col.py",
+      "names": ["color"],
       "dependencies": []
     }
   ]

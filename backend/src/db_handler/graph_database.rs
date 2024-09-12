@@ -1,4 +1,4 @@
-use std::io::{stdout, Write};
+use std::io::{stdout, Lines, Write};
 use std::process::ChildStdin;
 use std::{io::BufRead, marker::PhantomData};
 
@@ -138,7 +138,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// ## Exceptions
     /// Must panic when:
     /// * The given indexes are not valid
-    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: Vec<ChildStdin>) -> Result<(), GraphDatabaseError>;
+    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>;
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -193,7 +193,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     }
 
     /// Push received data to the invariants table
-    async fn push_data_from_buffer(&self, inv_exec: &InvariantsExecutable, index_in_group: usize, reader: impl BufRead)
+    async fn push_data_from_buffer<T: BufRead>(&self, mut max_to_read: usize, inv_exec: &InvariantsExecutable, index_in_group: usize, reader: & mut Lines<T>)
     {
         // we use a vector of vec in order to store each (signature, value) for each computed invariants
         let mut signature_value_buffer : Vec<Vec<(String, String)>> = Vec::new();
@@ -205,11 +205,10 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         for inv in &inv_exec.names {
             self.init_invariant(inv).await;
         }
-
-        for line in reader.lines() {
-            
+        for line in reader {
             if let Ok(sign_value) = line {
-                //println!("Reading : {sign_value}");
+                
+                max_to_read -= 1;
                 
                 if sign_value != "\n" && sign_value != "" {
 
@@ -238,6 +237,19 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                 }
             }
             
+            if max_to_read == 0 {
+                if signature_value_buffer.len() != 0
+                {                
+                    // update obs
+                    self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));   // Last notifications
+                    for (i, inv) in inv_exec.names.iter().enumerate() {
+
+                        self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                        signature_value_buffer[i].clear();   // free the *buffer*
+                    }
+                }
+                return;
+            }
         }
         if signature_value_buffer.len() != 0
         {                

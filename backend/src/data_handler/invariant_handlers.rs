@@ -1,6 +1,6 @@
-use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread};
+use std::{cmp::min, collections::HashMap, fmt::{self, Debug, Display}, fs::File, io::{stdin, stdout, BufRead, Write}, path::Path, process::{id, Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc, Arc, RwLock}, thread, vec};
 use std::io::BufReader;
-use log::{info, warn};
+use log::{debug, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use topo_sort::{SortResults, TopoSort};
@@ -595,8 +595,10 @@ impl InvariantExecGroup {
         self.data_to_process = Some(total_data);
 
     }
-
-    /// Compute the executable and stores the results in the database
+    
+    
+    
+    /// Compute the executables and stores the results in the database
     pub async fn exec_invariants<'a, T: GraphDatabase<'a>>(&mut self, db: &T)
     {
         // get min size
@@ -614,59 +616,55 @@ impl InvariantExecGroup {
                                     .stdout(Stdio::piped())
                                     .spawn().expect("Could not execute command")
         }
+    
+        let mut group_stdout: Vec<Vec<std::io::Lines<BufReader<ChildStdout>>>> = vec![];
+        let mut group_stdin: Vec<Vec<ChildStdin>> = vec![];
+        // Start the processes
+        for group in &self.group{
+            let mut stdout_vec: Vec<std::io::Lines<BufReader<ChildStdout>>> = vec![];
+            let mut stdin_vec: Vec<ChildStdin> = vec![];
+            for exec in group {
+                let mut command = exec_command(exec);
+                stdin_vec.push(command.stdin.take().expect("Could not extract stdin from process"));
 
+                let stdout = command.stdout.take().expect("Could not extract stdout from process");
+                let buf_read: std::io::Lines<BufReader<ChildStdout>> = BufReader::new(stdout).lines();
+                stdout_vec.push(buf_read);
+            }
+            group_stdin.push(stdin_vec);
+            group_stdout.push(stdout_vec);
+        }
         
         let mut current_data = self.smallest_min.unwrap();
-
+        // Start discussion
         while self.dataset_len.unwrap() > current_data
         {
-            let mut stdout_vec: Vec<Vec<ChildStdout>> = vec![];
-            
             // Push data
             let mut i = 0;
             for group in &self.group {
-                let mut stdout_tmp: Vec<ChildStdout> = vec![];
-                // We suppose that there is always at least one invariantsExecutable per group
                 
-                let mut stdin_vec: Vec<ChildStdin> = vec![];
-                let mut j = 0;
-                // Starts proccesses
-                for exec in group {
-                    if  self.min_values.clone().unwrap()[i][j] <= current_data {
-                        let mut command = exec_command(exec); 
-                        stdin_vec.push(command.stdin.take().unwrap());
-                        stdout_tmp.push(command.stdout.take().unwrap());
-                    }
-                    j += 1;
-                }
-                stdout_vec.push(stdout_tmp);
-                
-                
-                // Write data to the database, and close the stdins 
-                db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, stdin_vec).await.unwrap();
+                db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, &group_stdin[i]).await.unwrap();
                 
                 i += 1;
             }
-
             // Read data
-            for i in (0..stdout_vec.len()).rev() {
-                let mut stdout_v = stdout_vec.pop().unwrap();
-                for s in (0..stdout_v.len()).rev() {
-                    let stdout = stdout_v.pop().unwrap();
-                    
-                    let buf_read = BufReader::new(stdout);
-                    let exec: &InvariantsExecutable = &self.group[i][s];
-                    
-                    db.push_data_from_buffer(exec, s, buf_read).await;
+            for i in 0..self.group.len() {
+                for s in 0..self.group[i].len() {
+
+                    let exec = &self.group[i][s];
+
+                    db.push_data_from_buffer(min(BATCH_SIZE, self.dataset_len.unwrap() - current_data), exec, s, &mut group_stdout[i][s]).await;
                 }
             }
-            
-            
+
+
             current_data += BATCH_SIZE;
-        }        
+        }   
+        debug!("Finished computing all data");
+        // Here the stdins will be free'd, this will stop the programs from expecting more input
+        
     }
-
-
+    
     /// Returns all file names of the currently stored executables
     pub fn get_group_file_names(&self) -> Vec<String>
     {
