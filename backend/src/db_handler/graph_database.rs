@@ -3,6 +3,8 @@ use std::process::ChildStdin;
 use std::{io::BufRead, marker::PhantomData};
 
 
+use log::debug;
+
 use crate::utils::subject::{Subject, Observer};
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 use crate::utils::write_csv::{as_line, CsvFile};
@@ -251,6 +253,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                 return;
             }
         }
+        debug!("buffer closed");
         if signature_value_buffer.len() != 0
         {                
             // update obs
@@ -295,6 +298,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         
         let write_lines = |column_names: Vec<String>, lines: Vec<Vec<String>>|
         {
+            // Add to file if exists
             if write_to_stdout.0 {
                 if !write_to_stdout.2{
                     write!(handle, "{}", as_line(&column_names, write_to_stdout.1)).expect("Could not write column names to stdout");
@@ -308,6 +312,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                file.write_lines_to_file(column_names.clone(), lines.clone()).expect("Could not write to result file");
             }
             
+            // Add to table if exists
             if let Some(table) = table_ref{
                 if !table.headers_added() {
                     table.set_headers(column_names);

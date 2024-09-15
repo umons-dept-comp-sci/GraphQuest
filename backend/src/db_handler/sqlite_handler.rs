@@ -159,24 +159,23 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
         let join_query = join_query_res.unwrap();
         
-        //println!("::->{}", join_query);
         
         // execute query
-        let mut que_res: Pin<Box<dyn Stream<Item = Result<String, sqlx::Error>> + Send>> = sqlx::query_scalar(&join_query).fetch(&self.pool);
-        
-        // push result to the given stdout
-        while let Some(res) = que_res.next().await
-        {
-            if let Ok(mut sign) = res 
-            {
-                
-                sign.push('\n');
-                // write in all inputs
+        let que_res = self.execute_fetch_query(&join_query, None, None, StdoutOptions::None, true).await;
+        if let Err(e) = que_res {
+            return Err(e);
+        }
+        else {
+            let lines = que_res.unwrap().unwrap();
+            for line in lines  {
+                let mut str = line.join(" ");
+                str.push('\n');
                 for mut input in inputs {
-                    input.write(sign.as_bytes()).unwrap();
-                    input.flush().expect("Could not flush stdin of process");
+                    input.write(str.as_bytes()).unwrap();
+                    input.flush().expect("Could not flush stdin of process");   
                 }
             }
+
         }
         
         Ok(())
@@ -259,7 +258,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     async fn inv_already_added(&self, inv: &String) -> bool {
         let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", InvariantsExecutable::get_table_name_from_string(inv));
         let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
-
+        
         match res {
             Ok(count) => count == 1,
             Err(e) => {react_to_database_error(&e); false},
@@ -421,7 +420,6 @@ fn react_to_database_error(e: &sqlx::Error)
         _ => todo!(),
     }
 }
-
 
 
 

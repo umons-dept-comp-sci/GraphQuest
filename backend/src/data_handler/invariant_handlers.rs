@@ -635,9 +635,9 @@ impl InvariantExecGroup {
             group_stdout.push(stdout_vec);
         }
         
-        let mut current_data = self.smallest_min.unwrap();
+        let mut current_data: usize = self.smallest_min.unwrap();
         // Start discussion
-        while self.dataset_len.unwrap() > current_data
+        loop
         {
             // Push data
             let mut i = 0;
@@ -647,21 +647,39 @@ impl InvariantExecGroup {
                 
                 i += 1;
             }
+
+            
+
+            if self.dataset_len.unwrap() <= current_data + BATCH_SIZE {
+                break;
+            }
             // Read data
             for i in 0..self.group.len() {
                 for s in 0..self.group[i].len() {
 
                     let exec = &self.group[i][s];
-
-                    db.push_data_from_buffer(min(BATCH_SIZE, self.dataset_len.unwrap() - current_data), exec, s, &mut group_stdout[i][s]).await;
+                    
+                    db.push_data_from_buffer(BATCH_SIZE, exec, s, &mut group_stdout[i][s]).await;
                 }
             }
-
-
             current_data += BATCH_SIZE;
+            
         }   
-        debug!("Finished computing all data");
         // Here the stdins will be free'd, this will stop the programs from expecting more input
+        debug!("Dropped stdin");
+        debug!("Reading the last outputs");
+        drop(group_stdin);
+        // Read the remaining data
+        for i in 0..self.group.len() {
+            debug!("From {i}");
+            for s in 0..self.group[i].len() {
+
+                let exec = &self.group[i][s];
+                
+                db.push_data_from_buffer(BATCH_SIZE, exec, s, &mut group_stdout[i][s]).await;
+            }
+        }
+        debug!("Finished computing all data");
         
     }
     
