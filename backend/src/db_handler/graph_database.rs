@@ -18,9 +18,9 @@ pub const BUFFER_VECTOR_MAX_SIZE : usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
 pub const DATASET_TABLE_NAME : &str = "Dataset";
 /// The column name of the primary key of the dataset
-pub const DATASET_PK_NAME : &str = "signature";
+pub const PK_NAME : &str = "signature";
 /// The name of the second column of the dataset 
-pub const DATASET_VALUE_NAME : &str = "nb_of_vertices";
+pub const DATASET_VALUE_NAME : &str = "vertices";
 /// The name of the the metadata table
 pub const METADATA_TABLE_NAME : &str = "Metadata";
 /// The name of the primary key of the metadata table
@@ -29,6 +29,8 @@ pub const METADATA_PK_NAME : &str = "table_name";
 pub const METADATA_VALUE_NAME : &str = "stopped_at";
 // The name of the column in an invariant table where the values are stored 
 //pub const INVARIANT_COLUMN_NAME : &str = "value";
+/// The name of the table that has all the data
+pub const FULL_TABLE_NAME: &str = "Full";
 
 
 /// The maximum size of a signature to store in the dataset
@@ -275,6 +277,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Executes the query to the database and fetches the output in a human readable way
     async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Result<Option<Vec<Vec<String>>>, GraphDatabaseError>
     {  
+        
         let mut saved_output: Vec<Vec<String>> = vec![];
         
         let mut query_table: Option<QueryTable> = None;
@@ -357,7 +360,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// * A `Vec<Vec<String>>` which represents the lines from the query result
     /// It is a good idea to call this function multiple times to not have to store too much data 
     async fn execute_query(&self, query: &String, f: impl FnMut(Vec<String>, Vec<Vec<String>>));
-    //_________________________________INVARIANTS_______________________________________________________________________________
+    
 
     /// Creates the given invariant table and adds it to the meta data table,
     /// if it wasn't already added
@@ -422,11 +425,61 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         }
         min_size
     }
-    
 
-    /// Returns a query that can be used to retrieve all the tables from the database.
-    /// With this query, the only returned column should be the **names** of the tables
-    async fn get_all_table_names_query(&self) -> String;
+    /// Joins all tables from the dataset using the [PK_NAME] column
+    /// ## Exceptions
+    /// Returns a [GraphDatabaseError] if an error was encountered
+    async fn join_all_invariant_tables(&self) -> Result<(), GraphDatabaseError>
+    {
+        self.delete_table(FULL_TABLE_NAME).await;
+        let table_names = self.get_all_table_names().await;
+
+        if let Err(e) = table_names{
+            return Err(e)
+        } 
+        let table_names = table_names.unwrap();
+        
+
+        self.join_tables(FULL_TABLE_NAME, table_names).await
+        
+    }
+        
+    /// Returns all the table names except for:
+    /// * The metadata table
+    /// * The dataset table
+    /// * The full data table
+    /// ## Exceptions
+    /// Returns a [GraphDatabaseError] if an error was encountered
+    async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
+        let query = String::from("SELECT name FROM sqlite_master WHERE type='table';");
+        let que_res = self.execute_fetch_query(&query, None, None, StdoutOptions::None, true).await;
+        if let Err(e) = que_res {
+            return Err(e);
+        }
+        else {
+            let mut tables: Vec<String> = vec![];
+            let que_res = que_res.unwrap().unwrap();
+            for lines in que_res {
+                for value in lines  {
+                    if !(value == METADATA_TABLE_NAME || value == DATASET_TABLE_NAME || value == FULL_TABLE_NAME)
+                    {
+                        tables.push(value);
+                    }
+                }
+            }
+            Ok(tables)
+        }
+    }
+
+
+    /// Joins all the given tables and creates a new table with the given name
+    /// ## Exceptions
+    /// Returns a [GraphDatabaseError] if an error was encountered
+    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), GraphDatabaseError>;
+
+
+    /// Gets a query that returns all the names from the database
+    async fn get_all_tables_query(&self) -> String;
 
 
     /// Deletes the given table if it is not critical for the database

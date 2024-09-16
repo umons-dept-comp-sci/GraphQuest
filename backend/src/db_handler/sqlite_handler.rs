@@ -102,7 +102,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     async fn create_dataset_table(&self) {
         // Adds a database table 
         let query = format!("CREATE TABLE {DATASET_TABLE_NAME} 
-                                    ({DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL,
+                                    ({PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL,
                                      {DATASET_VALUE_NAME} VARCHAR);");
 
         sqlx::query(&query).execute(&self.pool).await.unwrap();
@@ -129,7 +129,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 None => 0,
             };
             
-            let mut tmp = format!("SELECT {} FROM {}", DATASET_PK_NAME, DATASET_TABLE_NAME);
+            let mut tmp = format!("SELECT {} FROM {}", PK_NAME, DATASET_TABLE_NAME);
             if let Some(size) = limit 
             {
                 tmp.push_str(format!(" LIMIT {}", size).as_str());
@@ -148,7 +148,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 if let Err(t) = self.get_size_of_table(&inv_name).await {
                     return Err(t);
                 }
-                tmp.push_str(format!(" INNER JOIN {} USING ({})", inv_name, DATASET_PK_NAME).as_str());
+                tmp.push_str(format!(" INNER JOIN {} USING ({})", inv_name, PK_NAME).as_str());
             }
             tmp.push(';');
             Ok(tmp)
@@ -250,7 +250,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     
     async fn create_invariant_table(&self, inv: &String) {
         let query = format!("CREATE TABLE {} (
-                                    {DATASET_PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
+                                    {PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
                                     {} {}); ",
                                     InvariantsExecutable::get_table_name_from_string(inv), 
                                     InvariantsExecutable::get_table_name_from_string(inv),
@@ -270,7 +270,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
     
     async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError> {
-        let query = format!("SELECT count({}) FROM {};", DATASET_PK_NAME, name);
+        let query = format!("SELECT count({}) FROM {};", PK_NAME, name);
         //println!("query: {:?}", &query);
 
         let res: Result<u64, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
@@ -337,11 +337,13 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         
     }
     
-    async fn get_all_table_names_query(&self) -> String {
+    
+
+
+    async fn get_all_tables_query(&self) -> String
+    {
         String::from("SELECT name FROM sqlite_master WHERE type='table';")
     }
-
-
 
     async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
     {
@@ -359,6 +361,26 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         }
     }
     
+
+    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), GraphDatabaseError>
+    {
+        let mut query = format!("CREATE TABLE IF NOT EXISTS {new_table_name} AS ");
+
+        let mut tmp = format!("SELECT * FROM ({})", DATASET_TABLE_NAME);
+        for name in table_names {
+            if let Err(t) = self.get_size_of_table(&name).await {
+                return Err(t);
+            }
+            tmp.push_str(format!(" INNER JOIN {} USING ({})", name, PK_NAME).as_str());
+        }
+        query.push_str(&tmp);
+        query.push_str(";");
+        println!("query :  {:?}", query);
+
+        let que_res = sqlx::query(&query).execute(&self.pool).await.expect("Error joining tables");
+
+        Ok(())
+    }
 }
 
 

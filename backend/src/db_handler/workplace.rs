@@ -113,7 +113,8 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
     /// Executes the given query to the database
     pub async fn execute_query(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Option<Vec<Vec<String>>>
     {
-        //println!("{:?}, {:?}, {:?}, {:?}", query, separator, output_path, stdout_opt);
+        self.db.join_all_invariant_tables().await.unwrap();
+        
         self.db.execute_fetch_query(query, separator, output_path, stdout_opt, return_result).await.unwrap()
     }
 
@@ -138,7 +139,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         res.set_headers(vec!["Table Name".to_string(), "Size".to_string(), "%".to_string()]);
         // fetch all table names, if thet `get_all_table_names_query` is correct, the
         // only data contained in a line should be the name of a table
-        let tables = self.db.execute_fetch_query(&self.db.get_all_table_names_query().await,
+        let tables = self.db.execute_fetch_query(&self.db.get_all_tables_query().await,
                                                  None, None, StdoutOptions::None,
                                                  true)
                                                  .await.unwrap().unwrap(); 
