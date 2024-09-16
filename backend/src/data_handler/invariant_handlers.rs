@@ -659,7 +659,7 @@ impl InvariantExecGroup {
 
                     let exec = &self.group[i][s];
                     
-                    db.push_data_from_buffer(BATCH_SIZE, exec, s, &mut group_stdout[i][s]).await;
+                    db.push_data_from_buffer(BATCH_SIZE, exec, &mut group_stdout[i][s]).await;
                 }
             }
             current_data += BATCH_SIZE;
@@ -676,7 +676,7 @@ impl InvariantExecGroup {
 
                 let exec = &self.group[i][s];
                 
-                db.push_data_from_buffer(BATCH_SIZE, exec, s, &mut group_stdout[i][s]).await;
+                db.push_data_from_buffer(BATCH_SIZE, exec, &mut group_stdout[i][s]).await;
             }
         }
         debug!("Finished computing all data");

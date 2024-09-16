@@ -5,16 +5,16 @@ pub trait Observer: Send + Sync
     /// Notify the observer that a tick has passed
     /// 
     /// An additional index to provide more information when it is useful
-    fn notify_tick(&self, index: Option<usize>);
+    fn notify_tick(&self);
     /// Notify the observer of the quantity of data read since the last call to this function
     /// 
     /// An additional index to provide more information when it is useful
-    fn notify_data_pushed(&self, progression: u64, index: Option<usize>);
+    fn notify_data_pushed(&self, progression: u64);
 
     /// Notify that the subject has moved on to the next step, 
     /// 
     /// An additional index to provide more information when it is useful
-    fn notify_iteration(&self, index: Option<usize>);
+    fn notify_iteration(&self);
     
 }
 
@@ -26,8 +26,8 @@ pub trait Subject<'a> {
     /// Remove the current graph observer
     fn remove_graph_db_observer(&mut self);
     /// Updates the observator of the current progress made
-    fn update_observator(&self, progression: u64, index: Option<usize>);
+    fn update_observator(&self, progression: u64);
     /// Send a tick to the current graph observator
-    fn tick_observator(&self, index: Option<usize>);
+    fn tick_observator(&self);
 } 
 

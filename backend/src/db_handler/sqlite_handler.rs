@@ -70,15 +70,15 @@ impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
         self.obs = None;
     }
 
-    fn update_observator(&self, progression: u64, index: Option<usize>) {
+    fn update_observator(&self, progression: u64) {
         if let Some(o) = self.obs {
-            o.notify_data_pushed(progression, index);
+            o.notify_data_pushed(progression);
         }
     }
     
-    fn tick_observator(&self, index: Option<usize>) {
+    fn tick_observator(&self) {
         if let Some(o) = self.obs {
-            o.notify_tick(index);
+            o.notify_tick();
         }
     }
 }
@@ -200,6 +200,9 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
     
     async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) {
+        if signatures_values.len() == 0 {
+            return;
+        }
         // Then we add all signatures to the newly created table
         let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
 

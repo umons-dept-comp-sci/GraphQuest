@@ -36,7 +36,7 @@ pub const SIGNATURE_MAX_SIZE : usize = 250;
 /// The maximum size of a table name in the dataset
 pub const TABLE_NAME_MAX_SIZE : usize = 250;
 /// The speed at which the observator will be notified (if any present on db)
-const ITERATION_BEFORE_NOTIFY : u8 = 100;
+const ITERATION_BEFORE_NOTIFY : u8 = 10;
 
 
 
@@ -182,20 +182,20 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             notif_countdown -= 1;   // Update countdown
             // If it is time to notify the observor
             if notif_countdown == 0 {
-                self.update_observator(byte_buffer, None);   
+                self.update_observator(byte_buffer);   
                 notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
                 byte_buffer = 0;
             }
         }
         if signature_value_buffer.len() != 0
         {                
-            self.update_observator(byte_buffer, None);   // Last notifications
+            self.update_observator(byte_buffer);   // Last notifications
             self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await;  // add remaining values to the database
         }
     }
 
-    /// Push received data to the invariants table
-    async fn push_data_from_buffer<T: BufRead>(&self, mut max_to_read: usize, inv_exec: &InvariantsExecutable, index_in_group: usize, reader: & mut Lines<T>)
+    /// Push received data to the invariant tables
+    async fn push_data_from_buffer<T: BufRead>(&self, mut max_to_read: usize, inv_exec: &InvariantsExecutable, reader: & mut Lines<T>)
     {
         // we use a vector of vec in order to store each (signature, value) for each computed invariants
         let mut signature_value_buffer : Vec<Vec<(String, String)>> = Vec::new();
@@ -207,6 +207,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         for inv in &inv_exec.names {
             self.init_invariant(inv).await;
         }
+        let mut notif_countdown = ITERATION_BEFORE_NOTIFY;
         for line in reader {
             if let Ok(sign_value) = line {
                 
@@ -218,7 +219,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
                     if values.len() != inv_exec.names.len() + 1 {
                         panic!("Expected {} values from the executable \"{}\" but read {}: {:?}", inv_exec.names.len() + 1, inv_exec.exec_path, values.len(), sign_value);
                     }
-                    // Store data in the
+                    // Store data in the buffer
                     for i in 0..values.len()-1 {
                         // Add a signature and the value to the corresponding table
                         signature_value_buffer[i].push((values[0].to_string(), values[i+1].to_string()));   
@@ -227,11 +228,16 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             }else {
                 panic!("Could not read next buffer line");
             }
-            self.tick_observator(Some(index_in_group));
+            self.tick_observator();
+            // update observator
+            notif_countdown -= 1;   // Update countdown
+            // If it is time to notify the observor
+            if notif_countdown == 0 {
+                self.update_observator(ITERATION_BEFORE_NOTIFY as u64);
+                notif_countdown = ITERATION_BEFORE_NOTIFY;  // Reset progression
+            }
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                self.update_observator(1 as u64, Some(index_in_group));
-                // update observator
                 for (i, inv) in inv_exec.names.iter().enumerate() {
 
                     self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
@@ -242,8 +248,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
             if max_to_read == 0 {
                 if signature_value_buffer.len() != 0
                 {                
-                    // update obs
-                    self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));   // Last notifications
                     for (i, inv) in inv_exec.names.iter().enumerate() {
 
                         self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
@@ -255,9 +259,9 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         }
         debug!("buffer closed");
         if signature_value_buffer.len() != 0
-        {                
+        {            
             // update obs
-            self.update_observator(signature_value_buffer[0].len() as u64, Some(index_in_group));   // Last notifications
+            self.update_observator(signature_value_buffer[0].len() as u64);   // Last notifications
             for (i, inv) in inv_exec.names.iter().enumerate() {
 
                 self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
