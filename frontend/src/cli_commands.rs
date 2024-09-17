@@ -149,8 +149,8 @@ pub struct ComputeChoice
 #[group(required = false, multiple = true)] 
 pub struct OutputQueryArgs 
 {
-    /// Changes the csv separator character
-    #[clap(long, short, default_value = ",")]
+    /// Changes the csv separator character for the stdout and file output
+    #[clap(long, short, default_value = " ")]
     pub separator: char,
     #[command(subcommand)]
     pub choice: Option<OutputChoice>,
@@ -164,10 +164,7 @@ pub struct OutputQueryArgs
 pub enum OutputChoice
 {
     /// Prints result line by line to the standart output
-    Stream{
-        #[clap(default_value = ",")]
-        stream_separator: char,
-    },
+    Stream,
     /// Prints the result as a table
     
     #[group(required = false, multiple = false)] 

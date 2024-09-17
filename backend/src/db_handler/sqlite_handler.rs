@@ -375,7 +375,6 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         }
         query.push_str(&tmp);
         query.push_str(";");
-        println!("query :  {:?}", query);
 
         let que_res = sqlx::query(&query).execute(&self.pool).await.expect("Error joining tables");
 

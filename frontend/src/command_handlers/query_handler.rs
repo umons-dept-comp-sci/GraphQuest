@@ -14,7 +14,7 @@ pub async fn query(output_args: OutputQueryArgs, formula : String, path : Databa
         {
             let x: StdoutOptions = match out_ch 
             {
-                OutputChoice::Stream { stream_separator } => StdoutOptions::Stdout(stream_separator),
+                OutputChoice::Stream => StdoutOptions::Stdout(output_args.separator),
                 OutputChoice::Table { full: full_table, partial } => 
                 {
                     
@@ -45,7 +45,7 @@ pub async fn query(output_args: OutputQueryArgs, formula : String, path : Databa
             x
 
         }else {
-            StdoutOptions::Stdout(' ')
+            StdoutOptions::Stdout(output_args.separator)
         }
     };
     // Executes the query with the given args
