@@ -360,7 +360,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         }
     }
     
-
+    
     async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), GraphDatabaseError>
     {
         let mut query = format!("CREATE TABLE IF NOT EXISTS {new_table_name} AS ");

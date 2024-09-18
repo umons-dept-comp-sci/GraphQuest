@@ -82,7 +82,7 @@ pub enum StdoutOptions
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
 pub trait GraphDatabase<'a> : Subject<'a> + Clone 
- {
+{
     
     /// Creates the database that will be storing the project.
     /// 
@@ -438,7 +438,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
                 return Err(e);
             }
         }
-        self.join_tables(FULL_TABLE_NAME, table_names).await
+        self.join_tables(FULL_TABLE_NAME, table_names, PK_NAME).await
         
     }
         
@@ -470,10 +470,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     }
 
 
-    /// Joins all the given tables and creates a new table with the given name
-    /// ## Exceptions
-    /// Returns a [GraphDatabaseError] if an error was encountered
-    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), GraphDatabaseError>;
 
 
     /// Gets a query that returns all the names from the database
@@ -503,8 +499,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// Returns the query that can be used to insert all the given data into a table called "*table_name*"
     fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String;
     
-
-
 
     /// Adds a dataset table to the database that will be used to store all initial signatures.
     /// The database table has two columns.
@@ -606,6 +600,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// returns: 
     /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
     /// * A [GraphDatabaseError::ForbiddenActionError] when the given table cannot be deleted
+    /// * A [GraphDatabaseError] in general, if something else went wrong
     async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
     {
         let low_table_name = table_name.to_lowercase();
@@ -625,8 +620,11 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     }
 
 
+    /// Joins all the given tables and creates a new table with the given name.
+    /// At least one table name must be provided.
+    /// ## Exceptions
+    /// Returns a [GraphDatabaseError] if an error was encountered
+    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>;
 
 
 }
-
-

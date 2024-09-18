@@ -2,7 +2,7 @@ use sqlx::{error::ErrorKind, migrate::MigrateDatabase, Pool, Sqlite, SqlitePool}
 
 use crate::{db_handler::{db_errors::GraphDatabaseError, graph_database::SIGNATURE_MAX_SIZE}, utils::subject::{Observer, Subject}};
 use log::{debug, log};
-use super::graph_database::{ColumnType, GraphDatabase};
+use super::graph_database::{ColumnType, GraphDatabase, FULL_TABLE_NAME};
 
 pub struct SqliteGraphDatabase<'a>
 {
@@ -107,13 +107,34 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
 
     
-    async fn get_size_of_table(&self, name: &str) -> Result<usize, super::db_errors::GraphDatabaseError> {
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError> {
         todo!()
+    }
+    
+
+
+
+
+
+
+
+    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String
+    {
+        let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
+
+        
+        // Add all value to the query
+        // The format is always: ("signature", value), ...
+        for (sign, value) in signatures_values {
+            query.push_str(format!("( \"{sign}\", {value}),").as_str());
+        }
+        
+        query.pop();        // remove the extra ','
+        query.push_str(";");
+        query
     }
 
-    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), super::db_errors::GraphDatabaseError> {
-        todo!()
-    }
+
 
     fn get_all_tables_query(&self) -> String {
         String::from("SELECT name FROM sqlite_master WHERE type='table';")
@@ -171,22 +192,7 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
 
 
-    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String
-    {
-        let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
-
-        
-        // Add all value to the query
-        // The format is always: ("signature", value), ...
-        for (sign, value) in signatures_values {
-            query.push_str(format!("( \"{sign}\", {value}),").as_str());
-        }
-        
-        query.pop();        // remove the extra ','
-        query.push_str(";");
-        query
-    }
-
+    
     
     fn get_delete_table_query(table_name: &str) -> String
     {
@@ -194,8 +200,37 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
     }
 
 
+    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        let mut query = format!("CREATE TABLE IF NOT EXISTS {} AS ", new_table_name);
+
+        query.push_str(Self::get_join_table_query(table_names, common_column_name).as_str());
+
+        self.execute_query_no_return(&query).await
+    }
+    
+
+
 }
 
+
+
+
+impl<'a> SqliteGraphDatabase<'a> 
+{
+    /// Returns the query that can be used to fetch a table made of all the given tables joined.
+    /// The vector "*table_names*" must have at least one element
+    fn get_join_table_query(table_names: Vec<String>, common_column_name: &str) -> String
+    {
+
+        let mut tmp = format!("SELECT * FROM ({})", table_names[0]);
+        for i in 1..table_names.len() {
+            tmp.push_str(format!(" INNER JOIN {} USING ({})", table_names[i], common_column_name).as_str());
+        }
+        
+        tmp
+    }
+}
 
 
 /// Tries to get the error code located inside the sqlx error
