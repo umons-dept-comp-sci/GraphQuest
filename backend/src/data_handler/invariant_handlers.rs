@@ -198,9 +198,13 @@ impl InvariantsOrderHandler {
             if !exec_path.is_absolute() {
                 // If the given dependency file has a parent dir path, we can add it
                 if let Some(s) = p.parent() {
-                    exec.exec_path = format!("{}/{}", s.to_str().unwrap(), &exec.exec_path);
+                    if s.to_str().unwrap() != String::new() {
+                        exec.exec_path = format!("{}/{}", s.to_str().unwrap(), &exec.exec_path);
+                        
+                    }
                 }
             }
+
             // Checks validity of the created executable and adds it
             exec.check_validity();
             handler.add_inv_exec(exec);

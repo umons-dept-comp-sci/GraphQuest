@@ -408,8 +408,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
 
     /// Gets the minimum size between all given tables and the dataset table 
     /// ## Exceptions
-    /// Will panic if one of the given table doesn't not exists
-    async fn get_min_dependency_size(&self, tables: &Vec<String>) -> usize
+    /// Will return [GraphDatabaseError::TableNotFoundError] if one of the given table doesn't not exists
+    async fn get_min_dependency_size(&self, tables: &Vec<String>) -> Result<usize, GraphDatabaseError>
     {
         // The starting min size is obviously the quantity of data stored inside the dataset
         let mut min_size = self.get_size_of_table(DATASET_TABLE_NAME).await.unwrap();
@@ -418,12 +418,16 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
         let mut table_size;
         for table in tables {
             
-            table_size = self.get_size_of_table(table).await.expect("One the given table does not exists");
+            table_size = self.get_size_of_table(table).await;
+            if let Err(e) = table_size {
+                return Err(e);
+            }
+            let table_size = table_size.unwrap();
             if table_size < min_size {
                 min_size = table_size;
             }
         }
-        min_size
+        Ok(min_size)
     }
 
     /// Joins all tables from the dataset using the [PK_NAME] column
@@ -431,15 +435,51 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Returns a [GraphDatabaseError] if an error was encountered
     async fn join_all_invariant_tables(&self) -> Result<(), GraphDatabaseError>
     {
-        self.delete_table(FULL_TABLE_NAME).await;
+        // Get all table names
         let table_names = self.get_all_table_names().await;
 
         if let Err(e) = table_names{
             return Err(e)
         } 
-        let table_names = table_names.unwrap();
-        
 
+        let table_names = table_names.unwrap();
+
+        // Get the minimum table size
+        let min_full_size = self.get_min_dependency_size(&table_names).await;
+
+        if let Err(e) = min_full_size {
+            return Err(e);
+        }
+        let dataset_size = min_full_size.unwrap();
+        
+        // If table created
+ 
+        match self.get_size_of_table(FULL_TABLE_NAME).await {
+            Ok(n) => {
+                // And the table is already fully made
+                if n == dataset_size {
+                    return Ok(());
+                }
+            },
+            Err(e) => {
+                if let GraphDatabaseError::TableNotFoundError { table_name } = e  {
+                    // pass   
+                }
+                else {
+                    return Err(e);
+                }
+            },
+        }
+        
+        // Delete previously made table
+        if let Err(e) = self.delete_table(FULL_TABLE_NAME).await{
+            if let GraphDatabaseError::TableNotFoundError { table_name } = e {
+                // pass
+            }
+            else{
+                return Err(e);
+            }
+        }
         self.join_tables(FULL_TABLE_NAME, table_names).await
         
     }
