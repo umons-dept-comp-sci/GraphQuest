@@ -53,7 +53,6 @@ pub struct SqliteGraphDatabase<'a>
     obs: Option<&'a dyn Observer>
 }
 
-unsafe impl<'a> Send for SqliteGraphDatabase<'a> {}
 
 impl<'a> Clone for SqliteGraphDatabase<'a> {
     fn clone(&self) -> Self {
@@ -84,7 +83,7 @@ impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
 }
 
 impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
-    // TODO Also create meta data table
+    
     async fn create_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError> {
         // Creates the database if it didn't already exists
         if let Err(e) = create_graph_database(db_url).await {

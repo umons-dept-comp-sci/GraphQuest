@@ -42,6 +42,21 @@ const ITERATION_BEFORE_NOTIFY : u8 = 10;
 
 
 
+pub enum ColumnType
+{
+    String {
+        max_size: Option<usize>,
+        default_value: Option<String>
+    },
+    Integer{
+        default_value: Option<usize>
+    },
+    Boolean{
+        default_value: Option<bool>
+    }
+}
+
+
 /// Traits used to offer a selection of different possible data types for a database.
 pub trait DBColumnTypes
 {
@@ -66,20 +81,24 @@ pub enum StdoutOptions
 
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send 
+pub trait GraphDatabase<'a> : Subject<'a> + Clone 
  {
     
     /// Creates the database that will be storing the project.
     /// 
     /// Returns a struct implementing the [GraphDatabase] trait.
+    /// ## Exceptions
+    /// Returns :
+    /// * [GraphDatabaseError::DatabaseAlreadyCreated] if the database was already created
+    /// * [GraphDatabaseError::UnknownError] if an unknown error was uncountered when trying to create it
     async fn create_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError>;
 
 
     /// Connects to the given database
     /// 
     /// ## Exceptions
-    /// Must return a:
-    /// *   [GraphDatabaseError::DatabaseNotFound] if the url is not valid
+    /// Returns a:
+    /// *   [GraphDatabaseError::DatabaseNotFound] if the url is not valid (no database was found using the given url)
     async fn connect_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError>;
 
 
@@ -87,48 +106,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     async fn close_connection(self);
 
 
-    /// Adds a dataset table to the database that will be used to store all initial signatures.
-    /// The database table must only have one column (with it being the primary key).
-    /// And must be named using the given parameters.
-    /// ## Exemple of table
-    /// ```text
-    /// InitDataset -> | signature | nb_of_vertices |
-    ///                +-----------+----------------+
-    ///                | I?ABCd[v? |       7        |
-    ///                | I?ABCd[n? |       7        |
-    ///                | I?ABCd[^? |       7        |
-    ///                |          ...               |
-    /// ```
-    async fn create_dataset_table(&self);
-
-
-    
-
-    /// Adds a metadata table to the database that will be used to store all initial signatures.
-    /// 
-    /// 
-    /// And must be named using the given parameters.
-    /// ## Exemple of table
-    /// ```text
-    /// Metadata -> | table_name  | stopped_at |
-    ///             |-------------|------------|
-    ///             | InitDataset | 1500       |
-    ///             | Euler       | 753        |
-    ///             |            ...           |
-    /// ```
-    async fn create_meta_data_table(&self);
-    
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize);
-
-    /// Adds value to the dataset table.
-    /// 
-    /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
-    /// ## Exceptions
-    /// Must panic when:
-    /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
-    /// * The values to add are not valid.
-    /// * The values break the primary key rule (i.e. a signature is already inside the dataset)
-    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>);
 
 
 
@@ -379,26 +357,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
     /// Checks if the invariant was already added to the database
     async fn inv_already_added(&self, inv: &String) -> bool;
     
-    /// Adds an table to the database to later store the value of an invariant for each graph of the database.
-    /// 
-    /// An invariant table must have two columns named [DATASET_PK_NAME] (which is the primary key) and *value*.
-    /// 
-    /// To name the name use [Invariant::get_table_name], this is done to make sure the given invariant name is valid.
-    /// 
-    /// ## Exemple of table
-    /// ```text
-    /// Chromatic -> | signature | Chromatic_Number |
-    /// _Number      +-----------+------------------+
-    ///              | I?ABCd[v? | #####            |
-    ///              | I?ABCd[n? | #####            |
-    ///              | I?ABCd[^? | #####            |
-    ///              |          ...                 |
-    /// ```
-    /// ## Exceptions
-    /// Must panic when:
-    /// * The given table name is already used
-    async fn create_invariant_table(&self, invariant: &String);
-
 
     /// Simply returns the length of the table with the given name
     /// ## Exceptions
@@ -519,29 +477,156 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone + Send
 
 
     /// Gets a query that returns all the names from the database
-    async fn get_all_tables_query(&self) -> String;
+    fn get_all_tables_query(&self) -> String;
 
 
-    /// Deletes the given table if it is not critical for the database
-    /// 
-    async fn try_delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
+    
+    
+    
+
+    /// Execute a query but does not look at the return value
+    /// ## Exceptions
+    /// Returns:
+    /// * [GraphDatabaseError::QueryError] when the query failed 
+    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError>;
+    
+    /// Returns the query that can be used to create a table called "table_name",
+    /// with two columns :
+    /// * "*pk_name*": The primary key column (must be able to contain strings of [SIGNATURE_MAX_SIZE] size)
+    /// * "*value_name*": The column that will store values
+    fn get_create_table_query(table_name: &str, pk_name: &str, value_name: &str, value_type: ColumnType) -> String;
+    
+    /// Returns the query that can be used to delete a table from the dataset
+    fn get_delete_table_query(table_name: &str) -> String;
+
+
+    /// Returns the query that can be used to insert all the given data into a table called "*table_name*"
+    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String;
+    
+
+
+
+    /// Adds a dataset table to the database that will be used to store all initial signatures.
+    /// The database table has two columns.
+    /// ## Exemple of table
+    /// ```text
+    /// InitDataset -> | signature | vertices |
+    ///                +-----------+----------+
+    ///                | I?ABCd[v? |    7     |
+    ///                | I?ABCd[n? |    7     |
+    ///                | I?ABCd[^? |    7     |
+    ///                |          ...         |
+    /// ```
+    /// ## Exceptions
+    /// Returns: 
+    /// * [GraphDatabaseError] if something went wrong with the query
+    async fn create_dataset_table(&self) -> Result<(), GraphDatabaseError>
     {
+        // Get query
+        let query = Self::get_create_table_query(DATASET_TABLE_NAME, PK_NAME, DATASET_VALUE_NAME, ColumnType::String { max_size: Some(SIGNATURE_MAX_SIZE), default_value: None });
+        // Exec query
+        self.execute_query_no_return(&query).await
+    }
+    
+
+    /// Adds a metadata table to the database that will be used to not recompute the Full table.
+    /// 
+    /// ## Exemple of table
+    /// ```text
+    /// Metadata -> | table_name  | stopped_at |
+    ///             |-------------|------------|
+    ///             | InitDataset | 1500       |
+    ///             | Euler       | 753        |
+    ///             |            ...           |
+    /// ```
+    /// ## Exceptions
+    /// Returns: 
+    /// * [GraphDatabaseError] if something went wrong with the query
+    async fn create_meta_data_table(&self)  -> Result<(), GraphDatabaseError>
+    {
+        // Get query
+        let query = Self::get_create_table_query(METADATA_TABLE_NAME, "table_name", METADATA_VALUE_NAME, ColumnType::Integer { default_value: Some(0) });
+
+        // Exec Query
+        self.execute_query_no_return(&query).await
+    }
+
+
+    
+    /// Adds value to the dataset table.
+    /// 
+    /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
+    /// ## Exceptions
+    /// Can return an [GraphDatabaseError] when:
+    /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
+    /// * The values to add are not valid.
+    /// * The values break the primary key rule (ex. a signature is already inside the dataset)
+    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) -> Result<(), GraphDatabaseError>
+    {
+        // Get query
+        let query = Self::get_insert_into_query(table_name, signatures_values);
+
+        // Exec query
+        self.execute_query_no_return(&query).await
+    }
+
+    /// Adds a table to the database to later store the value of an invariant for each graph of the database.
+    /// 
+    /// An invariant table has two columns named [DATASET_PK_NAME] (which is the primary key) and the other one has the same name of the table.
+    /// 
+    /// It uses [Invariant::get_table_name] to get the table name, this is done to make sure the given invariant name is valid for a database table.
+    /// 
+    /// ## Exemple of table
+    /// ```text
+    /// Chromatic -> | signature | Chromatic_Number |
+    /// _Number      +-----------+------------------+
+    ///              | I?ABCd[v? | #####            |
+    ///              | I?ABCd[n? | #####            |
+    ///              | I?ABCd[^? | #####            |
+    ///              |          ...                 |
+    /// ```
+    /// ## Exceptions
+    /// Can return an [GraphDatabaseError] when:
+    /// * The given table name is already used
+    async fn create_invariant_table(&self, inv: &String) -> Result<(), GraphDatabaseError>
+    {
+        let inv_name = InvariantsExecutable::get_table_name_from_string(inv);
+
+        let query = Self::get_create_table_query(&inv_name, PK_NAME, &inv_name, ColumnType::Integer { default_value: None } );
+        
+        let res = self.execute_query_no_return(&query).await;
+        if let Err(_) = res {
+            return Err(GraphDatabaseError::TableAlreadyCreatedError { table_name: inv_name });
+        }
+        Ok(())
+    }
+    
+    /// Deletes the given table
+    /// ## Exceptions
+    /// returns: 
+    /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
+    /// * A [GraphDatabaseError::ForbiddenActionError] when the given table cannot be deleted
+    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        let low_table_name = table_name.to_lowercase();
         // Check if the table is not critical
-        if table_name.to_lowercase() == DATASET_TABLE_NAME.to_lowercase() || table_name.to_lowercase() == DATASET_TABLE_NAME.to_lowercase() {
+        if low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == FULL_TABLE_NAME.to_lowercase() {
             return Err(GraphDatabaseError::ForbiddenActionError { action: format!("Tried to delete the table {}", table_name)})
         }
 
-        // Delete the table
-        self.delete_table(table_name).await
+        // check if the table exists
+        if let Err(e) = self.get_size_of_table(table_name).await {
+            return Err(e);
+        }
         
+        let query = Self::get_delete_table_query(table_name);
+        
+        self.execute_query_no_return(&query).await
     }
 
-    /// Deletes the given table
-    /// ## Exceptions
-    /// Must return 
-    /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
-    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>;
-    
+
+
+
 }
 
 

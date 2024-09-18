@@ -139,7 +139,7 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         res.set_headers(vec!["Table Name".to_string(), "Size".to_string(), "%".to_string()]);
         // fetch all table names, if thet `get_all_table_names_query` is correct, the
         // only data contained in a line should be the name of a table
-        let tables = self.db.execute_fetch_query(&self.db.get_all_tables_query().await,
+        let tables = self.db.execute_fetch_query(&self.db.get_all_tables_query(),
                                                  None, None, StdoutOptions::None,
                                                  true)
                                                  .await.unwrap().unwrap(); 
@@ -167,6 +167,6 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
     pub async fn delete_table(&self, table_name: &String) -> Result<(), GraphDatabaseError>
     {
-        self.db.try_delete_table(table_name).await
+        self.db.delete_table(table_name).await
     }
 }

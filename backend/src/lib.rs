@@ -2,6 +2,7 @@ pub mod db_handler {
     pub mod graph_database;
     pub mod workplace;
     pub mod sqlite_handler;
+    pub mod sqlite_handler2;
     pub mod db_errors;
 }
 
