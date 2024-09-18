@@ -1,0 +1,19 @@
+{
+  "executables": [
+    {
+      "exec_path": "P_Gn.py",
+      "names": ["P_Gn"],
+      "dependencies": []
+    },
+    {
+      "exec_path": "m_km_rm.py",
+      "names": ["m", "km", "rm"],
+      "dependencies": []
+    },
+    {
+        "exec_path": "is_Bmn.py",
+        "names": ["is_Bmn"],
+        "dependencies": ["km", "rm"]
+    }
+  ]
+}
