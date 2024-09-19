@@ -33,10 +33,10 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
         else {
             let db = db.unwrap();
             // Init dataset table
-            db.create_dataset_table().await;
+            db.create_dataset_table().await.unwrap();
     
             // Init meta data table
-            db.create_meta_data_table().await;
+            db.create_meta_data_table().await.unwrap();
     
             // Return the db connection encapsulated
             Ok(Workspace {
@@ -167,6 +167,6 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
     pub async fn delete_table(&self, table_name: &String) -> Result<(), GraphDatabaseError>
     {
-        self.db.delete_table(table_name).await
+        self.db.delete_table(table_name, false).await
     }
 }

@@ -106,21 +106,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     async fn close_connection(self);
 
 
-    async fn update_meta_data(&self, changed_table_name: &str, added_values: usize);
-
-
-
-    /// Fetches signatures from the dataset table and writes them into the given input
-    /// ## Args
-    /// * `start_index` : The index of the table to start executing the data at
-    ///     * If the given value is `none`, the fetching will start a 0 
-    /// * `limit` : The limit on the number of value to fetch
-    ///     * If the given value is `none`, the fetching will be stop at the end of the table
-    /// * `inv_names_to_join` : The names of all invariants columns to join when fetching the data
-    /// ## Exceptions
-    /// Must panic when:
-    /// * The given indexes are not valid
-    async fn fetch_data(&self, start_index: Option<usize>, end_index: Option<usize>, inv_names_to_join: &Vec<String>, inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>;
     
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
@@ -185,7 +170,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         }
         // if the invariants were not already added
         for inv in &inv_exec.names {
-            self.init_invariant(inv).await;
+            self.init_invariant(inv).await.unwrap();
         }
         let mut notif_countdown = ITERATION_BEFORE_NOTIFY;
         for line in reader {
@@ -336,26 +321,33 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// Executes a query and calls the given function which takes two parameters
     /// * A `Vec<String>` which represents the headers of the columns from the query result
     /// * A `Vec<Vec<String>>` which represents the lines from the query result
-    /// It is a good idea to call this function multiple times to not have to store too much data 
-    async fn execute_query(&self, query: &String, f: impl FnMut(Vec<String>, Vec<Vec<String>>));
+    /// This function is called multiple times in order to not have to store too much data 
+    async fn execute_query(&self, query: &String, save_data_fn: impl FnMut(Vec<String>, Vec<Vec<String>>)) -> Result<(), GraphDatabaseError>;
     
 
     /// Creates the given invariant table and adds it to the meta data table,
     /// if it wasn't already added
-    async fn init_invariant(&self, inv: &String)
+    async fn init_invariant(&self, inv: &String) -> Result<(), GraphDatabaseError>
     {
-        if !self.inv_already_added(inv).await
-        {
-            // Create table
-            // TODO, by default we use an int but we do need to check the return type of this invariant
-            self.create_invariant_table(inv).await;
-            // Add Metadata line
-            self.update_meta_data(&InvariantsExecutable::get_table_name_from_string(inv), 0).await;
+        match self.inv_already_added(inv).await {
+            Ok(b) => {
+                if !b{
+                 // Create table
+                // TODO, by default we use an int but we do need to check the return type of this invariant
+                self.create_invariant_table(inv).await;
+                // Add Metadata line
+                self.update_meta_data(&InvariantsExecutable::get_table_name_from_string(inv), 0).await;
+                }
+            },
+            Err(e) => {
+                return Err(e);
+            },
         }
+        return Ok(());
     }
 
     /// Checks if the invariant was already added to the database
-    async fn inv_already_added(&self, inv: &String) -> bool;
+    async fn inv_already_added(&self, inv: &String) -> Result<bool, GraphDatabaseError>;
     
 
     /// Simply returns the length of the table with the given name
@@ -399,7 +391,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         if let Err(e) = table_names{
             return Err(e)
         } 
-
         let table_names = table_names.unwrap();
 
         // Get the minimum table size
@@ -430,15 +421,16 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         }
         
         // Delete previously made table
-        if let Err(e) = self.delete_table(FULL_TABLE_NAME).await{
+        if let Err(e) = self.delete_table(FULL_TABLE_NAME, true).await{
             if let GraphDatabaseError::TableNotFoundError { table_name } = e {
                 // pass
             }
             else{
+                debug!("JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ");
                 return Err(e);
             }
         }
-        self.join_tables(FULL_TABLE_NAME, table_names, PK_NAME).await
+        self.join_save_tables(FULL_TABLE_NAME, table_names, PK_NAME).await
         
     }
         
@@ -478,7 +470,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
 
     
     
-    
 
     /// Execute a query but does not look at the return value
     /// ## Exceptions
@@ -499,6 +490,12 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// Returns the query that can be used to insert all the given data into a table called "*table_name*"
     fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String;
     
+
+    fn get_join_table_query(table_names: Vec<String>, common_column_name: &str) -> String;
+    
+    fn get_all_rows_from_table_column(table_name: &str, column_name: &str) -> String;
+
+    fn get_select_batch_from(from_table: String, start_index: Option<usize>, limit: Option<usize>) -> String;
 
     /// Adds a dataset table to the database that will be used to store all initial signatures.
     /// The database table has two columns.
@@ -601,11 +598,11 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
     /// * A [GraphDatabaseError::ForbiddenActionError] when the given table cannot be deleted
     /// * A [GraphDatabaseError] in general, if something else went wrong
-    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
+    async fn delete_table(&self, table_name: &str, can_delete_full: bool) -> Result<(), GraphDatabaseError>
     {
         let low_table_name = table_name.to_lowercase();
         // Check if the table is not critical
-        if low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == FULL_TABLE_NAME.to_lowercase() {
+        if low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == DATASET_TABLE_NAME.to_lowercase() || (low_table_name == FULL_TABLE_NAME.to_lowercase() && !can_delete_full)  {
             return Err(GraphDatabaseError::ForbiddenActionError { action: format!("Tried to delete the table {}", table_name)})
         }
 
@@ -624,7 +621,67 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// At least one table name must be provided.
     /// ## Exceptions
     /// Returns a [GraphDatabaseError] if an error was encountered
-    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>;
+    async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>;
 
+
+    async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) -> Result<(), GraphDatabaseError>
+    {
+        // Get query
+        let query = Self::get_insert_into_query(METADATA_TABLE_NAME, &vec![(changed_table_name.to_string(), added_values.to_string())]);
+
+        // Exec query
+        self.execute_query_no_return(&query).await
+    }
+
+    /// Fetches signatures from the dataset table and writes them into the given stdins
+    /// ## Args
+    /// * `start_index` : The index of the table to start fetching the data at
+    ///     * If the given value is `none`, the fetching will start a 0 
+    /// * `limit` : The limit on the number of value to fetch
+    ///     * If the given value is `none`, the fetching will be stop at the end of the table
+    /// * `inv_names_to_join` : The names of all invariants columns to join when fetching the data
+    /// ## Exceptions
+    /// Must panic when:
+    /// * The given indexes are not valid
+    async fn fetch_write_data(&self, start_index: Option<usize>, limit: Option<usize>, mut dependencies_to_join: Vec<String>, inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
+    {
+        let join_query : String = {
+            if dependencies_to_join.len() == 0 {
+                Self::get_all_rows_from_table_column(DATASET_TABLE_NAME, PK_NAME)
+            }
+            else {
+                Self::get_join_table_query(dependencies_to_join, PK_NAME)
+            }
+        };
+
+        // Represents 
+        let limit_offset_query = Self::get_select_batch_from(join_query, start_index, limit);
+
+
+        let write_lines = |_: Vec<String>, lines: Vec<Vec<String>>|
+        {
+            for line in lines  {
+                let mut str = line.join(" ");
+                str.push('\n');
+                for mut input in inputs {
+                    input.write(str.as_bytes()).unwrap();
+                    input.flush().expect("Could not flush stdin of process");   
+                }
+            }
+        };
+
+        let box_fn = Box::new(write_lines);
+        
+        
+
+        // EXECUTE QUERY
+        let que_res = self.execute_query(&limit_offset_query, box_fn).await;
+        
+        if let Err(e) = que_res {
+            return Err(e);
+        }
+
+        Ok(())
+    }
 
 }

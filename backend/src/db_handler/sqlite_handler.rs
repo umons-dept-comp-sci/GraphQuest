@@ -1,187 +1,83 @@
-use std::any::{Any, TypeId};
-use std::fmt::{format, Debug};
-use std::io::Write;
-use std::pin::Pin;
-use std::process::ChildStdin;
-use std::str::FromStr;
-use std::time::Duration;
-
-use crate::{db_handler::graph_database::*, utils::subject::*};
-use crate::data_handler::invariant_handlers::*;
-
 use futures::{Stream, StreamExt};
+use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::{SqliteColumn, SqliteRow, SqliteTypeInfo}, Column, Pool, Row, Sqlite, SqlitePool, TypeInfo};
+
+use crate::{data_handler::invariant_handlers::InvariantsExecutable, db_handler::{db_errors::GraphDatabaseError, graph_database::SIGNATURE_MAX_SIZE}, utils::subject::{Observer, Subject}};
 use log::{debug, log};
-use sqlx::pool::PoolOptions;
-use sqlx::sqlite::{SqliteColumn, SqliteConnectOptions, SqlitePoolOptions, SqliteRow, SqliteTypeInfo};
-use sqlx::{Column, ConnectOptions, Row, TypeInfo};
-use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::SqliteQueryResult, Pool, Sqlite, SqlitePool};
-
-use super::db_errors::GraphDatabaseError::{self, *};
-
-
-
-/// Simple enum to manipulate the different sqlite data types
-pub enum SqliteColumnType {
-    Varchar(usize),
-    Text,
-    Integer,
-    Boolean 
-}
-
-impl DBColumnTypes for SqliteColumnType {
-    
-    fn translate(&self) -> String
-    {
-        let res = match self {
-            SqliteColumnType::Text => "text",
-            SqliteColumnType::Integer | SqliteColumnType::Boolean => "integer",
-            SqliteColumnType::Varchar(value) => &format!("VARCHAR({})", &value.to_string()),
-        };
-
-        String::from(res)
-    }
-}
+use super::graph_database::{ColumnType, GraphDatabase, BUFFER_VECTOR_MAX_SIZE, FULL_TABLE_NAME};
 
 
 
 
-
-/// Struct used to simplify the manipulation of database for the user.
 pub struct SqliteGraphDatabase<'a>
 {
     pool: Pool<Sqlite>,
     obs: Option<&'a dyn Observer>
 }
 
-
-impl<'a> Clone for SqliteGraphDatabase<'a> {
-    fn clone(&self) -> Self {
+impl<'a> Clone for SqliteGraphDatabase<'a> 
+{
+    fn clone(&self) -> Self 
+    {
         Self { pool: self.pool.clone(), obs: self.obs.clone() }
     }
 }
 
-impl<'a> Subject<'a> for SqliteGraphDatabase<'a>{
-    fn set_graph_db_observer(&mut self, obs: &'a dyn Observer) {
+impl<'a> Subject<'a> for SqliteGraphDatabase<'a>
+{
+    fn set_graph_db_observer(&mut self, obs: &'a dyn Observer) 
+    {
         self.obs = Some(obs);
     }
 
-    fn remove_graph_db_observer(&mut self) {
+    fn remove_graph_db_observer(&mut self) 
+    {
         self.obs = None;
     }
 
-    fn update_observator(&self, progression: u64) {
+    fn update_observator(&self, progression: u64) 
+    {
         if let Some(o) = self.obs {
             o.notify_data_pushed(progression);
         }
     }
     
-    fn tick_observator(&self) {
+    fn tick_observator(&self) 
+    {
         if let Some(o) = self.obs {
             o.notify_tick();
         }
     }
 }
 
-impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
-    
-    async fn create_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError> {
+
+impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> 
+{
+    async fn create_graph_database(db_url: &str) -> Result<Self, super::db_errors::GraphDatabaseError> {
         // Creates the database if it didn't already exists
-        if let Err(e) = create_graph_database(db_url).await {
-            return Err(e);
+        
+        if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
+            debug!("Creating database {}", db_url);
+            match Sqlite::create_database(db_url).await {
+                Ok(_) => {debug!("Sucess creating the database {}", db_url);},
+                Err(error) => 
+                {
+                    return Err(GraphDatabaseError::UnknownError { error_message: error.to_string() });
+                }
+            }
+        } else {
+                return Err(GraphDatabaseError::DatabaseAlreadyCreated { database_name: db_url.to_string() });
         }
+
         let res = Self::connect_graph_database(db_url).await;
         if let Err(e) = res {
             return Err(e);
         }
         
+        // Return the created struct
         Ok(res.unwrap())
-        // Create the object
     }
 
-    async fn create_dataset_table(&self) {
-        // Adds a database table 
-        let query = format!("CREATE TABLE {DATASET_TABLE_NAME} 
-                                    ({PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL,
-                                     {DATASET_VALUE_NAME} VARCHAR);");
-
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-    async fn create_meta_data_table(&self) {
-        // Adds a database table 
-        let query = format!("CREATE TABLE {METADATA_TABLE_NAME} 
-                                    (table_name VARCHAR({TABLE_NAME_MAX_SIZE}) PRIMARY KEY NOT NULL,
-                                     stopped_at {} DEFAULT 0);", SqliteColumnType::Integer.translate());
-
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-    
-    
-    async fn fetch_data(&self, start_index: Option<usize>, limit: Option<usize>, dependencies_to_join: &Vec<String>, mut inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
-    {
-
-        // Represents the query where we fetch the desired signatures
-        let signatures_query = {
-            let start = match start_index {
-                Some(nb) => nb,
-                None => 0,
-            };
-            
-            let mut tmp = format!("SELECT {} FROM {}", PK_NAME, DATASET_TABLE_NAME);
-            if let Some(size) = limit 
-            {
-                tmp.push_str(format!(" LIMIT {}", size).as_str());
-            }
-            tmp.push_str(format!(" OFFSET {}", start).as_str());
-            
-            tmp
-        };
-        
-        // Represents the query where we join the desired invariant tables
-        let join_query_res: Result<String, GraphDatabaseError> = {
-            let mut tmp = format!("SELECT * FROM ({})", signatures_query);
-            let mut inv_name;
-            for name in dependencies_to_join {
-                inv_name = InvariantsExecutable::get_table_name_from_string(&name);
-                if let Err(t) = self.get_size_of_table(&inv_name).await {
-                    return Err(t);
-                }
-                tmp.push_str(format!(" INNER JOIN {} USING ({})", inv_name, PK_NAME).as_str());
-            }
-            tmp.push(';');
-            Ok(tmp)
-        };
-        if let Err(t) = join_query_res{
-            return Err(t);
-        }
-        
-        let join_query = join_query_res.unwrap();
-        
-        
-        // execute query
-        let que_res = self.execute_fetch_query(&join_query, None, None, StdoutOptions::None, true).await;
-        if let Err(e) = que_res {
-            return Err(e);
-        }
-        else {
-            let lines = que_res.unwrap().unwrap();
-            for line in lines  {
-                let mut str = line.join(" ");
-                str.push('\n');
-                for mut input in inputs {
-                    input.write(str.as_bytes()).unwrap();
-                    input.flush().expect("Could not flush stdin of process");   
-                }
-            }
-
-        }
-        
-        Ok(())
-        
-    }
-    
-    async fn connect_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError> {
+    async fn connect_graph_database(db_url: &str) -> Result<Self, super::db_errors::GraphDatabaseError> {
         Ok(SqliteGraphDatabase{
             pool:
             {
@@ -197,100 +93,20 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
             obs: None, 
         })
     }
-    
-    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) {
-        if signatures_values.len() == 0 {
-            return;
-        }
-        // Then we add all signatures to the newly created table
-        let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
 
-        
-        // Add all value to the query
-        // The format is always: ("signature", value), ...
-        for (sign, value) in signatures_values {
-            query.push_str(format!("( \"{sign}\", {value}),").as_str());
-        }
-        
-        query.pop();        // remove the extra ','
-        query.push_str(";");
-        
-        // Try to push data
-        if let Err(e) = sqlx::query(&query).execute(&self.pool).await
-        {
-            react_to_database_error(&e);
-        }
-        // update meta data table
-        self.update_meta_data(DATASET_TABLE_NAME, signatures_values.len()).await;
-    }
-    
     async fn close_connection(self) {
         self.pool.close().await;
-        
-    }
-    
-    async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) {
-        let new_value = 
-        {
-            let query = format!("SELECT COUNT(*) FROM {changed_table_name}");
-            let current_table_size: Option<i64> = sqlx::query_scalar(&query).fetch_optional(&self.pool).await.unwrap();
+    }    
 
-            current_table_size.expect(format!("Couldn't read the size of the given table {}", changed_table_name).as_str())
-            - added_values as i64
-        };
-
-        let query = format!("INSERT OR REPLACE INTO {METADATA_TABLE_NAME} (table_name, stopped_at)
-                                    VALUES (\"{changed_table_name}\", {new_value});");
-        //println!("query : {query}");
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    } 
-
-    //_________________________________INVARIANTS_______________________________________________________________________________
-    
-    async fn create_invariant_table(&self, inv: &String) {
-        let query = format!("CREATE TABLE {} (
-                                    {PK_NAME} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY,
-                                    {} {}); ",
-                                    InvariantsExecutable::get_table_name_from_string(inv), 
-                                    InvariantsExecutable::get_table_name_from_string(inv),
-                                    SqliteColumnType::Integer.translate());   // FIXME CHANGE DEFAULT INTEGER
-        sqlx::query(&query).execute(&self.pool).await.unwrap();
-    }
-    
-    async fn inv_already_added(&self, inv: &String) -> bool {
-        let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", InvariantsExecutable::get_table_name_from_string(inv));
-        let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
-        
-        match res {
-            Ok(count) => count == 1,
-            Err(e) => {react_to_database_error(&e); false},
-        }
-
-    }
-    
-    async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError> {
-        let query = format!("SELECT count({}) FROM {};", PK_NAME, name);
-        //println!("query: {:?}", &query);
-
-        let res: Result<u64, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
-
-        match res {
-            Ok(count) => Ok(count as usize),
-            Err(_) => Err(GraphDatabaseError::TableNotFoundError{table_name : name.to_string()}),
-        }
-    }
-    
-
-    //_________________________________QUERIES_______________________________________________________________________________
-    async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) 
+    async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) -> Result<(), GraphDatabaseError> 
     {
-        
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
         
         // push result to the given stdout
         let mut headers : Vec<String> = vec![];
         let mut lines : Vec<Vec<String>> = vec![];
 
+        // For each result in the returned stream
         while let Some(res) = que_res.next().await
         {
             if let Ok(sign) = res 
@@ -298,12 +114,13 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                 let mut line: Vec<String> = vec![];
                 // get vector with the column names
                 if headers.len() == 0 {
+                    
                     for col in sign.columns(){
                         headers.push(col.name().to_string());
                     }
                 }
                 for (i, col) in sign.columns().iter().enumerate() {
-
+                    
                     match col.type_info().name() {
                         "INTEGER" | "NULL" => {
                             let value: i64 = sign.get(i);
@@ -315,14 +132,14 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
                             //println!("res : {:?}", value);
                             line.push(value);
                         },
-                        _ => ()//println!("{}", col.type_info().name())
+                        _ => {return Err(GraphDatabaseError::UnknownError { error_message: format!("Received column with an unknown type: {:?}", col) });}
                     }
                     
                 }
                 lines.push(line);
             }
             else if let Err(e) = res{
-                panic!("Error occured while trying to execute the given query: \"{query}\": {}",e);
+                return Err(GraphDatabaseError::QueryError { query: query.to_string(), error_message: format!("{:?}", e) });
             }
             if lines.len() == BUFFER_VECTOR_MAX_SIZE {
                 save_data(headers.clone(), lines);
@@ -333,95 +150,176 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a> {
         if lines.len() != 0 {
             save_data(headers.clone(), lines);
         }
-        
-    }
-    
-    
-
-
-    async fn get_all_tables_query(&self) -> String
-    {
-        String::from("SELECT name FROM sqlite_master WHERE type='table';")
-    }
-
-    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
-    {
-        // check if the table exists
-        if let Err(e) = self.get_size_of_table(table_name).await {
-            return Err(e);
-        }
-        
-        let query = format!("DROP TABLE {}", table_name);
-        let que_res = sqlx::query(&query).execute(&self.pool).await;
- 
-        match que_res {
-            Ok(_) => Ok(()),
-            Err(e) => {react_to_database_error(&e); Ok(())},
-        }
-    }
-    
-    
-    async fn join_tables(&self, new_table_name: &str, table_names: Vec<String>) -> Result<(), GraphDatabaseError>
-    {
-        let mut query = format!("CREATE TABLE IF NOT EXISTS {new_table_name} AS ");
-
-        let mut tmp = format!("SELECT * FROM ({})", DATASET_TABLE_NAME);
-        for name in table_names {
-            if let Err(t) = self.get_size_of_table(&name).await {
-                return Err(t);
-            }
-            tmp.push_str(format!(" INNER JOIN {} USING ({})", name, PK_NAME).as_str());
-        }
-        query.push_str(&tmp);
-        query.push_str(";");
-
-        let que_res = sqlx::query(&query).execute(&self.pool).await.expect("Error joining tables");
-
         Ok(())
     }
-}
-
-
-
-impl<'a> SqliteGraphDatabase<'a> {
-
-    async fn _test_query_database(&self, query:String) -> Result<SqliteQueryResult, sqlx::Error>
+    
+    
+    async fn inv_already_added(&self, inv: &String) -> Result<bool, GraphDatabaseError> 
     {
-        sqlx::query(&query).execute(&self.pool).await
-    }
-    /// Returns the pool contained inside the struct
-    fn _get_pool(&self) -> &Pool<Sqlite>
-    {
-        &self.pool
-    }
-}
-
-
-
-
-async fn create_graph_database(db_path: &str) -> Result<(), GraphDatabaseError>
-{
-    if !Sqlite::database_exists(db_path).await.unwrap_or(false) {
-    debug!("Creating database {}", db_path);
-        match Sqlite::create_database(db_path).await {
-            Ok(_) => {debug!("Sucess creating the database {}", db_path); Ok(())},
-            Err(error) => 
-            {
-                Err(GraphDatabaseError::UnknownError { error_message: error.to_string() })
-            }
+        let query = format!("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';", InvariantsExecutable::get_table_name_from_string(inv));
+        let res: Result<u8, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
+        
+        match res {
+            Ok(count) => Ok(count == 1),
+            Err(e) => {return Err(database_error_to_query_error(query, &e));},
         }
-    } else {
-        Err(GraphDatabaseError::DatabaseAlreadyCreated { database_name: db_path.to_string() })
     }
+
+    
+    async fn get_size_of_table(&self, name: &str) -> Result<usize, GraphDatabaseError> 
+    {
+        let query = format!("SELECT count(*) FROM {};", name);
+        
+        let res: Result<u64, sqlx::Error> = sqlx::query_scalar(&query).fetch_one(&self.pool).await;
+
+        match res {
+            Ok(count) => Ok(count as usize),
+            Err(_) => Err(GraphDatabaseError::TableNotFoundError{table_name : name.to_string()}),
+        }
+    }
+    
+
+
+
+
+
+
+
+    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String
+    {
+        let mut query = format!("INSERT OR REPLACE INTO {table_name} VALUES ");
+
+        
+        // Add all value to the query
+        // The format is always: ("signature", value), ...
+        for (sign, value) in signatures_values {
+            query.push_str(format!("( \"{sign}\", {value}),").as_str());
+        }
+        
+        query.pop();        // remove the extra ','
+        query.push_str(";");
+        query
+    }
+
+
+
+    fn get_all_tables_query(&self) -> String {
+        String::from("SELECT name FROM sqlite_master WHERE type='table';")
+    }
+    
+    /// Returns the query that can be used to fetch a table made of all the given tables joined.
+    /// The vector "*table_names*" must have at least one element
+    fn get_join_table_query(table_names: Vec<String>, common_column_name: &str) -> String
+    {
+
+        let mut tmp = format!("SELECT * FROM ({})", table_names[0]);
+        for i in 1..table_names.len() {
+            tmp.push_str(format!(" INNER JOIN {} USING ({})", table_names[i], common_column_name).as_str());
+        }
+        
+        tmp
+    }
+
+    fn get_all_rows_from_table_column(table_name: &str, column_name: &str) -> String
+    {
+        format!("SELECT {} FROM {}", column_name, table_name)
+    }
+
+
+    fn get_select_batch_from(from_table: String, start_index: Option<usize>, limit: Option<usize>) -> String
+    {
+        let start = match start_index {
+            Some(nb) => nb,
+            None => 0,
+        };
+        
+        let mut tmp = format!("SELECT * FROM ({})", from_table);
+        if let Some(size) = limit 
+        {
+            tmp.push_str(format!(" LIMIT {}", size).as_str());
+        }
+        tmp.push_str(format!(" OFFSET {}", start).as_str());
+        
+        tmp
+    }
+    
+    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError> 
+    {
+        let res = sqlx::query(&query).execute(&self.pool).await;
+        if let Err(e) = res{
+            return Err(database_error_to_query_error(query.to_string(), &e));
+        }
+        Ok(())
+    }
+
+
+    fn get_create_table_query(table_name: &str, pk_name: &str, value_name: &str, value_type: ColumnType ) -> String
+    {   
+        let value_column = match value_type {
+            ColumnType::String { max_size, default_value } => {
+                let mut tmp = String::from("VARCHAR");
+                if let Some(m) = max_size {
+                    tmp.push_str(format!("({})", m).as_str());
+                }
+                if let Some(d) = default_value {
+                    tmp.push_str(format!(" DEFAULT {}", d).as_str());
+                }
+                tmp
+            },
+            ColumnType::Integer { default_value } => {
+                let mut tmp = String::from("INTEGER");
+
+                if let Some(d) = default_value {
+                    tmp.push_str(format!(" DEFAULT {}", d).as_str());
+                }
+                tmp
+            },
+            ColumnType::Boolean { default_value } => {
+                let mut tmp = String::from("INTEGER");
+                // Convert true to 1 and false to 0
+                if let Some(d) = default_value {
+                    tmp.push_str(format!(" DEFAULT {}", {if d {
+                        1
+                    }else {
+                        0
+                    }}).as_str());
+                }
+                tmp
+            },
+        };
+
+
+        format!("CREATE TABLE {table_name} ({pk_name} VARCHAR({SIGNATURE_MAX_SIZE}) PRIMARY KEY NOT NULL,
+                                            {value_name} {value_column})")
+    }
+
+
+    
+    
+    fn get_delete_table_query(table_name: &str) -> String
+    {
+        format!("DROP TABLE {}", table_name)
+    }
+
+
+    async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        let mut query = format!("CREATE TABLE IF NOT EXISTS {} AS ", new_table_name);
+        
+        query.push_str(Self::get_join_table_query(table_names, common_column_name).as_str());
+
+        self.execute_query_no_return(&query).await
+    }
+    
+
+
 }
-
-
 
 
 
 
 /// Tries to get the error code located inside the sqlx error
-fn get_error_kind(e: &sqlx::Error) -> Result< ErrorKind, String>
+fn get_error_kind(e: &sqlx::Error) -> Result<ErrorKind, String>
 {
     match e {
         sqlx::Error::Database(db_e) => {
@@ -431,99 +329,14 @@ fn get_error_kind(e: &sqlx::Error) -> Result< ErrorKind, String>
     }
 }
 
-fn react_to_database_error(e: &sqlx::Error) 
+fn database_error_to_query_error(query: String, e: &sqlx::Error) -> GraphDatabaseError
 {
     let kind = get_error_kind(e).expect("Error not handled");
     match kind {
-        ErrorKind::UniqueViolation => panic!("A signature was already inside the dataset"),
-        ErrorKind::ForeignKeyViolation => todo!(),
-        ErrorKind::NotNullViolation => todo!(),
-        ErrorKind::CheckViolation => panic!(""),
-        ErrorKind::Other => panic!("An unmapped database error happened, perhaps the table name is incorrect ?"),
-        _ => todo!(),
+        ErrorKind::UniqueViolation => GraphDatabaseError::QueryError { query, error_message: format!("A signature was already inside the dataset") },
+        ErrorKind::ForeignKeyViolation => GraphDatabaseError::QueryError { query,  error_message: format!("A ForeignKeyViolation was encountered when trying to execute the query")},
+        ErrorKind::NotNullViolation => GraphDatabaseError::QueryError { query,  error_message: format!("A NotNullViolation was encountered when trying to execute the query")},
+        ErrorKind::CheckViolation => GraphDatabaseError::QueryError { query,  error_message: format!("A CheckViolation was encountered when trying to execute the query")},
+        _ => GraphDatabaseError::QueryError { query,  error_message: format!("An unknown error was encountered : {:?}", e)},
     }
 }
-
-
-
-
-//_______________________________________________
-// Unit testing
-
-/*
-#[cfg(test)]
-mod tests {
-    
-    use super::*;   // Import all
-    use std::process::Command;
-    
-    const DB_PATH: &str = "src/db_handler/test_db/sqlite_test_";
-    
-    fn get_test_path(postfix: &str) -> String
-    {
-        DB_PATH.to_string() + postfix
-    }
-    
-    fn delete_test_db(path: &str)
-    {
-        // Delete the created database
-        Command::new("rm")
-            .arg(&path)
-            .spawn()
-            .expect("Failed to remove the database");
-    }
-
-    #[sqlx::test]
-    async fn create_graph_table_test(_: sqlx::SqlitePool) -> sqlx::Result<()> 
-    {
-        let path = get_test_path("0.db");
-        // Creates database
-        SqliteGraphDatabase::create_graph_database(&path).await;
-        
-        // Checks if it exist
-        if !Sqlite::database_exists(&path).await.unwrap_or(false) {
-            panic!();
-        }
-
-        delete_test_db(&path);
-
-        Ok(())
-    }
-
-    #[sqlx::test]
-    async fn connect_graph_database(pool: sqlx::SqlitePool) -> sqlx::Result<()>
-    {
-        let path = get_test_path("1.db");
-        // Creates database
-        SqliteGraphDatabase::create_graph_database(&path).await;
-        
-        // Tries to connect
-        SqliteGraphDatabase::connect_graph_database(&path).await;
-
-
-        delete_test_db(&path);
-        
-        Ok(())
-    }
-}
-
-
-
-
-//#[cfg(test)]
-//mod tests {
-//    use super::*;   // Import all
-//
-//    #[sqlx::test]
-//    async fn create_graph_table_test(pool: sqlx::SqlitePool) -> sqlx::Result<()> {
-//        let db = GraphDatabase::create_graph_database(pool);
-//
-//        db.create_graph_table("test_table").await;
-//        let query_res = db.query_return_string("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';").await.unwrap();
-//        assert_eq!(Some("test_table".to_string()), query_res);  // check if table was indeed created
-//        Ok(())
-//    }
-//
-//
-//} 
-*/

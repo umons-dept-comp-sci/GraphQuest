@@ -647,7 +647,7 @@ impl InvariantExecGroup {
             let mut i = 0;
             for group in &self.group {
                 
-                db.fetch_data(Some(current_data), Some(BATCH_SIZE), &group[0].dependencies, &group_stdin[i]).await.unwrap();
+                db.fetch_write_data(Some(current_data), Some(BATCH_SIZE), group[0].dependencies.clone(), &group_stdin[i]).await.unwrap();
                 
                 i += 1;
             }

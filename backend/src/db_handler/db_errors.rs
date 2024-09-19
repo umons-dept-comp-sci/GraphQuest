@@ -22,6 +22,7 @@ pub enum GraphDatabaseError
         error_message: String
     },
     QueryError{
+        query: String,
         error_message: String
     }
 }
@@ -42,7 +43,7 @@ impl fmt::Debug for GraphDatabaseError {
             GraphDatabaseError::DatabaseAlreadyCreated { database_name } => f.debug_struct("DatabaseAlreadyCreated").field("database_name", database_name).finish(),
             GraphDatabaseError::DatabaseNotFound { database_name } => f.debug_struct("DatabaseNotFound").field("database_name", database_name).finish(),
             GraphDatabaseError::UnknownError { error_message } => f.debug_struct("UnknownError").field("error_message", error_message).finish(),
-            GraphDatabaseError::QueryError { error_message } => f.debug_struct("QueryError").field("error_message", error_message).finish(),
+            GraphDatabaseError::QueryError { query, error_message } => f.debug_struct("QueryError").field("error_message", error_message).field("query", query).finish(),
         }
     }
 }
@@ -58,7 +59,7 @@ impl GraphDatabaseError {
             GraphDatabaseError::DatabaseAlreadyCreated { database_name } => format!("The given database is already created: {}", database_name),
             GraphDatabaseError::DatabaseNotFound { database_name } => format!("The given database was not found: {}", database_name),
             GraphDatabaseError::UnknownError { error_message } => format!("An unknown error happened with the following message: {}", error_message),
-            GraphDatabaseError::QueryError { error_message } => format!("An error happened when trying to execute a query: {}", error_message),
+            GraphDatabaseError::QueryError { query, error_message } => format!("An error happened when trying to execute the query {} : {}", query, error_message),
         }
     }
 }
