@@ -101,12 +101,44 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// *   [GraphDatabaseError::DatabaseNotFound] if the url is not valid (no database was found using the given url)
     async fn connect_graph_database(db_url: &str) -> Result<Self, GraphDatabaseError>;
 
-
     /// Closes the connection with the database
     async fn close_connection(self);
-
-
     
+    //__________________________ GETTERS _____________________________________________________________
+
+    /// Gets a query that returns all the names from the database
+    fn get_all_tables_query(&self) -> String;
+
+    /// Returns the query that can be used to create a table called "table_name",
+    /// with two columns :
+    /// * "*pk_name*": The primary key column (must be able to contain strings of [SIGNATURE_MAX_SIZE] size)
+    /// * "*value_name*": The column that will store values
+    fn get_create_table_query(table_name: &str, pk_name: &str, value_name: &str, value_type: ColumnType) -> String;
+        
+    /// Returns the query that can be used to delete a table from the dataset
+    fn get_delete_table_query(table_name: &str) -> String;
+    
+    
+    /// Returns the query that can be used to insert all the given data into a table called "*table_name*"
+    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String;
+        
+    /// Get a query that can be used to join all the given tables using a common column
+    fn get_join_table_query(table_names: Vec<String>, common_column_name: &str) -> String;
+        
+    /// Get a query that can be used to retrieve all row from the given table and column
+    fn get_all_rows_from_table_column(table_name: &str, column_name: &str) -> String;
+    
+    /// Get a query that can be used to select a batch from a given table
+    /// ## Args
+    /// * `start_index` : The index of the table to start fetching the data at
+    ///     * If the given value is `none`, the fetching will start a 0 
+    /// * `limit` : The limit on the number of value to fetch
+    ///     * If the given value is `none`, the fetching will be stop at the end of the table
+    fn get_select_batch_from(from_table: String, start_index: Option<usize>, limit: Option<usize>) -> String;
+    
+
+    //__________________________ WRITING DATA _____________________________________________________________
+
     /// Reads line by line the given buffer and pushes it's content in the given datase.
     /// 
     /// In order to save memory, the method will use a vector to store the data read
@@ -141,7 +173,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
             }
             // if we stored enough, we can push what we collected towards the given database
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
-                self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await; // add already stored signatures to the database
+                self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await.expect("Could not add value to table"); // add already stored signatures to the database
                 signature_value_buffer.clear();   // free the *buffer*
             }
             notif_countdown -= 1;   // Update countdown
@@ -155,7 +187,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         if signature_value_buffer.len() != 0
         {                
             self.update_observator(byte_buffer);   // Last notifications
-            self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await;  // add remaining values to the database
+            self.add_values_to_table(DATASET_TABLE_NAME, &signature_value_buffer).await.expect("Could not add value to table");  // add remaining values to the database
         }
     }
 
@@ -205,7 +237,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
             if signature_value_buffer.len() == BUFFER_VECTOR_MAX_SIZE {
                 for (i, inv) in inv_exec.names.iter().enumerate() {
 
-                    self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                    self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await.expect("Could not add value to table");
                     signature_value_buffer[i].clear();   // free the *buffer*
                 }
             }
@@ -215,7 +247,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
                 {                
                     for (i, inv) in inv_exec.names.iter().enumerate() {
 
-                        self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                        self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await.expect("Could not add value to table");
                         signature_value_buffer[i].clear();   // free the *buffer*
                     }
                 }
@@ -229,13 +261,80 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
             self.update_observator(signature_value_buffer[0].len() as u64);   // Last notifications
             for (i, inv) in inv_exec.names.iter().enumerate() {
 
-                self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await;
+                self.add_values_to_table(&InvariantsExecutable::get_table_name_from_string(inv), &signature_value_buffer[i]).await.expect("Could not add value to table");
                 signature_value_buffer[i].clear();   // free the *buffer*
             }
         }
     }
 
+    /// Adds value to the dataset table.
+    /// 
+    /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
+    /// ## Exceptions
+    /// Can return an [GraphDatabaseError] when:
+    /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
+    /// * The values to add are not valid.
+    /// * The values break the primary key rule (ex. a signature is already inside the dataset)
+    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) -> Result<(), GraphDatabaseError>
+    {
+        // Get query
+        let query = Self::get_insert_into_query(table_name, signatures_values);
+
+        // Exec query
+        self.execute_query_no_return(&query).await
+    }
+
+    /// Fetches signatures from the dataset table and writes them into the given stdins
+    /// ## Args
+    /// * `start_index` : The index of the table to start fetching the data at
+    ///     * If the given value is `none`, the fetching will start a 0 
+    /// * `limit` : The limit on the number of value to fetch
+    ///     * If the given value is `none`, the fetching will be stop at the end of the table
+    /// * `inv_names_to_join` : The names of all invariants columns to join when fetching the data
+    /// ## Exceptions
+    /// Must panic when:
+    /// * The given indexes are not valid
+    async fn fetch_write_data(&self, start_index: Option<usize>, limit: Option<usize>, mut dependencies_to_join: Vec<String>, inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
+    {
+        // Get join query
+        let join_query : String = {
+            if dependencies_to_join.len() == 0 {
+                Self::get_all_rows_from_table_column(DATASET_TABLE_NAME, PK_NAME)
+            }
+            else {
+                Self::get_join_table_query(dependencies_to_join, PK_NAME)
+            }
+        };
+ 
+        let limit_offset_query = Self::get_select_batch_from(join_query, start_index, limit);
+
+
+        let write_lines = |_: Vec<String>, lines: Vec<Vec<String>>|
+        {
+            for line in lines  {
+                let mut str = line.join(" ");
+                str.push('\n');
+                for mut input in inputs {
+                    input.write(str.as_bytes()).unwrap();
+                    input.flush().expect("Could not flush stdin of process");   
+                }
+            }
+        };
+
+        let box_fn = Box::new(write_lines);
+        
+        // EXECUTE QUERY
+        let que_res = self.execute_query(&limit_offset_query, box_fn).await;
+        
+        if let Err(e) = que_res {
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
     
+    //__________________________ READ DATA _____________________________________________________________
 
     /// Executes the query to the database and fetches the output in a human readable way
     async fn execute_fetch_query<'b>(&self, query: &String, separator: Option<char>, output_path: Option<String>, stdout_opt: StdoutOptions, return_result: bool) -> Result<Option<Vec<Vec<String>>>, GraphDatabaseError>
@@ -302,7 +401,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         let box_fn = Box::new(write_lines);
         
         
-        self.execute_query(query, box_fn).await;
+        self.execute_query(query, box_fn).await.unwrap();
         // If a table was given, print it
         if let Some(table) = query_table {
             
@@ -318,12 +417,23 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         )
     }
 
+    //__________________________ EXECUTE QUERY _____________________________________________________________
+
     /// Executes a query and calls the given function which takes two parameters
     /// * A `Vec<String>` which represents the headers of the columns from the query result
     /// * A `Vec<Vec<String>>` which represents the lines from the query result
     /// This function is called multiple times in order to not have to store too much data 
     async fn execute_query(&self, query: &String, save_data_fn: impl FnMut(Vec<String>, Vec<Vec<String>>)) -> Result<(), GraphDatabaseError>;
     
+
+    /// Execute a query but does not look at the return value
+    /// ## Exceptions
+    /// Returns:
+    /// * [GraphDatabaseError::QueryError] when the query failed 
+    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError>;
+
+
+    //__________________________ INVARIANTS HANDLING _____________________________________________________________
 
     /// Creates the given invariant table and adds it to the meta data table,
     /// if it wasn't already added
@@ -333,10 +443,9 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
             Ok(b) => {
                 if !b{
                  // Create table
-                // TODO, by default we use an int but we do need to check the return type of this invariant
-                self.create_invariant_table(inv).await;
+                self.create_invariant_table(inv).await.unwrap();
                 // Add Metadata line
-                self.update_meta_data(&InvariantsExecutable::get_table_name_from_string(inv), 0).await;
+                self.update_meta_data(&InvariantsExecutable::get_table_name_from_string(inv), 0).await.unwrap();
                 }
             },
             Err(e) => {
@@ -349,6 +458,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// Checks if the invariant was already added to the database
     async fn inv_already_added(&self, inv: &String) -> Result<bool, GraphDatabaseError>;
     
+
+    //__________________________ GET INFO FROM DB _____________________________________________________________
 
     /// Simply returns the length of the table with the given name
     /// ## Exceptions
@@ -380,7 +491,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         Ok(min_size)
     }
 
-    /// Joins all tables from the dataset using the [PK_NAME] column
+    // FIXME, this can be improved greatly using the METADATA table
+    /// Joins all tables from the dataset using the [PK_NAME] column 
     /// ## Exceptions
     /// Returns a [GraphDatabaseError] if an error was encountered
     async fn join_all_invariant_tables(&self) -> Result<(), GraphDatabaseError>
@@ -411,7 +523,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
                 }
             },
             Err(e) => {
-                if let GraphDatabaseError::TableNotFoundError { table_name } = e  {
+                if let GraphDatabaseError::TableNotFoundError { table_name: _ } = e  {
                     // pass   
                 }
                 else {
@@ -422,11 +534,10 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         
         // Delete previously made table
         if let Err(e) = self.delete_table(FULL_TABLE_NAME, true).await{
-            if let GraphDatabaseError::TableNotFoundError { table_name } = e {
+            if let GraphDatabaseError::TableNotFoundError { table_name: _ } = e {
                 // pass
             }
             else{
-                debug!("JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ");
                 return Err(e);
             }
         }
@@ -461,41 +572,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         }
     }
 
+    //__________________________ CREATE TABLE DB _____________________________________________________________
 
-
-
-    /// Gets a query that returns all the names from the database
-    fn get_all_tables_query(&self) -> String;
-
-
-    
-    
-
-    /// Execute a query but does not look at the return value
-    /// ## Exceptions
-    /// Returns:
-    /// * [GraphDatabaseError::QueryError] when the query failed 
-    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError>;
-    
-    /// Returns the query that can be used to create a table called "table_name",
-    /// with two columns :
-    /// * "*pk_name*": The primary key column (must be able to contain strings of [SIGNATURE_MAX_SIZE] size)
-    /// * "*value_name*": The column that will store values
-    fn get_create_table_query(table_name: &str, pk_name: &str, value_name: &str, value_type: ColumnType) -> String;
-    
-    /// Returns the query that can be used to delete a table from the dataset
-    fn get_delete_table_query(table_name: &str) -> String;
-
-
-    /// Returns the query that can be used to insert all the given data into a table called "*table_name*"
-    fn get_insert_into_query(table_name: &str, signatures_values: &Vec<(String, String)>) -> String;
-    
-
-    fn get_join_table_query(table_names: Vec<String>, common_column_name: &str) -> String;
-    
-    fn get_all_rows_from_table_column(table_name: &str, column_name: &str) -> String;
-
-    fn get_select_batch_from(from_table: String, start_index: Option<usize>, limit: Option<usize>) -> String;
 
     /// Adds a dataset table to the database that will be used to store all initial signatures.
     /// The database table has two columns.
@@ -539,25 +617,6 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         let query = Self::get_create_table_query(METADATA_TABLE_NAME, "table_name", METADATA_VALUE_NAME, ColumnType::Integer { default_value: Some(0) });
 
         // Exec Query
-        self.execute_query_no_return(&query).await
-    }
-
-
-    
-    /// Adds value to the dataset table.
-    /// 
-    /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
-    /// ## Exceptions
-    /// Can return an [GraphDatabaseError] when:
-    /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
-    /// * The values to add are not valid.
-    /// * The values break the primary key rule (ex. a signature is already inside the dataset)
-    async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) -> Result<(), GraphDatabaseError>
-    {
-        // Get query
-        let query = Self::get_insert_into_query(table_name, signatures_values);
-
-        // Exec query
         self.execute_query_no_return(&query).await
     }
 
@@ -624,6 +683,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>;
 
 
+    // TODO this has to be modified in order to use it later for the Full Table creation
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) -> Result<(), GraphDatabaseError>
     {
         // Get query
@@ -633,55 +693,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         self.execute_query_no_return(&query).await
     }
 
-    /// Fetches signatures from the dataset table and writes them into the given stdins
-    /// ## Args
-    /// * `start_index` : The index of the table to start fetching the data at
-    ///     * If the given value is `none`, the fetching will start a 0 
-    /// * `limit` : The limit on the number of value to fetch
-    ///     * If the given value is `none`, the fetching will be stop at the end of the table
-    /// * `inv_names_to_join` : The names of all invariants columns to join when fetching the data
-    /// ## Exceptions
-    /// Must panic when:
-    /// * The given indexes are not valid
-    async fn fetch_write_data(&self, start_index: Option<usize>, limit: Option<usize>, mut dependencies_to_join: Vec<String>, inputs: &Vec<ChildStdin>) -> Result<(), GraphDatabaseError>
-    {
-        let join_query : String = {
-            if dependencies_to_join.len() == 0 {
-                Self::get_all_rows_from_table_column(DATASET_TABLE_NAME, PK_NAME)
-            }
-            else {
-                Self::get_join_table_query(dependencies_to_join, PK_NAME)
-            }
-        };
+    
 
-        // Represents 
-        let limit_offset_query = Self::get_select_batch_from(join_query, start_index, limit);
-
-
-        let write_lines = |_: Vec<String>, lines: Vec<Vec<String>>|
-        {
-            for line in lines  {
-                let mut str = line.join(" ");
-                str.push('\n');
-                for mut input in inputs {
-                    input.write(str.as_bytes()).unwrap();
-                    input.flush().expect("Could not flush stdin of process");   
-                }
-            }
-        };
-
-        let box_fn = Box::new(write_lines);
-        
-        
-
-        // EXECUTE QUERY
-        let que_res = self.execute_query(&limit_offset_query, box_fn).await;
-        
-        if let Err(e) = que_res {
-            return Err(e);
-        }
-
-        Ok(())
-    }
-
+    
+    
 }

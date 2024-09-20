@@ -1,9 +1,9 @@
-use futures::{Stream, StreamExt};
-use sqlx::{error::ErrorKind, migrate::MigrateDatabase, sqlite::{SqliteColumn, SqliteRow, SqliteTypeInfo}, Column, Pool, Row, Sqlite, SqlitePool, TypeInfo};
+use futures::StreamExt;
+use sqlx::{error::ErrorKind, migrate::MigrateDatabase, Column, Pool, Row, Sqlite, SqlitePool, TypeInfo};
 
 use crate::{data_handler::invariant_handlers::InvariantsExecutable, db_handler::{db_errors::GraphDatabaseError, graph_database::SIGNATURE_MAX_SIZE}, utils::subject::{Observer, Subject}};
-use log::{debug, log};
-use super::graph_database::{ColumnType, GraphDatabase, BUFFER_VECTOR_MAX_SIZE, FULL_TABLE_NAME};
+use log::debug;
+use super::graph_database::{ColumnType, GraphDatabase, BUFFER_VECTOR_MAX_SIZE};
 
 
 
@@ -98,6 +98,16 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a>
         self.pool.close().await;
     }    
 
+    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError> 
+    {
+        let res = sqlx::query(&query).execute(&self.pool).await;
+        if let Err(e) = res{
+            return Err(database_error_to_query_error(query.to_string(), &e));
+        }
+        Ok(())
+    }
+
+
     async fn execute_query(&self, query: &String, mut save_data: impl FnMut(Vec<String>, Vec<Vec<String>>)) -> Result<(), GraphDatabaseError> 
     {
         let mut que_res = sqlx::query(&query).fetch(&self.pool);
@@ -180,8 +190,19 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a>
     
 
 
+    
+    async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>
+    {
+        let mut query = format!("CREATE TABLE IF NOT EXISTS {} AS ", new_table_name);
+        
+        query.push_str(Self::get_join_table_query(table_names, common_column_name).as_str());
+
+        self.execute_query_no_return(&query).await
+    }
+    
 
 
+    //__________________GETTERS_________________________________
 
 
 
@@ -243,15 +264,6 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a>
         tmp
     }
     
-    async fn execute_query_no_return(&self, query: &String) -> Result<(),GraphDatabaseError> 
-    {
-        let res = sqlx::query(&query).execute(&self.pool).await;
-        if let Err(e) = res{
-            return Err(database_error_to_query_error(query.to_string(), &e));
-        }
-        Ok(())
-    }
-
 
     fn get_create_table_query(table_name: &str, pk_name: &str, value_name: &str, value_type: ColumnType ) -> String
     {   
@@ -302,19 +314,10 @@ impl<'a> GraphDatabase<'a> for SqliteGraphDatabase<'a>
     }
 
 
-    async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>
-    {
-        let mut query = format!("CREATE TABLE IF NOT EXISTS {} AS ", new_table_name);
-        
-        query.push_str(Self::get_join_table_query(table_names, common_column_name).as_str());
-
-        self.execute_query_no_return(&query).await
-    }
     
 
 
 }
-
 
 
 

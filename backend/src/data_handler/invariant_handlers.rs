@@ -46,7 +46,6 @@ pub struct InvariantsExecutable {
 
 impl Display for InvariantsExecutable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Customize so only `x` and `y` are denoted.
         write!(f, "{:?}", self.names)
     }
 }
@@ -182,8 +181,7 @@ impl InvariantsOrderHandler {
         let mut handler = Self::new();
         let p = Path::new(&path);
         let f = File::open(p).expect(format!("The given dependency file path (\"{path}\") is not valid").as_str());
-        //println!("{:?}", p.parent());
-        
+
         // Get vector of invariant executables
         let inv_vec: _InvariantVec = serde_json::from_reader(f).expect(format!("The given dependency file (\"{path}\") format is not correct").as_str());
         let mut exec_path: &Path;
@@ -196,6 +194,7 @@ impl InvariantsOrderHandler {
             // it means that the executable is related to the position of the given dependency file
             // so we simply make it absolute using the dependencies path
             if !exec_path.is_absolute() {
+                
                 // If the given dependency file has a parent dir path, we can add it
                 if let Some(s) = p.parent() {
                     if s.to_str().unwrap() != String::new() {
@@ -614,7 +613,7 @@ impl InvariantExecGroup {
         
         fn exec_command(exec: &InvariantsExecutable) -> Child 
         { 
-            //let tmp: String = cmd(exec.exec_path, vec![]).stdin_bytes(bytes).unwrap();
+            
             Command::new(format!("{}", exec.exec_path))
                                     .stdin(Stdio::piped())
                                     .stdout(Stdio::piped())
