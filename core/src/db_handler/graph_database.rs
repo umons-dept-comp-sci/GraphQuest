@@ -547,9 +547,9 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     }
         
     /// Returns all the table names except for:
-    /// * The metadata table
-    /// * The dataset table
-    /// * The full data table
+    /// * The [METADATA_TABLE_NAME] table
+    /// * The [DATASET_TABLE_NAME] table
+    /// * The [FULL_TABLE_NAME] data table
     /// ## Exceptions
     /// Returns a [GraphDatabaseError] if an error was encountered
     async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
@@ -599,7 +599,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     }
     
 
-    /// Adds a metadata table to the database that will be used to not recompute the Full table.
+    /// Adds a metadata table to the database that will be used to not recompute the [FULL_TABLE_NAME] table.
     /// 
     /// ## Exemple of table
     /// ```text
@@ -684,7 +684,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     async fn join_save_tables(&self, new_table_name: &str, table_names: Vec<String>, common_column_name: &str) -> Result<(), GraphDatabaseError>;
 
 
-    // TODO this has to be modified in order to use it later for the Full Table creation
+    // TODO this has to be modified in order to use it later for the [FULL_TABLE_NAME] Table creation
     async fn update_meta_data(&self, changed_table_name: &str, added_values: usize) -> Result<(), GraphDatabaseError>
     {
         // Get query

@@ -1,4 +1,4 @@
-#! /usr/bin/python3
+#! env/bin/python
 """Compute the number of non-equivalent colorings of a graph.
 
 Reference:
@@ -6,6 +6,7 @@ Reference:
 """
 import sys
 import networkx as nx
+
 
 def P(G):
     n, m = G.number_of_nodes(), G.number_of_edges()
@@ -18,7 +19,17 @@ def P(G):
         return P(H) + P(nx.contracted_edge(H, e, self_loops=False))
 
 
+
 if __name__ == "__main__":
+    flush_time = 10
     for sig in map(str.strip, sys.stdin):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
-        print(sig, P(G))
+        sys.stdout.write(sig + " " + str(nx.is_planar(G)) + "\n")
+        
+        flush_time -= 1
+        if flush_time == 0:
+            flush_time = 10
+            sys.stdout.flush()
+        
+    
+    

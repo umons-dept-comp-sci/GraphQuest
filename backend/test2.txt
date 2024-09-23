@@ -1,2 +1,0 @@
-sign1 arg1 arg2
-sign2 arg1 arg2

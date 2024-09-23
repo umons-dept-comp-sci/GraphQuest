@@ -1,4 +1,4 @@
-#! /usr/bin/python3
+#! env/bin/python
 import sys
 import random
 
@@ -17,9 +17,9 @@ if __name__=="__main__":
         signature = line.split(" ")[0]
         signature = signature.split("\n")[0]
         
-        res = "0 " + "1 " + " 2 "
+        res = "6"
         sys.stdout.write(signature + " " + res + "\n")
         count += 1
-        
-
+    
+    
     sys.stdout.write("\n")
