@@ -4,7 +4,7 @@ use clap::Parser;
 
 
 
-use gquest_cli::{cli_commands::*, command_handlers::{dataset_handler::*, delete_handler::delete, invariant_cli_handler::compute, query_handler::query, summary_handler::summary}, log_handler::*};
+use gquest::{cli_commands::*, command_handlers::{dataset_handler::*, delete_handler::delete, invariant_cli_handler::compute, query_handler::query, summary_handler::summary}, log_handler::*};
 
 
 

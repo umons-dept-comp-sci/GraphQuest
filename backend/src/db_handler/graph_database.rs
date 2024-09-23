@@ -30,7 +30,7 @@ pub const METADATA_VALUE_NAME : &str = "stopped_at";
 // The name of the column in an invariant table where the values are stored 
 //pub const INVARIANT_COLUMN_NAME : &str = "value";
 /// The name of the table that has all the data
-pub const FULL_TABLE_NAME: &str = "Full";
+pub const FULL_TABLE_NAME: &str = "AllInv";
 
 
 /// The maximum size of a signature to store in the dataset
@@ -503,7 +503,8 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         if let Err(e) = table_names{
             return Err(e)
         } 
-        let table_names = table_names.unwrap();
+        let mut table_names = table_names.unwrap();
+        table_names.insert(0, DATASET_TABLE_NAME.to_string());
 
         // Get the minimum table size
         let min_full_size = self.get_min_dependency_size(&table_names).await;

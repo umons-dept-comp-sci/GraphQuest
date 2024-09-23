@@ -6,7 +6,7 @@ use std::fmt::Debug;
 const DEFAULT_URL: &str = "sqlite://gquest.db";
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author("Axel Foucart"), version, about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024"))]
 pub struct CliArg {
     #[command(subcommand)]
     pub cmd: Modes,
@@ -97,10 +97,12 @@ pub struct GengArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DatasetChoice {
+    /// Generates graph signatures using the `geng` command from the nauty package
     Geng {
         #[command(flatten)]
         args : GengArgs
     },
+    /// Imports graph signature from a file or the standard input
     Import {
         #[command(flatten)]
         args : ImportArgs
@@ -166,7 +168,6 @@ pub enum OutputChoice
     /// Prints result line by line to the standart output
     Stream,
     /// Prints the result as a table
-    
     #[group(required = false, multiple = false)] 
     Table
     {
