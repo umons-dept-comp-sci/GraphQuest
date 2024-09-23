@@ -270,6 +270,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// Adds value to the dataset table.
     /// 
     /// If the number of values to push is too big, consider using [GraphDatabase::add_signatures_to_dataset_buffer()] instead, which is also using this method.
+    /// Will do nothing if there are no value to add.
     /// ## Exceptions
     /// Can return an [GraphDatabaseError] when:
     /// * The given table name doesn't not exists, because [GraphDatabase::create_dataset_table()] was not called before
@@ -277,6 +278,9 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// * The values break the primary key rule (ex. a signature is already inside the dataset)
     async fn add_values_to_table(&self, table_name: &str, signatures_values: &Vec<(String, String)>) -> Result<(), GraphDatabaseError>
     {
+        if signatures_values.len() == 0 {
+            return Ok(());
+        }
         // Get query
         let query = Self::get_insert_into_query(table_name, signatures_values);
 
