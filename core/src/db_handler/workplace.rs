@@ -167,6 +167,6 @@ impl<'a, T: GraphDatabase<'a>> Workspace<'a, T> {
 
     pub async fn delete_table(&self, table_name: &String) -> Result<(), GraphDatabaseError>
     {
-        self.db.delete_table(table_name, false).await
+        self.db.delete_table(table_name).await
     }
 }

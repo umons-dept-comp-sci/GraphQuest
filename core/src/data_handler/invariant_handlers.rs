@@ -11,7 +11,7 @@ use crate::db_handler::graph_database::{GraphDatabase, DATASET_TABLE_NAME};
 /// The prefix of all the invariant tables 
 pub const INVARIANT_PREFIX : &str = "";
 /// The quantity of data to send to the invariant executable
-pub const BATCH_SIZE: usize = 3000;
+pub const BATCH_SIZE: usize = 1000;
 
 
 /// Private struct simply used to help the json parsing of multiple executables 

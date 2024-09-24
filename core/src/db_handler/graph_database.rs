@@ -538,7 +538,7 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
         }
         
         // Delete previously made table
-        if let Err(e) = self.delete_table(FULL_TABLE_NAME, true).await{
+        if let Err(e) = self.delete_table(FULL_TABLE_NAME).await{
             if let GraphDatabaseError::TableNotFoundError { table_name: _ } = e {
                 // pass
             }
@@ -662,11 +662,11 @@ pub trait GraphDatabase<'a> : Subject<'a> + Clone
     /// * A [GraphDatabaseError::TableNotFoundError] when the given table is not present
     /// * A [GraphDatabaseError::ForbiddenActionError] when the given table cannot be deleted
     /// * A [GraphDatabaseError] in general, if something else went wrong
-    async fn delete_table(&self, table_name: &str, can_delete_full: bool) -> Result<(), GraphDatabaseError>
+    async fn delete_table(&self, table_name: &str) -> Result<(), GraphDatabaseError>
     {
         let low_table_name = table_name.to_lowercase();
         // Check if the table is not critical
-        if low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == DATASET_TABLE_NAME.to_lowercase() || (low_table_name == FULL_TABLE_NAME.to_lowercase() && !can_delete_full)  {
+        if low_table_name == DATASET_TABLE_NAME.to_lowercase() || low_table_name == DATASET_TABLE_NAME.to_lowercase()  {
             return Err(GraphDatabaseError::ForbiddenActionError { action: format!("Tried to delete the table {}", table_name)})
         }
 
