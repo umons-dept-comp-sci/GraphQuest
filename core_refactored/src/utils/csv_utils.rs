@@ -1,7 +1,6 @@
 use core::fmt;
 use std::{fs::File, io::Write, path::Path};
 
-
 /// Small struct used to make the creation of a *csv* type file easier
 /// 
 /// # Examples
@@ -31,21 +30,23 @@ pub struct CsvFile
     separator: char
 
 }
-
-impl CsvFile  {
+//______________________________ CSV FILE FUNCTIONS
+impl CsvFile  
+{
     /// Creates a new file at the given path (or crushes the one already present) 
     /// # Errors
     /// Will return a [CsvFileError] if there was a problem during the creation of the file
     pub fn new(file_path: &String, separator: Option<char>) -> Result<Self, CsvFileError>
     {
         let path = Path::new(&file_path);
-        let file = match File::create(path) {
+        let file = match File::create(path) 
+        {
             Ok(f) => f,
             Err(_) => return Err(CsvFileError::CreationError(file_path.to_string())),
         };
         
-        
-        Ok(Self {
+        Ok(Self 
+            {
             file,
             file_path: file_path.to_string(),
             columns_added : true,
@@ -83,18 +84,17 @@ impl CsvFile  {
     }
 }
 
-
-
 /// Correctly formats the vector as a cvs line, (adds a '\n' to finish the line)
 /// # Examples
 /// 
 /// ```
 /// let line: String = as_line(&vec!["data1".to_string(), 
-/// "data2".to_string(), 
-/// "data3".to_string()], ';');
+///                     "data2".to_string(), 
+///                     "data3".to_string()], ';');
 /// 
 /// assert_eq!("data1;data2;data3\n", line);
 /// ```
+
 pub fn as_line(values: &Vec<String>, separator: char) -> String
 {
     let mut to_write = String::new();
@@ -108,6 +108,8 @@ pub fn as_line(values: &Vec<String>, separator: char) -> String
 
 
 
+//______________________________ ERRORS STRUCT
+
 /// Enum used to report a [CsvFile] error
 pub enum CsvFileError
 {
@@ -118,14 +120,18 @@ pub enum CsvFileError
 }
 
 
-impl fmt::Display for CsvFileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CsvFileError 
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
+    {
         write!(f, "{}", self.get_error_message())
     }
 }
 
-impl fmt::Debug for CsvFileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for CsvFileError 
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
+    {
         match self {
             Self::CreationError(arg0) => f.debug_tuple("CreationError").field(arg0).finish(),
             Self::WriteError(arg0) => f.debug_tuple("WriteError").field(arg0).finish(),
@@ -133,7 +139,8 @@ impl fmt::Debug for CsvFileError {
     }
 }
 
-impl CsvFileError {
+impl CsvFileError 
+{
     /// Returns the error message to display for the user
     fn get_error_message(&self) -> String
     {
