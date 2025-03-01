@@ -6,7 +6,7 @@ fn main()
     info!("Program starts");
 
     
-    println!("Hello, world!");
+    info!("Program ends")
 }
 
 /// Starts log environment using the given verbosity arguments
