@@ -5,14 +5,10 @@ pub mod utils
     pub mod subject;
 }
 
-// pub mod data_handler
-// {
-//     pub mod data_loader;
-//     pub mod invariants;
-// }
+pub mod data_handler
+{
+    pub mod data_loader;
+    // pub mod invariants;
+}
 
-// pub mod database_handler
-// {
-//     pub mod graph_database;
-//     pub mod database_error;
-// }
+pub mod database_handler;

@@ -75,16 +75,6 @@ pub fn as_line<T: Into<String> + Clone>(values: &Vec<T>, separator: char) -> Str
     to_write
 }
 
-fn to_vec_string<T: Into<String> + Clone>(vec: Vec<T>) -> Vec<String> {
-    let mut res = Vec::new();
-
-    for value in vec {
-        res.push(value.into());
-    }
-
-    res
-}
-
 //______________________________ ERRORS STRUCT
 
 #[derive(Debug)]
