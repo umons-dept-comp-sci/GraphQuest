@@ -76,8 +76,10 @@ impl TableData {
 /// # Examples
 ///
 /// ```
+/// use core::utils::table_handler::*;
+/// use core::utils::table_handler::QueryTableOptions;
 /// // Create the table
-/// let mut table = QueryTable::new(gquest_core::utils::table_handler::QueryTableOptions::Full);
+/// let mut table = QueryTable::new(QueryTableOptions::Full);
 /// // Add headers
 /// table.set_headers(vec!["Header 1".to_string(), "Header 2".to_string()]);
 /// // Add lines
