@@ -1,3 +1,4 @@
+use gquest_core::utils::table_handler::QueryTable;
 use log::*;
 
 fn main() 
