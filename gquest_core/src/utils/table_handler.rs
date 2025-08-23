@@ -101,8 +101,7 @@ impl QueryTable {
         let mut values_indexed = vec![self.curr_index.to_string()];
         values_indexed.append(&mut to_vec_string(values));
 
-        self.mode
-            .add_line(&mut self.table_data, values_indexed);
+        self.mode.add_line(&mut self.table_data, values_indexed);
         self.curr_index += 1;
     }
 }
