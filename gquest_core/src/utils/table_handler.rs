@@ -76,8 +76,8 @@ impl TableData {
 /// # Examples
 ///
 /// ```
-/// use core::utils::table_handler::*;
-/// use core::utils::table_handler::QueryTableOptions;
+/// use gquest_core::utils::table_handler::*;
+/// use gquest_core::utils::table_handler::QueryTableOptions;
 /// // Create the table
 /// let mut table = QueryTable::new(QueryTableOptions::Full);
 /// // Add headers

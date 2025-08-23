@@ -5,7 +5,7 @@ use std::{fmt::Display, fs::File, io::Write, path::Path};
 /// # Examples
 ///
 /// ```
-/// use core::utils::csv_utils::CsvFile;
+/// use gquest_core::utils::csv_utils::CsvFile;
 /// let mut file = CsvFile::new(&String::from("tmp.csv"), Some(';')).expect("Could not create file");
 /// let column_names = vec!["column1".to_string(), "column2".to_string()];
 /// let values1 = vec![vec!["data 11".to_string(), "data 12".to_string()],
@@ -84,7 +84,7 @@ impl CsvFile {
 /// # Examples
 ///
 /// ```
-/// use core::utils::csv_utils::*;
+/// use gquest_core::utils::csv_utils::*;
 /// let line: String = as_line(&vec!["data1".to_string(),
 ///                     "data2".to_string(),
 ///                     "data3".to_string()], ';');
