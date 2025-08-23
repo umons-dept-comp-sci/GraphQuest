@@ -50,10 +50,7 @@ impl CsvFile
             file,
             file_path: file_path.to_string(),
             columns_added : true,
-            separator: match separator {
-                Some(s) => s,
-                None => ',',
-            }
+            separator: separator.unwrap_or(',')
         })
 
 
@@ -94,7 +91,6 @@ impl CsvFile
 /// 
 /// assert_eq!("data1;data2;data3\n", line);
 /// ```
-
 pub fn as_line(values: &Vec<String>, separator: char) -> String
 {
     let mut to_write = String::new();
