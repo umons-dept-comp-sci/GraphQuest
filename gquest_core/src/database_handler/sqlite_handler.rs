@@ -1,19 +1,7 @@
-use std::future::Future;
+use crate::database_handler::DatabaseType;
 
-use sqlx::{
-    query::{self, Query},
-    sqlite::SqliteArguments,
-    Pool, Sqlite,
-};
-
-use crate::{
-    database_handler::{DatabaseType, GraphDatabase},
-    utils::subject::{Observer, Subject},
-};
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SqliteGraphDatabase {}
-
 
 impl DatabaseType for SqliteGraphDatabase {
     fn get_all_tables_query(&self) -> String {
