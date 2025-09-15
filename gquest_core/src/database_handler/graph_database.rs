@@ -1,25 +1,15 @@
-use std::{str::FromStr, time::Duration};
+use std::{fmt::Debug, str::FromStr, time::Duration};
 
-use log::debug;
+use log::{debug, info};
 use sqlx::{
-    any::AnyConnectOptions, migrate::MigrateDatabase, pool, Any, AnyPool, ConnectOptions, Pool,
-    QueryBuilder, Sqlite,
+    any::AnyConnectOptions, error::DatabaseError, migrate::MigrateDatabase, pool, query, Any,
+    AnyPool, ConnectOptions, Database, Execute, Pool, QueryBuilder, Sqlite,
 };
 
-use crate::{database_handler::GraphDatabaseError, utils::subject::Observer};
-
-pub enum ColumnType {
-    String {
-        max_size: Option<usize>,
-        default_value: Option<String>,
-    },
-    Integer {
-        default_value: Option<usize>,
-    },
-    Boolean {
-        default_value: Option<bool>,
-    },
-}
+use crate::{
+    database_handler::{database_error, DbQuerySystem, GraphDatabaseError, *},
+    utils::subject::Observer,
+};
 
 /// Used to change the logging settings of a sqlx connection.
 /// This is because by default, all debug options will be shown and will fill the logger really quickly. It is really recommended to set them to at least [`log::LevelFilter::Info`].
@@ -28,19 +18,20 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
+#[derive(Debug)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
 pub struct GraphDatabase<'a, T>
 where
-    T: DatabaseType,
+    T: DbQuerySystem,
 {
     pool: Pool<sqlx::Any>,
     obs: Option<&'a dyn Observer>,
-    db_type: T,
+    query_db_system: T,
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<'a, T: DatabaseType> GraphDatabase<'a, T> {
+impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     /// Creates the database that will be storing the project.
     /// Returns an in instance of a [GraphDatabase].
     ///
@@ -94,7 +85,7 @@ impl<'a, T: DatabaseType> GraphDatabase<'a, T> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
         Ok(GraphDatabase {
-            db_type,
+            query_db_system: db_type,
             obs: None,
             pool: {
                 let res = match connection_options {
@@ -118,15 +109,6 @@ impl<'a, T: DatabaseType> GraphDatabase<'a, T> {
     pub async fn close_connection(self) {
         self.pool.close().await
     }
-
-    // async fn test(&mut self) {
-    //     let mut query = QueryBuilder::<sqlx::Any>::new(self.db_type.get_all_tables_query()).sql();
-    //     // .execute(&self.pool)
-    //     // .await
-    //     // .unwrap();
-
-    //     // Ok(())
-    // }
 }
 
 /// Applies the given options to the pool *before* opening it.
@@ -145,48 +127,75 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
-pub trait DatabaseType {
-    /// Gets a query that returns all the table names from the database
-    fn get_all_tables_query(&self) -> String;
-
-    /// Returns the query that can be used to create a table with the given table name,
-    /// that has two columns also with the given names :
-    /// * `pk_name`: The primary key column (must be able to contain strings with a maximum size of [`crate::database_handler::SIGNATURE_MAX_SIZE`]).
-    /// * `value_name`: The column that will store values.
-    fn get_create_table_query(
+impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+    /// Executes a query but does not look at the return value except for errors.
+    /// Useful when you need to create a table, append data, ...
+    async fn execute_query_no_return(
         &self,
-        table_name: &str,
-        pk_name: &str,
-        value_name: &str,
-        value_type: ColumnType,
-    ) -> String;
+        mut query: QueryBuilder<'_, Any>,
+    ) -> Result<(), GraphDatabaseError> {
+        let res = query.build().execute(&self.pool).await;
+        if let Err(e) = res {
+            return Err(database_error::sqlx_error_to_db_error(e));
+        }
+        Ok(())
+    }
+}
 
-    /// Returns the query that can be used to delete a table with the given name from the dataset
-    fn get_delete_table_query(&self, table_name: String) -> String;
+impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+    pub async fn add_signature_table(&mut self) {
+        let query_str = self
+            .query_db_system
+            .get_create_table_query(super::ColumnType::String {
+                max_size: None,
+                default_value: None,
+            });
 
-    /// Returns the query that can be used to insert all the given data into a table called `table_name`
-    fn get_insert_into_query(
-        &self,
-        table_name: String,
-        signatures_values: &Vec<(String, String)>,
-    ) -> String;
+        // let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
 
-    /// Get a query that can be used to join all the given tables using a common column
-    fn get_join_table_query(&self, table_names: Vec<String>, common_column_name: String) -> String;
+        // for arg in [
+        //     DATASET_TABLE_NAME,
+        //     PK_NAME,
+        //     SIGNATURE_MAX_SIZE,
+        //     DATASET_VALUE_NAME,
+        // ] {
+        //     builder.push_bind(arg);
+        // }
 
-    /// Get a query that can be used to retrieve all rows from the given table and column
-    fn get_all_rows_from_table_column(&self, table_name: &String, column_name: String) -> String;
+        // let query = builder.build();
+        // println!("query: {:?}", query.sql());
 
-    /// Get a query that can be used to select a batch from a given table
-    /// ## Args
-    /// * `start_index` : The index of the table to start fetching the data at
-    ///     * If the given value is `none`, the fetching will start a 0
-    /// * `limit` : The limit on the number of value to fetch
-    ///     * If the given value is `none`, the fetching will be stop at the end of the table
-    fn get_select_batch_from(
-        &self,
-        from_table: String,
-        start_index: Option<usize>,
-        limit: Option<usize>,
-    ) -> String;
+        println!("query : {:?}", create_safe_query(query_str, [
+            DATASET_TABLE_NAME,
+            PK_NAME,
+            SIGNATURE_MAX_SIZE,
+            DATASET_VALUE_NAME,
+        ].to_vec()))
+
+        // query.execute(&self.pool).await.expect("whyyh ::(((");
+    }
+}
+
+// Will panic if there are more or less bind symbols than the given number.
+fn create_safe_query (
+    query_str: String,
+    arguments: Vec<&str>,
+) -> Result<String, GraphDatabaseError> {
+    let mut builder = QueryBuilder::<sqlx::Any>::new("");
+
+    // let mut query = builder.build();
+    let mut count = 0;
+
+    for c in query_str.chars() {
+        if c != '?' {
+            builder.push(c);
+        } else if count == arguments.len() {
+            todo!("error");
+        } else {
+            builder
+                .push_bind::<&str>(arguments.get(count).expect("shouldn't be out of bounds"));
+            count += 1;
+        }
+    }
+    Ok(builder.build().sql().to_string())
 }

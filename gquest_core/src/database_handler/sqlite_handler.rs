@@ -1,21 +1,21 @@
-use crate::database_handler::DatabaseType;
+use crate::database_handler::{ColumnType, DbQuerySystem};
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct SqliteGraphDatabase {}
 
-impl DatabaseType for SqliteGraphDatabase {
+impl DbQuerySystem for SqliteGraphDatabase {
     fn get_all_tables_query(&self) -> String {
         todo!()
     }
 
     fn get_create_table_query(
         &self,
-        table_name: &str,
-        pk_name: &str,
-        value_name: &str,
-        value_type: super::ColumnType,
+        value_type: ColumnType,
     ) -> String {
-        todo!()
+        format!(
+            "CREATE TABLE ? (? VARCHAR(?) PRIMARY KEY NOT NULL, ? {})",
+            translate_column(value_type)
+        )
     }
 
     fn get_delete_table_query(&self, table_name: String) -> String {
@@ -25,7 +25,7 @@ impl DatabaseType for SqliteGraphDatabase {
     fn get_insert_into_query(
         &self,
         table_name: String,
-        signatures_values: &Vec<(String, String)>,
+        signatures_values: &[(String, String)],
     ) -> String {
         todo!()
     }
@@ -45,5 +45,48 @@ impl DatabaseType for SqliteGraphDatabase {
         limit: Option<usize>,
     ) -> String {
         todo!()
+    }
+}
+
+fn translate_column(column_type: ColumnType) -> String {
+    match column_type {
+        ColumnType::String {
+            max_size,
+            default_value,
+        } => {
+            let mut tmp = String::from("VARCHAR");
+            if let Some(m) = max_size {
+                tmp.push_str(format!("({})", m).as_str());
+            }
+            if let Some(d) = default_value {
+                tmp.push_str(format!(" DEFAULT {}", d).as_str());
+            }
+            tmp
+        }
+        ColumnType::Integer { default_value } => {
+            let mut tmp = String::from("INTEGER");
+
+            if let Some(d) = default_value {
+                tmp.push_str(format!(" DEFAULT {}", d).as_str());
+            }
+            tmp
+        }
+        ColumnType::Boolean { default_value } => {
+            let mut tmp = String::from("INTEGER");
+            // Convert true to 1 and false to 0
+            if let Some(d) = default_value {
+                tmp.push_str(
+                    format!(" DEFAULT {}", {
+                        if d {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .as_str(),
+                );
+            }
+            tmp
+        }
     }
 }

@@ -1,5 +1,7 @@
+use std::fmt::Debug;
+
 /// Trait used to represent the observer in the observer design pattern
-pub trait Observer: Send + Sync {
+pub trait Observer: Send + Sync + Debug {
     /// Notify the observer that a tick has passed
     ///
     /// An additional index to provide more information when it is useful

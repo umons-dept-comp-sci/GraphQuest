@@ -20,7 +20,7 @@ async fn main() {
     let db =
         GraphDatabase::connect_graph_database(DB_URL, SqliteGraphDatabase::default(), log_levels)
             .await
-            .unwrap();
+            .expect("Database to be existant");
 
     db.close_connection().await;
 
