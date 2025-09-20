@@ -1,8 +1,10 @@
-use gquest_core::data_handler::invariants::{ExecutableOrderHandler, InvariantsExecutable};
+use gquest_core::data_handler::invariant_execs::{ExecutableOrderHandler, InvariantsExecutable};
 
 pub const VALID_EXEC_A: &str = "examples/a.py";
 pub const VALID_EXEC_B: &str = "examples/b.py";
 pub const VALID_EXEC_C: &str = "examples/c.py";
+
+pub const UNVALID_EXEC: &str = "examples/non_executable.py";
 
 #[test]
 fn new_inv_exec_path_test() {
@@ -15,6 +17,14 @@ fn new_inv_exec_path_test() {
         vec![],
     )
     .is_ok()
+    {
+        panic!("Should return Err")
+    }
+}
+
+#[test]
+fn new_non_exec_inv_exec_test() {
+    if InvariantsExecutable::new(UNVALID_EXEC.to_string(), vec!["size".to_string()], vec![]).is_ok()
     {
         panic!("Should return Err")
     }

@@ -1,9 +1,9 @@
 use gquest_core::database_handler::{GraphDatabase, SqliteGraphDatabase};
-use sqlx::{migrate::MigrateDatabase, AnyPool};
+use sqlx::migrate::MigrateDatabase;
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
-const FUNNY: &str = "sqlite:/home/axel/Téléchargements/chinook.db";
+// const FUNNY: &str = "sqlite:/home/axel/Téléchargements/chinook.db";
 
 const BAD_DB_URL: &str = "sqlite::bad_url";
 

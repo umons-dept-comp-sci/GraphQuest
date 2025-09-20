@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use is_executable::IsExecutable;
 use regex::Regex;
 use thiserror::Error;
 use topo_sort::TopoSort;
@@ -11,8 +12,10 @@ const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
 pub enum InvariantErrors {
-    #[error("The given path \"{0}\" does not lead to a valid execution path")]
-    InvalidPath(String),
+    #[error("The given path \"{0}\" does not lead to a file")]
+    InvalidPath(PathBuf),
+    #[error("The given file at \"{0}\" is not executable")]
+    NotExecutable(PathBuf),
     #[error("The given name \"{0}\" is not a valid invariant name. An invariant name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$")]
     InvalidName(String),
     #[error(
@@ -85,7 +88,9 @@ impl InvariantsExecutable {
 
         // if the invariant doesn't exist
         if let Ok(false) = inv_path.try_exists() {
-            return Err(InvariantErrors::InvalidPath(tmp_clone));
+            return Err(InvariantErrors::InvalidPath(inv_path.to_path_buf()));
+        } else if !inv_path.is_executable() {
+            return Err(InvariantErrors::NotExecutable(inv_path.to_path_buf()));
         }
         Ok(inv_path.to_path_buf())
     }
@@ -179,17 +184,13 @@ impl ExecutableOrderHandler {
 
         let mut res = vec![];
         for path in ordered_paths {
-            res.push(self.path_exec_hashmap.remove(&path).expect("present in hashmap"));
+            res.push(
+                self.path_exec_hashmap
+                    .remove(&path)
+                    .expect("present in hashmap"),
+            );
         }
 
         Ok(res)
     }
 }
-
-// fn exec_command(exec_path: String) -> Child {
-//     Command::new(format!("{}", exec_path))
-//         .stdin(Stdio::piped())
-//         .stdout(Stdio::piped())
-//         .spawn()
-//         .expect("Could not execute command")
-// }
