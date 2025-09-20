@@ -12,3 +12,4 @@ tabled = "0.17.0"
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
+topo_sort = "0.4.0"
