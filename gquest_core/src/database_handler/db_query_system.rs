@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-
 pub enum ColumnType {
     String {
         max_size: Option<usize>,
@@ -21,36 +20,32 @@ pub enum ColumnType {
 /// And all unsafe values will be taken care of by the function's callers, this is why some functions **will require** you to add some **binding symbols**,
 /// which are symbols that will be replaced by user inputed values in a safe way (to prevent SQL injections for exemple).
 ///
-/// It is possible that the symbols depend on what database system you are currently implementing,
+/// The maximum number of bind symbols depends on what database system you are currently implementing,
 /// please refer to this documentation for more informations [`sqlx::query::Query::bind`].
 pub trait DbQuerySystem: Debug {
     /// Gets a query that returns all the table names from the database.
-    fn get_all_tables_query(&self) -> String;
+    fn get_all_tables_query() -> String;
 
     /// Returns the query that can be used to create a table with a name and the column
     /// # Bind Symbols
     /// The returned query needs to contain **4 bind symbols** for the following elements :
     /// * The name of the table
     /// * The name for the primary key column
-    /// * The maximum size of the primary key 
+    /// * The maximum size of the primary key
     /// * The name for the value column
-    fn get_create_table_query(&self, value_type: ColumnType) -> String;
+    fn get_create_table_query(pk_column_type: ColumnType, value_column_type: ColumnType) -> String;
 
     /// Returns the query that can be used to delete a table with the given name from the dataset
-    fn get_delete_table_query(&self, table_name: String) -> String;
+    fn get_delete_table_query(table_name: String) -> String;
 
     /// Returns the query that can be used to insert all the given data into a table called `table_name`
-    fn get_insert_into_query(
-        &self,
-        table_name: String,
-        signatures_values: &[(String, String)],
-    ) -> String;
+    fn get_insert_into_query(table_name: String, signatures_values: &[(String, String)]) -> String;
 
     /// Get a query that can be used to join all the given tables using a common column
-    fn get_join_table_query(&self, table_names: Vec<String>, common_column_name: String) -> String;
+    fn get_join_table_query(table_names: Vec<String>, common_column_name: String) -> String;
 
     /// Get a query that can be used to retrieve all rows from the given table and column
-    fn get_all_rows_from_table_column(&self, table_name: &String, column_name: String) -> String;
+    fn get_all_rows_from_table_column(table_name: &String, column_name: String) -> String;
 
     /// Get a query that can be used to select a batch from a given table
     /// ## Args
@@ -59,7 +54,6 @@ pub trait DbQuerySystem: Debug {
     /// * `limit` : The limit on the number of value to fetch
     ///     * If the given value is `none`, the fetching will be stop at the end of the table
     fn get_select_batch_from(
-        &self,
         from_table: String,
         start_index: Option<usize>,
         limit: Option<usize>,

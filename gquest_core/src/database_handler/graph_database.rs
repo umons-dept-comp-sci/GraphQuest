@@ -1,9 +1,14 @@
-use std::{fmt::Debug, str::FromStr, time::Duration};
+use std::{
+    fmt::{Debug, Display},
+    marker::PhantomData,
+    str::FromStr,
+    time::Duration,
+};
 
-use log::{debug, info};
+use log::{debug, error, info};
 use sqlx::{
     any::AnyConnectOptions, error::DatabaseError, migrate::MigrateDatabase, pool, query, Any,
-    AnyPool, ConnectOptions, Database, Execute, Pool, QueryBuilder, Sqlite,
+    AnyPool, ConnectOptions, Database, Execute, FromRow, Pool, QueryBuilder, Row, Sqlite,
 };
 
 use crate::{
@@ -27,7 +32,7 @@ where
 {
     pool: Pool<sqlx::Any>,
     obs: Option<&'a dyn Observer>,
-    query_db_system: T,
+    phantom_data: PhantomData<T>,
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
@@ -41,7 +46,6 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     /// * [GraphDatabaseError::DatabaseError] if an unknown error was uncountered when trying to create it
     pub async fn create_graph_database(
         db_url: &str,
-        db_type: T,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDatabaseError> {
         // Install sqlite, postgre and mysql drivers
@@ -67,7 +71,7 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
             });
         }
 
-        Self::connect_graph_database(db_url, db_type, connection_options).await
+        Self::connect_graph_database(db_url, connection_options).await
     }
 
     /// Connects to the given database.
@@ -79,13 +83,11 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     /// *   [GraphDatabaseError::DatabaseError] if something went wrong during the connection.
     pub async fn connect_graph_database(
         db_url: &str,
-        db_type: T,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDatabaseError> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
-        Ok(GraphDatabase {
-            query_db_system: db_type,
+        Ok(GraphDatabase::<T> {
             obs: None,
             pool: {
                 let res = match connection_options {
@@ -102,6 +104,7 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
                     }
                 }
             },
+            phantom_data: PhantomData,
         })
     }
 
@@ -142,60 +145,108 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     }
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct CoolRow {
+    emp_id: String,
+}
+
 impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
-    pub async fn add_signature_table(&mut self) {
-        let query_str = self
-            .query_db_system
-            .get_create_table_query(super::ColumnType::String {
-                max_size: None,
-                default_value: None,
-            });
+    pub async fn get_all_table_names(&mut self) -> Result<Vec<String>, GraphDatabaseError> {
+        let query_str = T::get_all_tables_query();
 
-        // let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
+        let results: Vec<(String,)> = sqlx::query_as(&query_str)
+            .fetch_all(&self.pool)
+            .await
+            .expect("no crash");
 
-        // for arg in [
-        //     DATASET_TABLE_NAME,
-        //     PK_NAME,
-        //     SIGNATURE_MAX_SIZE,
-        //     DATASET_VALUE_NAME,
-        // ] {
-        //     builder.push_bind(arg);
-        // }
+        Ok(results.iter().map(|(val,)| val.to_string()).collect())
+    }
 
-        // let query = builder.build();
-        // println!("query: {:?}", query.sql());
-
-        println!("query : {:?}", create_safe_query(query_str, [
+    pub async fn add_signature_table(&mut self) -> Result<(), GraphDatabaseError> {
+        self.add_table(
             DATASET_TABLE_NAME,
             PK_NAME,
-            SIGNATURE_MAX_SIZE,
+            ColumnType::String {
+                max_size: Some(SIGNATURE_MAX_SIZE),
+                default_value: None,
+            },
             DATASET_VALUE_NAME,
-        ].to_vec()))
+            ColumnType::String {
+                max_size: None,
+                default_value: None,
+            },
+        )
+        .await
+    }
 
-        // query.execute(&self.pool).await.expect("whyyh ::(((");
+    pub async fn add_table(
+        &mut self,
+        table_name: impl Into<String>,
+        pk_name: impl Into<String>,
+        pk_column_type: ColumnType,
+        value_name: impl Into<String>,
+        value_column_type: ColumnType,
+    ) -> Result<(), GraphDatabaseError> {
+        let query_str = T::get_create_table_query(pk_column_type, value_column_type);
+        let mut builder = create_safe_query(
+            query_str,
+            [table_name.into(), pk_name.into(), value_name.into()].to_vec(),
+            Vec::<String>::new(),
+        )
+        .expect("all identifier present");
+
+        match builder.build().execute(&self.pool).await {
+            Ok(v) => {
+                debug!("Added signature table, result is : {:?}", v);
+                Ok(())
+            }
+            Err(e) => {
+                error!("{e}");
+                Err(database_error::sqlx_error_to_db_error(e))
+            }
+        }
     }
 }
 
-// Will panic if there are more or less bind symbols than the given number.
-fn create_safe_query (
+// Will panic if there are more or less identifier/argument symbols than the given number.
+fn create_safe_query(
     query_str: String,
-    arguments: Vec<&str>,
-) -> Result<String, GraphDatabaseError> {
+    identifiers: Vec<impl ToString>,
+    arguments: Vec<impl ToString>,
+) -> Result<sqlx::QueryBuilder<'static, sqlx::Any>, GraphDatabaseError> {
     let mut builder = QueryBuilder::<sqlx::Any>::new("");
-
-    // let mut query = builder.build();
-    let mut count = 0;
+    let mut identifiers = identifiers.iter();
+    let mut arguments = arguments.iter();
 
     for c in query_str.chars() {
-        if c != '?' {
-            builder.push(c);
-        } else if count == arguments.len() {
-            todo!("error");
+        if c == '?' {
+            match arguments.next() {
+                Some(arg) => {
+                    builder.push_bind::<String>(arg.to_string());
+                }
+                None => {
+                    todo!("error !")
+                }
+            }
+        } else if c == '$' {
+            match identifiers.next() {
+                Some(id) => {
+                    // We can trust that the identifiers are "safe" in this context
+                    builder.push(id.to_string());
+                }
+                None => {
+                    todo!("error !")
+                }
+            }
         } else {
-            builder
-                .push_bind::<&str>(arguments.get(count).expect("shouldn't be out of bounds"));
-            count += 1;
+            builder.push(c);
         }
     }
-    Ok(builder.build().sql().to_string())
+    Ok(builder)
+}
+
+impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+    fn print_all_db_table(&self) {
+        // Get all tables :
+    }
 }

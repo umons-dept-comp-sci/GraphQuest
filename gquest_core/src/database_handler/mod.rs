@@ -18,7 +18,7 @@ pub const METADATA_VALUE_NAME: &str = "stopped_at";
 pub const FULL_TABLE_NAME: &str = "AllInv";
 
 /// The maximum size of a signature to store in the dataset
-pub const SIGNATURE_MAX_SIZE: &str = "250";
+pub const SIGNATURE_MAX_SIZE: usize = 250;
 /// The maximum size of a table name in the dataset
 pub const TABLE_NAME_MAX_SIZE: usize = 250;
 /// The speed at which the observator will be notified (if any present on db)

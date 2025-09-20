@@ -18,10 +18,10 @@ async fn main() {
     // This is for mySql, postgre,
 
     let db =
-        GraphDatabase::connect_graph_database(DB_URL, SqliteGraphDatabase::default(), log_levels)
+        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(DB_URL, log_levels)
             .await
             .expect("Database to be existant");
-
+    
     db.close_connection().await;
 
     info!("Program ends");

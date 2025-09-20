@@ -1,5 +1,5 @@
 use gquest_core::database_handler::{GraphDatabase, SqliteGraphDatabase};
-use sqlx::migrate::MigrateDatabase;
+use sqlx::{migrate::MigrateDatabase, AnyPool};
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
@@ -8,10 +8,9 @@ const BAD_DB_URL: &str = "sqlite::bad_url";
 
 #[tokio::test]
 async fn connect_db_test_success() {
-    let test =
-        GraphDatabase::connect_graph_database(MEMORY_DB_URL, SqliteGraphDatabase::default(), None)
-            .await
-            .unwrap();
+    let test = GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
 
     sqlx::Any::drop_database(MEMORY_DB_URL).await.unwrap();
     test.close_connection().await;
@@ -19,20 +18,20 @@ async fn connect_db_test_success() {
 
 #[tokio::test]
 async fn connect_db_test_bad_url() {
-    GraphDatabase::connect_graph_database(BAD_DB_URL, SqliteGraphDatabase::default(), None)
+    GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(BAD_DB_URL, None)
         .await
         .expect_err("Expected an error because the db doesn't exist");
 }
 
 #[tokio::test]
 async fn create_db_test() {
-    GraphDatabase::create_graph_database(PHYSICAL_DB_URL, SqliteGraphDatabase::default(), None)
+    GraphDatabase::<SqliteGraphDatabase>::create_graph_database(PHYSICAL_DB_URL, None)
         .await
         .expect("This was supposed to not cause an error");
     // Already exists
-    GraphDatabase::create_graph_database(PHYSICAL_DB_URL, SqliteGraphDatabase::default(), None)
+    GraphDatabase::<SqliteGraphDatabase>::create_graph_database(PHYSICAL_DB_URL, None)
         .await
-        .expect_err("This was supposed to cause an error");
+        .expect("This was supposed to cause an error");
     // Drop the created db
     sqlx::Any::drop_database(PHYSICAL_DB_URL).await.unwrap();
 }
@@ -40,9 +39,38 @@ async fn create_db_test() {
 #[tokio::test]
 async fn add_table_test() {
     let mut test =
-    GraphDatabase::connect_graph_database(MEMORY_DB_URL, SqliteGraphDatabase::default(), None)
-        .await
-        .unwrap();
+        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
+            .await
+            .unwrap();
 
-    test.add_signature_table().await;
+    // test.close_connection().await;
+
+    test.add_signature_table()
+        .await
+        .expect("It should not fail");
+
+    // AnyPool::connect(PHYSICAL_DB_URL).await.expect("db exists").
+}
+
+#[tokio::test]
+async fn get_all_tables_test() {
+    let mut test =
+        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
+            .await
+            .unwrap();
+
+    let v = test.get_all_table_names().await;
+    println!("{v:?}");
+}
+
+/// This *test* is used to remove any database that could have failed
+#[tokio::test]
+async fn remove_all_created_df() {
+    // Install sqlite, postgre and mysql drivers
+    sqlx::any::install_default_drivers();
+
+    // Drop the created db
+    let _ = sqlx::Any::drop_database(PHYSICAL_DB_URL).await;
+    let _ = sqlx::Any::drop_database(BAD_DB_URL).await;
+    let _ = sqlx::Any::drop_database(MEMORY_DB_URL).await;
 }
