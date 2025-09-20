@@ -21,8 +21,8 @@ pub const FULL_TABLE_NAME: &str = "AllInv";
 pub const SIGNATURE_MAX_SIZE: usize = 250;
 /// The maximum size of a table name in the dataset
 pub const TABLE_NAME_MAX_SIZE: usize = 250;
-/// The speed at which the observator will be notified (if any present on db)
-const ITERATION_BEFORE_NOTIFY: u8 = 10;
+// /// The speed at which the observator will be notified (if any present on db)
+// const ITERATION_BEFORE_NOTIFY: u8 = 10;
 
 
 

@@ -8,7 +8,7 @@ pub mod utils
 pub mod data_handler
 {
     pub mod data_loader;
-    // pub mod invariants;
+    pub mod invariants;
 }
 
 pub mod database_handler;

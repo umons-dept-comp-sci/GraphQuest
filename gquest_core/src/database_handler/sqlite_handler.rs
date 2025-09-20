@@ -28,7 +28,7 @@ impl DbQuerySystem for SqliteGraphDatabase {
         todo!()
     }
 
-    fn get_all_rows_from_table_column(table_name: &String, column_name: String) -> String {
+    fn get_all_rows_from_table_column(table_name: String, column_name: String) -> String {
         todo!()
     }
 

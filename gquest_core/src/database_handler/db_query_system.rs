@@ -47,7 +47,7 @@ pub trait DbQuerySystem: Debug {
     fn get_join_table_query(table_names: Vec<String>, common_column_name: String) -> String;
 
     /// Get a query that can be used to retrieve all rows from the given table and column
-    fn get_all_rows_from_table_column(table_name: &String, column_name: String) -> String;
+    fn get_all_rows_from_table_column(table_name: String, column_name: String) -> String;
 
     /// Get a query that can be used to select a batch from a given table
     /// ## Args

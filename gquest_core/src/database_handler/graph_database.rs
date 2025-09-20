@@ -4,7 +4,7 @@ use log::{debug, error};
 use sqlx::{
     any::{AnyConnectOptions, AnyRow},
     migrate::MigrateDatabase,
-    AnyPool, Column, ConnectOptions, FromRow, Pool, QueryBuilder, Row,
+    AnyPool, Column, ConnectOptions, Pool, QueryBuilder, Row,
 };
 use tokio_stream::StreamExt;
 
@@ -134,14 +134,14 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
-/// Represents a row from an inveriant table
-#[derive(Debug, FromRow)]
-struct InvariantTableRow {
-    /// Represents the canonical form of a graph
-    canonic: String,
-    /// Represents the value of the invariant for this canonical graph
-    value: String,
-}
+// /// Represents a row from an inveriant table
+// #[derive(Debug, FromRow)]
+// struct InvariantTableRow {
+//     /// Represents the canonical form of a graph
+//     canonic: String,
+//     /// Represents the value of the invariant for this canonical graph
+//     value: String,
+// }
 
 impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
