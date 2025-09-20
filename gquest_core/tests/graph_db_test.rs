@@ -54,14 +54,12 @@ async fn add_table_test() {
 }
 
 #[tokio::test]
-async fn get_all_tables_test() {
-    let mut test =
-        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(FUNNY, None)
-            .await
-            .unwrap();
+async fn print_all_db_table_test() {
+    let test = GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
+        .await
+        .unwrap();
 
-    let v = test.print_all_db_table().await;
-    println!("{v:?}");
+    test.print_all_tables().await.expect("No errors");
 }
 
 /// This *test* is used to remove any database that could have failed

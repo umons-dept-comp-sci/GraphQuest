@@ -1,18 +1,10 @@
-use std::{
-    any::Any,
-    fmt::{Debug, Display},
-    marker::PhantomData,
-    str::FromStr,
-    time::Duration,
-};
+use std::{fmt::Debug, marker::PhantomData, str::FromStr, time::Duration};
 
-use log::{debug, error, info};
+use log::{debug, error};
 use sqlx::{
     any::{AnyConnectOptions, AnyRow},
-    error::DatabaseError,
     migrate::MigrateDatabase,
-    pool, query, AnyPool, Column, ConnectOptions, Database, Execute, FromRow, Pool, QueryBuilder,
-    Row, Sqlite, TypeInfo,
+    AnyPool, Column, ConnectOptions, FromRow, Pool, QueryBuilder, Row,
 };
 use tokio_stream::StreamExt;
 
@@ -36,7 +28,8 @@ where
     T: DbQuerySystem,
 {
     pool: Pool<sqlx::Any>,
-    obs: Option<&'a dyn Observer>,
+    url: String,
+    obs: Option<&'a mut dyn Observer>,
     phantom_data: PhantomData<T>,
 }
 
@@ -94,6 +87,7 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
         sqlx::any::install_default_drivers();
         Ok(GraphDatabase::<T> {
             obs: None,
+            url: db_url.to_string(),
             pool: {
                 let res = match connection_options {
                     Some(opt) => connect_with_options(db_url, opt).await,
@@ -116,6 +110,11 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     /// Closes the connection with the database (and drops this [`GraphDatabase`] instance)
     pub async fn close_connection(self) {
         self.pool.close().await
+    }
+
+    /// Gets the observer contained in this graph
+    pub fn get_observer(&mut self) -> &Option<&'a mut dyn Observer> {
+        &self.obs
     }
 }
 
@@ -166,13 +165,18 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
         let mut builder =
             create_safe_query(query_str, [table_name].to_vec(), Vec::<String>::new())?;
 
-        println!("{:?}", builder.sql());
         // Execute query :
         let mut results = builder.build().fetch(&self.pool);
 
         while let Some(result_row) = results.next().await {
-            if let Ok(row) = result_row {
-                apply_fn(row)?
+            match result_row {
+                Ok(row) => apply_fn(row)?,
+                Err(e) => {
+                    return Err(GraphDatabaseError::DatabaseError {
+                        database_name: self.url.to_string(),
+                        reason: e.to_string(),
+                    });
+                }
             }
         }
 
@@ -263,62 +267,54 @@ fn create_safe_query(
 }
 
 impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
-    pub async fn print_all_db_table(&self) -> Result<(), GraphDatabaseError> {
+    pub async fn print_all_tables(&self) -> Result<(), GraphDatabaseError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
         for table in tables {
             let mut table_query: Option<QueryTable> = None;
-            // println!("{}", table);
 
             self.for_each_row(table, &mut |row| {
-                match &mut table_query {
-                    Some(table_q) => {
-                        table_q.push_line({
-                            let mut row_vec: Vec<String> = vec![];
+                // Fetch all header first
+                if table_query.is_none() {
+                    //
+                    let mut headers = vec![];
+                    for col in row.columns() {
+                        headers.push(col.name().to_string());
+                    }
+                    table_query = Some(QueryTable::new(
+                        headers,
+                        crate::utils::table_handler::QueryTableOptions::Full,
+                    ));
+                }
+                // Add line to query
+                table_query.as_mut().expect("is some").push_line({
+                    let mut row_vec: Vec<String> = vec![];
 
-                            for (i, col) in row.columns().iter().enumerate() {
-                                // println!("From: {:?}", col);
-                                match col.type_info().kind() {
-                                    sqlx::any::AnyTypeInfoKind::BigInt
-                                    | sqlx::any::AnyTypeInfoKind::Integer => {
-                                        let value: i64 = row.get(i);
-                                        row_vec.push(value.to_string());
-                                    }
-                                    _ => {
-                                        if let Ok(value) = row.try_get(i) {
-                                            row_vec.push(value);
-                                        } else {
-                                            row_vec.push("?".to_string());
-                                        }
-                                    }
+                    for (i, col) in row.columns().iter().enumerate() {
+                        match col.type_info().kind() {
+                            sqlx::any::AnyTypeInfoKind::BigInt
+                            | sqlx::any::AnyTypeInfoKind::Integer => {
+                                let value: i64 = row.get(i);
+                                row_vec.push(value.to_string());
+                            }
+                            _ => {
+                                if let Ok(value) = row.try_get(i) {
+                                    row_vec.push(value);
+                                } else {
+                                    row_vec.push("[?Cannot convert to string?]".to_string());
                                 }
                             }
-
-                            row_vec
-                        });
-                    }
-                    None => {
-                        let mut headers = vec![];
-                        for col in row.columns() {
-                            headers.push(col.name().to_string());
                         }
-                        table_query = Some(QueryTable::new(
-                            headers,
-                            crate::utils::table_handler::QueryTableOptions::Partial {
-                                first_rows_count: 3,
-                                last_rows_count: 2,
-                            },
-                        ));
                     }
-                }
+
+                    row_vec
+                });
                 Ok(())
             })
             .await?;
             if let Some(tab) = table_query {
                 println!("{tab}");
             }
-            // println!("{}", table_query.expect("created"));
-            // let table = QueryTable::new(header, crate::utils::table_handler::QueryTableOptions::Full);
         }
 
         Ok(())
