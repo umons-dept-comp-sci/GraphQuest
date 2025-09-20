@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     fmt::{Debug, Display},
     marker::PhantomData,
     str::FromStr,
@@ -7,13 +8,17 @@ use std::{
 
 use log::{debug, error, info};
 use sqlx::{
-    any::AnyConnectOptions, error::DatabaseError, migrate::MigrateDatabase, pool, query, Any,
-    AnyPool, ConnectOptions, Database, Execute, FromRow, Pool, QueryBuilder, Row, Sqlite,
+    any::{AnyConnectOptions, AnyRow},
+    error::DatabaseError,
+    migrate::MigrateDatabase,
+    pool, query, AnyPool, Column, ConnectOptions, Database, Execute, FromRow, Pool, QueryBuilder,
+    Row, Sqlite, TypeInfo,
 };
+use tokio_stream::StreamExt;
 
 use crate::{
     database_handler::{database_error, DbQuerySystem, GraphDatabaseError, *},
-    utils::subject::Observer,
+    utils::{subject::Observer, table_handler::QueryTable},
 };
 
 /// Used to change the logging settings of a sqlx connection.
@@ -130,28 +135,17 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
-impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
-    /// Executes a query but does not look at the return value except for errors.
-    /// Useful when you need to create a table, append data, ...
-    async fn execute_query_no_return(
-        &self,
-        mut query: QueryBuilder<'_, Any>,
-    ) -> Result<(), GraphDatabaseError> {
-        let res = query.build().execute(&self.pool).await;
-        if let Err(e) = res {
-            return Err(database_error::sqlx_error_to_db_error(e));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct CoolRow {
-    emp_id: String,
+/// Represents a row from an inveriant table
+#[derive(Debug, FromRow)]
+struct InvariantTableRow {
+    /// Represents the canonical form of a graph
+    canonic: String,
+    /// Represents the value of the invariant for this canonical graph
+    value: String,
 }
 
 impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
-    pub async fn get_all_table_names(&mut self) -> Result<Vec<String>, GraphDatabaseError> {
+    pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
         let query_str = T::get_all_tables_query();
 
         let results: Vec<(String,)> = sqlx::query_as(&query_str)
@@ -160,6 +154,29 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
             .expect("no crash");
 
         Ok(results.iter().map(|(val,)| val.to_string()).collect())
+    }
+
+    pub async fn for_each_row(
+        &self,
+        table_name: String,
+        apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDatabaseError>,
+    ) -> Result<(), GraphDatabaseError> {
+        let query_str = T::get_all_from_table();
+
+        let mut builder =
+            create_safe_query(query_str, [table_name].to_vec(), Vec::<String>::new())?;
+
+        println!("{:?}", builder.sql());
+        // Execute query :
+        let mut results = builder.build().fetch(&self.pool);
+
+        while let Some(result_row) = results.next().await {
+            if let Ok(row) = result_row {
+                apply_fn(row)?
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn add_signature_table(&mut self) -> Result<(), GraphDatabaseError> {
@@ -246,7 +263,64 @@ fn create_safe_query(
 }
 
 impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
-    fn print_all_db_table(&self) {
+    pub async fn print_all_db_table(&self) -> Result<(), GraphDatabaseError> {
         // Get all tables :
+        let tables = self.get_all_table_names().await?;
+        for table in tables {
+            let mut table_query: Option<QueryTable> = None;
+            // println!("{}", table);
+
+            self.for_each_row(table, &mut |row| {
+                match &mut table_query {
+                    Some(table_q) => {
+                        table_q.push_line({
+                            let mut row_vec: Vec<String> = vec![];
+
+                            for (i, col) in row.columns().iter().enumerate() {
+                                // println!("From: {:?}", col);
+                                match col.type_info().kind() {
+                                    sqlx::any::AnyTypeInfoKind::BigInt
+                                    | sqlx::any::AnyTypeInfoKind::Integer => {
+                                        let value: i64 = row.get(i);
+                                        row_vec.push(value.to_string());
+                                    }
+                                    _ => {
+                                        if let Ok(value) = row.try_get(i) {
+                                            row_vec.push(value);
+                                        } else {
+                                            row_vec.push("?".to_string());
+                                        }
+                                    }
+                                }
+                            }
+
+                            row_vec
+                        });
+                    }
+                    None => {
+                        let mut headers = vec![];
+                        for col in row.columns() {
+                            headers.push(col.name().to_string());
+                        }
+                        table_query = Some(QueryTable::new(
+                            headers,
+                            crate::utils::table_handler::QueryTableOptions::Partial {
+                                first_rows_count: 3,
+                                last_rows_count: 2,
+                            },
+                        ));
+                    }
+                }
+                Ok(())
+            })
+            .await?;
+            if let Some(tab) = table_query {
+                println!("{tab}");
+            }
+            // println!("{}", table_query.expect("created"));
+            // let table = QueryTable::new(header, crate::utils::table_handler::QueryTableOptions::Full);
+        }
+
+        Ok(())
     }
 }

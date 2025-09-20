@@ -3,6 +3,7 @@ use sqlx::{migrate::MigrateDatabase, AnyPool};
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
+const FUNNY: &str = "sqlite:/home/axel/Téléchargements/chinook.db";
 
 const BAD_DB_URL: &str = "sqlite::bad_url";
 
@@ -55,11 +56,11 @@ async fn add_table_test() {
 #[tokio::test]
 async fn get_all_tables_test() {
     let mut test =
-        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
+        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(FUNNY, None)
             .await
             .unwrap();
 
-    let v = test.get_all_table_names().await;
+    let v = test.print_all_db_table().await;
     println!("{v:?}");
 }
 

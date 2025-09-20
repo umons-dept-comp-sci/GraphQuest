@@ -35,6 +35,8 @@ pub trait DbQuerySystem: Debug {
     /// * The name for the value column
     fn get_create_table_query(pk_column_type: ColumnType, value_column_type: ColumnType) -> String;
 
+    fn get_all_from_table() -> String;
+
     /// Returns the query that can be used to delete a table with the given name from the dataset
     fn get_delete_table_query(table_name: String) -> String;
 

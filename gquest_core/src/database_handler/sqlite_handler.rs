@@ -39,6 +39,10 @@ impl DbQuerySystem for SqliteGraphDatabase {
     ) -> String {
         todo!()
     }
+    
+    fn get_all_from_table() -> String {
+        "select * from $;".to_string()
+    }
 }
 
 fn translate_column(column_type: ColumnType) -> String {
