@@ -1,4 +1,4 @@
-use gquest_core::data_handler::invariant_execs::{ExecutableOrderHandler, InvariantsExecutable};
+use gquest_core::data_handler::invariant_execs::{ExecutableSorter, InvariantsExecutable};
 
 pub const VALID_EXEC_A: &str = "examples/a.py";
 pub const VALID_EXEC_B: &str = "examples/b.py";
@@ -75,7 +75,7 @@ fn new_inv_exec_rely_self_test() {
 fn new_correct_inv_order_test() {
     let (a, b, c) = get_a_b_c_exec();
 
-    let mut order = ExecutableOrderHandler::new();
+    let mut order = ExecutableSorter::new();
     order.add_inv_exec(a.clone()).expect("no issues");
     order.add_inv_exec(b.clone()).expect("no issues");
     order.add_inv_exec(c.clone()).expect("no issues");
@@ -102,7 +102,7 @@ fn new_incorrect_inv_test() {
     )
     .expect("Correct inv");
 
-    let mut order = ExecutableOrderHandler::new();
+    let mut order = ExecutableSorter::new();
     order.add_inv_exec(a.clone()).expect("no issues");
     if order.add_inv_exec(a).is_ok() {
         panic!("should be an error");
@@ -136,7 +136,7 @@ fn new_cycle_inv_order_test() {
     )
     .expect("Correct inv");
 
-    let mut order = ExecutableOrderHandler::new();
+    let mut order = ExecutableSorter::new();
     order.add_inv_exec(a.clone()).expect("no issues");
     order.add_inv_exec(b.clone()).expect("no issues");
     order.add_inv_exec(c.clone()).expect("no issues");
@@ -165,7 +165,7 @@ fn new_dep_missing_inv_order_test() {
     let c = InvariantsExecutable::new(VALID_EXEC_C.to_string(), vec!["c".to_string()], vec![])
         .expect("Correct inv");
 
-    let mut order = ExecutableOrderHandler::new();
+    let mut order = ExecutableSorter::new();
     order.add_inv_exec(a.clone()).expect("no issues");
     order.add_inv_exec(b.clone()).expect("no issues");
     order.add_inv_exec(c.clone()).expect("no issues");

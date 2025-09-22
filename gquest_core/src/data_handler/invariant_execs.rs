@@ -114,15 +114,15 @@ impl InvariantsExecutable {
 /// * if an invariant was already added
 /// * if one of it's dependencies does not exists
 #[derive(Default)]
-pub struct ExecutableOrderHandler {
+pub struct ExecutableSorter {
     /// `Invariant name` -> `Linked Executable path`
     name_path_hashmap: HashMap<String, PathBuf>,
     /// `Executable path` -> `Executables`
     path_exec_hashmap: HashMap<PathBuf, InvariantsExecutable>,
 }
 
-impl ExecutableOrderHandler {
-    /// Creates a new empty [InvariantsOrderHandler]
+impl ExecutableSorter {
+    /// Creates a new empty [`ExecutableSorter`]
     pub fn new() -> Self {
         Self::default()
     }
