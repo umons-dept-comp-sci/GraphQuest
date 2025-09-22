@@ -3,16 +3,13 @@ use std::io::BufRead;
 use gquest_core::data_handler::data_loader::GengProcess;
 
 #[test]
-fn load_geng_api() {
-    let mut call = GengProcess::call_geng(10, &"".to_string(), (None, None)).expect("good");
-
+fn test_geng_call() {
+    let mut call = GengProcess::call_geng(3, &"".to_string(), (None, None)).expect("good");
+    let signatures = ["B?", "BO", "BW", "Bw"].to_vec();
     let f = call.get_reader();
-    let mut count = 0;
-    for s in f.lines().map_while(Result::ok) {
-        // println!("Res: {s}");
-        count += 1;
-    }
-    println!("{count}");
 
+    for (i, s) in f.lines().map_while(Result::ok).enumerate() {
+        assert_eq!(s, signatures[i]);
+    }
     call.wait_close();
 }
