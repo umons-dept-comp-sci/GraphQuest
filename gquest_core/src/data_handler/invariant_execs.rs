@@ -99,7 +99,7 @@ impl InvariantsExecutable {
     ///
     /// # Errors :
     /// * If the given name is not ascii
-    /// * If the given name does not match with the following regex: `^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$`
+    /// * If the given name does not match with the following regex: [`INVARIANT_REGEX`]
     pub fn check_invariant_name_validity(name: &String) -> Result<(), InvariantErrors> {
         let re = Regex::new(INVARIANT_REGEX).expect("Regex should be okay");
         if !name.is_ascii() || !re.is_match(name) {
