@@ -1,10 +1,14 @@
-use gquest_core::data_handler::invariant_execs::{ExecutableSorter, InvariantsExecutable};
+use gquest_core::data_handler::{
+    data_loader::GengProcess,
+    invariant_execs::{ExecutableSorter, InvariantsExecutable},
+};
 
-pub const VALID_EXEC_A: &str = "examples/a.py";
-pub const VALID_EXEC_B: &str = "examples/b.py";
-pub const VALID_EXEC_C: &str = "examples/c.py";
+pub const VALID_EXEC_A: &str = "tests/modules/a.py";
+pub const VALID_EXEC_B: &str = "tests/modules/b.py";
+pub const VALID_EXEC_C: &str = "tests/modules/c.py";
+pub const VALID_EXEC_IDENTITY: &str = "tests/modules/identity.py";
 
-pub const UNVALID_EXEC: &str = "examples/non_executable.py";
+pub const UNVALID_EXEC: &str = "tests/modules/non_executable.py";
 
 #[test]
 fn new_inv_exec_path_test() {
@@ -198,4 +202,18 @@ fn get_a_b_c_exec() -> (
         .expect("Correct inv");
 
     (a, b, c)
+}
+
+#[test]
+fn execute_inv() {
+    let identity = InvariantsExecutable::new(
+        VALID_EXEC_IDENTITY.to_string(),
+        ['x'.to_string()].to_vec(),
+        [].to_vec(),
+    )
+    .expect("correct inv");
+
+    let mut geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+
+    identity.execute_free(geng.get_reader()).expect("ok");
 }
