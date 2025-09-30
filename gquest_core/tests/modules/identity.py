@@ -9,6 +9,6 @@ if __name__ == "__main__":
             # print(sig)
             f.write(sig + "\n")
             f.flush()
-            0 / 0
+            # 0 / 0
 
         
