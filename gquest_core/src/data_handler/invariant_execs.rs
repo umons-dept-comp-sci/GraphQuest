@@ -1,16 +1,15 @@
 use is_executable::IsExecutable;
+use log::{debug, error};
 use regex::Regex;
 use std::{
-    char::MAX,
     collections::HashMap,
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdout, Command, Stdio},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
 };
 use thiserror::Error;
 use topo_sort::TopoSort;
 
-use crate::data_handler::invariant_execs;
 
 const MAX_STDIN_SIZE: usize = 10;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
@@ -40,7 +39,7 @@ pub enum InvariantErrors {
     #[error("Failed to write to the stdin of the executable \"{1}\", reason \"{0}\"")]
     FailedWriteStdin(io::Error, String),
     #[error("The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" ")]
-    ExitedEarly(String, String, String),
+    EarlyExit(String, String, String),
 }
 
 /// Represent an executable file that can be used to compute inveriants.
@@ -119,7 +118,12 @@ impl InvariantsExecutable {
         Ok(())
     }
 
-    pub fn execute_free(&self, input_buffer: impl BufRead) -> Result<(), InvariantErrors> {
+    /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending the output to the given `output_function`
+    pub fn execute_invariant(
+        &self,
+        input_buffer: impl BufRead,
+        output_function: &mut dyn FnMut(String),
+    ) -> Result<(), InvariantErrors> {
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -131,7 +135,7 @@ impl InvariantsExecutable {
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
-        let child_buffer_stderr = BufReader::new(&mut stderr);
+        // let child_buffer_stderr = BufReader::new(&mut stderr);
 
         // This block forces to close the opened stdin and stdout before
         // waiting for the child process to exit.
@@ -146,53 +150,89 @@ impl InvariantsExecutable {
             // For every value to send
             for val in input_buffer.lines().map_while(Result::ok) {
                 // Check if the child closed or not during the execution
-                if let Ok(Some(status)) = call_res.try_wait() {
-                    println!("status : {}", status);
-                    return Err(InvariantErrors::ExitedEarly(
-                        self.exec_path.display().to_string(),
-                        status.to_string(),
-                        "Pretend this is an stderr".to_string(),
-                    ));
-                }
+                self.read_stderr(&mut call_res, &mut stderr)?;
 
                 // Push this value to content
+                debug!("Wrote : {val}");
                 self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
                 waiting_in_stdin += 1;
                 // TODO: Find a way to stop execution if program crashes during exec
 
                 // Send value to buffer
                 if waiting_in_stdin >= MAX_STDIN_SIZE {
-                    self.exec_stdin_io_call(&mut || stdin.flush())?;
-                    // Wait for response
-                    waiting_in_stdin = 0;
-
-                    let child_output = BufReader::new(&mut stdout);
-
-                    // for response in child_output.lines() {
-                    //     println!("Response: {:?}", response);
-                    //     // We are waiting for the exact number of data sent to be sent back to us.
-                    //     waiting_in_stdin += 1;
-                    //     if waiting_in_stdin == MAX_STDIN_SIZE {
-                    //         break;
-                    //     }
-                    // }
-
+                    self.flush_wait_output(
+                        waiting_in_stdin,
+                        output_function,
+                        &mut stdin,
+                        &mut stdout,
+                    )?;
                     waiting_in_stdin = 0;
                 }
             }
             // If there are still data to send
             if waiting_in_stdin > 0 {
-                self.exec_stdin_io_call(&mut || stdin.flush())?;
+                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
             }
-
-            //
+            // Check if the child closed or not during the execution
+            self.read_stderr(&mut call_res, &mut stderr)?;
         }
-        self.exec_stdin_io_call(&mut || call_res.wait())?;
 
-        for c in child_buffer_stderr.lines().map_while(Result::ok) {
-            println!("ERROR: {c}");
-        }
         Ok(())
+    }
+
+    fn flush_wait_output(
+        &self,
+        sent_in_stdin: usize,
+        output_function: &mut dyn FnMut(String),
+        stdin: &mut ChildStdin,
+        stdout: &mut ChildStdout,
+    ) -> Result<(), InvariantErrors> {
+        debug!("Flusing stdin");
+        self.exec_stdin_io_call(&mut || stdin.flush())?;
+
+        // A buffer helps us to not read all lines at the time but as a flow of data.
+        let child_output = BufReader::new(stdout);
+
+        println!("Wait for resp");
+
+        for (count, response) in child_output.lines().enumerate() {
+            println!("Response: {:?}", response);
+            // We are waiting for the exact number of data sent to be sent back to us.
+            if count == sent_in_stdin - 1 {
+                break;
+            }
+            if let Ok(s) = response {
+                output_function(s);
+            }
+        }
+        debug!("Finished waiting");
+        Ok(())
+    }
+
+    /// Collect all data from the stderr and returns a [`InvariantErrors::EarlyExit`] if the program exited with an error
+    fn read_stderr(
+        &self,
+        child: &mut Child,
+        stderr: &mut ChildStderr,
+    ) -> Result<(), InvariantErrors> {
+        if let Ok(Some(status)) = child.try_wait() {
+            if status.success() {
+                return Ok(());
+            }
+            let child_buffer_stderr = BufReader::new(stderr);
+            let mut err = String::new();
+            for mut c in child_buffer_stderr.lines().map_while(Result::ok) {
+                c.push('\n');
+                err.push_str(&c);
+            }
+            Err(InvariantErrors::EarlyExit(
+                self.exec_path.display().to_string(),
+                status.to_string(),
+                err,
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     fn exec_stdin_io_call<T>(

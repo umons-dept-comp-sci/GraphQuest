@@ -215,5 +215,7 @@ fn execute_inv() {
 
     let mut geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
 
-    identity.execute_free(geng.get_reader()).expect("ok");
+    identity.execute_invariant(geng.get_reader(), &mut |s| {
+        println!("s: {}", s);
+    }).expect("ok");
 }
