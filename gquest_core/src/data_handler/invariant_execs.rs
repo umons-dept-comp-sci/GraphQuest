@@ -10,12 +10,11 @@ use std::{
 use thiserror::Error;
 use topo_sort::TopoSort;
 
-
 const MAX_STDIN_SIZE: usize = 10;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
-pub enum InvariantErrors {
+pub enum InvariantError {
     #[error("The given path \"{0}\" does not lead to a file")]
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
@@ -62,7 +61,7 @@ impl InvariantsExecutable {
         exec_path: String,
         names: Vec<String>,
         dependencies: Vec<String>,
-    ) -> Result<Self, InvariantErrors> {
+    ) -> Result<Self, InvariantError> {
         let exec_path = Self::check_validity(exec_path, &names, &dependencies)?;
 
         let i = InvariantsExecutable {
@@ -79,28 +78,28 @@ impl InvariantsExecutable {
         exec_path: String,
         names: &[String],
         dependencies: &[String],
-    ) -> Result<PathBuf, InvariantErrors> {
+    ) -> Result<PathBuf, InvariantError> {
         let path = Self::get_path(exec_path)?;
         for name in names {
             Self::check_invariant_name_validity(name)?;
             if dependencies.contains(name) {
-                return Err(InvariantErrors::DependsOnSelf(name.to_string()));
+                return Err(InvariantError::DependsOnSelf(name.to_string()));
             }
         }
         Ok(path)
     }
 
     /// Checks if the given invariant path actually leads to the executable
-    fn get_path(exec_path: String) -> Result<PathBuf, InvariantErrors> {
+    fn get_path(exec_path: String) -> Result<PathBuf, InvariantError> {
         // Checks if the given file path exists
         let tmp_clone = exec_path.clone();
         let inv_path = Path::new(&tmp_clone);
 
         // if the invariant doesn't exist
         if let Ok(false) = inv_path.try_exists() {
-            return Err(InvariantErrors::InvalidPath(inv_path.to_path_buf()));
+            return Err(InvariantError::InvalidPath(inv_path.to_path_buf()));
         } else if !inv_path.is_executable() {
-            return Err(InvariantErrors::NotExecutable(inv_path.to_path_buf()));
+            return Err(InvariantError::NotExecutable(inv_path.to_path_buf()));
         }
         Ok(inv_path.to_path_buf())
     }
@@ -110,20 +109,23 @@ impl InvariantsExecutable {
     /// # Errors :
     /// * If the given name is not ascii
     /// * If the given name does not match with the following regex: [`INVARIANT_REGEX`]
-    pub fn check_invariant_name_validity(name: &String) -> Result<(), InvariantErrors> {
+    pub fn check_invariant_name_validity(name: &String) -> Result<(), InvariantError> {
         let re = Regex::new(INVARIANT_REGEX).expect("Regex should be okay");
         if !name.is_ascii() || !re.is_match(name) {
-            return Err(InvariantErrors::InvalidName(name.to_string()));
+            return Err(InvariantError::InvalidName(name.to_string()));
         }
         Ok(())
     }
 
-    /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending the output to the given `output_function`
+    /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
+    /// # Errrors
+    /// Returns an [`InvariantError`] if something goes wrong during the execution of the process.
     pub fn execute_invariant(
         &self,
         input_buffer: impl BufRead,
         output_function: &mut dyn FnMut(String),
-    ) -> Result<(), InvariantErrors> {
+    ) -> Result<(), InvariantError> {
+        debug!("Start executable : {}", self.exec_path.display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -131,7 +133,7 @@ impl InvariantsExecutable {
             .spawn()
         {
             Ok(res) => res,
-            Err(e) => return Err(InvariantErrors::FailedExecution(e.to_string())),
+            Err(e) => return Err(InvariantError::FailedExecution(e.to_string())),
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
@@ -140,42 +142,35 @@ impl InvariantsExecutable {
         // This block forces to close the opened stdin and stdout before
         // waiting for the child process to exit.
         // Otherwise a deadlock might appear
-        {
-            let mut stdin = call_res.stdin.take().expect("stdin to be open");
-            let mut stdout = call_res.stdout.take().expect("stdout to be open");
+        let mut stdin = call_res.stdin.take().expect("stdin to be open");
+        let mut stdout = call_res.stdout.take().expect("stdout to be open");
 
-            // let value_to_send
+        // let value_to_send
 
-            let mut waiting_in_stdin = 0;
-            // For every value to send
-            for val in input_buffer.lines().map_while(Result::ok) {
-                // Check if the child closed or not during the execution
-                self.read_stderr(&mut call_res, &mut stderr)?;
-
-                // Push this value to content
-                debug!("Wrote : {val}");
-                self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
-                waiting_in_stdin += 1;
-                // TODO: Find a way to stop execution if program crashes during exec
-
-                // Send value to buffer
-                if waiting_in_stdin >= MAX_STDIN_SIZE {
-                    self.flush_wait_output(
-                        waiting_in_stdin,
-                        output_function,
-                        &mut stdin,
-                        &mut stdout,
-                    )?;
-                    waiting_in_stdin = 0;
-                }
-            }
-            // If there are still data to send
-            if waiting_in_stdin > 0 {
-                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
-            }
+        let mut waiting_in_stdin = 0;
+        // For every value to send
+        for val in input_buffer.lines().map_while(Result::ok) {
             // Check if the child closed or not during the execution
-            self.read_stderr(&mut call_res, &mut stderr)?;
+            self.check_child_state(&mut call_res, &mut stderr)?;
+
+            // Push this value to content
+            debug!("Wrote to child stdin: {val}");
+            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+            waiting_in_stdin += 1;
+
+            // Send value to buffer
+            if waiting_in_stdin >= MAX_STDIN_SIZE {
+                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
+                waiting_in_stdin = 0;
+            }
         }
+        // If there are still data to send
+        if waiting_in_stdin > 0 {
+            self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
+        }
+        debug!("Finished child execution : {}", self.exec_path.display());
+        // Check if the child closed or not during the execution
+        self.check_child_state(&mut call_res, &mut stderr)?;
 
         Ok(())
     }
@@ -186,35 +181,36 @@ impl InvariantsExecutable {
         output_function: &mut dyn FnMut(String),
         stdin: &mut ChildStdin,
         stdout: &mut ChildStdout,
-    ) -> Result<(), InvariantErrors> {
-        debug!("Flusing stdin");
+    ) -> Result<(), InvariantError> {
+        debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
         self.exec_stdin_io_call(&mut || stdin.flush())?;
 
         // A buffer helps us to not read all lines at the time but as a flow of data.
         let child_output = BufReader::new(stdout);
 
-        println!("Wait for resp");
-
         for (count, response) in child_output.lines().enumerate() {
-            println!("Response: {:?}", response);
+            debug!("Received : {response:?}");
             // We are waiting for the exact number of data sent to be sent back to us.
-            if count == sent_in_stdin - 1 {
-                break;
-            }
             if let Ok(s) = response {
                 output_function(s);
+            }
+            if count == sent_in_stdin - 1 {
+                break;
             }
         }
         debug!("Finished waiting");
         Ok(())
     }
 
-    /// Collect all data from the stderr and returns a [`InvariantErrors::EarlyExit`] if the program exited with an error
-    fn read_stderr(
+    /// Checks if the child is closed or not.
+    /// # Errors :
+    /// If the program was closed and an error code is returned, then a
+    ///  [`InvariantError::EarlyExit`] with the error read from the `stderr` will be returned.
+    fn check_child_state(
         &self,
         child: &mut Child,
         stderr: &mut ChildStderr,
-    ) -> Result<(), InvariantErrors> {
+    ) -> Result<(), InvariantError> {
         if let Ok(Some(status)) = child.try_wait() {
             if status.success() {
                 return Ok(());
@@ -225,7 +221,7 @@ impl InvariantsExecutable {
                 c.push('\n');
                 err.push_str(&c);
             }
-            Err(InvariantErrors::EarlyExit(
+            Err(InvariantError::EarlyExit(
                 self.exec_path.display().to_string(),
                 status.to_string(),
                 err,
@@ -238,10 +234,10 @@ impl InvariantsExecutable {
     fn exec_stdin_io_call<T>(
         &self,
         to_call: &mut dyn FnMut() -> Result<T, io::Error>,
-    ) -> Result<T, InvariantErrors> {
+    ) -> Result<T, InvariantError> {
         match to_call() {
             Ok(t) => Ok(t),
-            Err(e) => Err(InvariantErrors::FailedWriteStdin(
+            Err(e) => Err(InvariantError::FailedWriteStdin(
                 e,
                 self.exec_path.display().to_string(),
             )),
@@ -267,15 +263,15 @@ impl ExecutableSorter {
         Self::default()
     }
 
-    pub fn add_inv_exec(&mut self, inv: InvariantsExecutable) -> Result<(), InvariantErrors> {
+    pub fn add_inv_exec(&mut self, inv: InvariantsExecutable) -> Result<(), InvariantError> {
         if self.path_exec_hashmap.contains_key(&inv.exec_path) {
-            return Err(InvariantErrors::AlreadyAddedExecutable(
+            return Err(InvariantError::AlreadyAddedExecutable(
                 inv.exec_path.clone(),
             ));
         }
         for name in &inv.invariant_names {
             if self.name_path_hashmap.contains_key(name) {
-                return Err(InvariantErrors::AlreadyAddedInvariant(name.to_string()));
+                return Err(InvariantError::AlreadyAddedInvariant(name.to_string()));
             }
             self.name_path_hashmap
                 .insert(name.to_string(), inv.exec_path.clone());
@@ -288,7 +284,7 @@ impl ExecutableSorter {
     /// # Errors
     /// * If one of the dependencies from one invariant is not present.
     /// * If a cycle is found.
-    pub fn sort(mut self) -> Result<Vec<InvariantsExecutable>, InvariantErrors> {
+    pub fn sort(mut self) -> Result<Vec<InvariantsExecutable>, InvariantError> {
         // Init the topological sort
         let mut topo_sort: TopoSort<PathBuf> =
             TopoSort::with_capacity(self.path_exec_hashmap.len());
@@ -304,7 +300,7 @@ impl ExecutableSorter {
                         dependencies.push(path.clone());
                     }
                     None => {
-                        return Err(InvariantErrors::MissingDependency(
+                        return Err(InvariantError::MissingDependency(
                             dep.to_string(),
                             exec.exec_path.clone(),
                         ));
@@ -318,7 +314,7 @@ impl ExecutableSorter {
         let ordered_paths = match topo_sort.into_vec_nodes() {
             topo_sort::SortResults::Full(items) => items,
             topo_sort::SortResults::Partial(_) => {
-                return Err(InvariantErrors::DependencyCycle);
+                return Err(InvariantError::DependencyCycle);
             }
         };
 

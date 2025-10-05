@@ -66,10 +66,11 @@ impl GengProcess {
         Ok(Self { child: call_res })
     }
 
-    pub fn get_reader(&mut self) -> BufReader<&mut ChildStdout> {
-        let stdout = self.child.stdout.as_mut().unwrap();
+    pub fn get_reader(mut self) -> BufReader<ChildStdout> {
+        let stdout = self.child.stdout.take().expect("present");
         BufReader::new(stdout)
     }
+
     /// Wait and closes the process
     pub fn wait_close(mut self) {
         self.child.wait().unwrap();

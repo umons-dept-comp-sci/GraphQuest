@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use gquest_core::data_handler::{
     data_loader::GengProcess,
     invariant_execs::{ExecutableSorter, InvariantsExecutable},
@@ -213,9 +215,18 @@ fn execute_inv() {
     )
     .expect("correct inv");
 
-    let mut geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let mut res: String = String::default();
+    geng.get_reader().read_to_string(&mut res).expect("correct");
+    let expected_res: Vec<&str> = res.split_ascii_whitespace().collect();
 
-    identity.execute_invariant(geng.get_reader(), &mut |s| {
-        println!("s: {}", s);
-    }).expect("ok");
+    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let mut actual_res: Vec<String> = vec![];
+    identity
+        .execute_invariant(geng.get_reader(), &mut |s| {
+            actual_res.push(s);
+        })
+        .expect("ok");
+
+    assert_eq!(expected_res, actual_res);
 }

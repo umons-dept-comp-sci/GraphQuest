@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use gquest_core::database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels};
+use gquest_core::{
+    data_handler::{data_loader::GengProcess, invariant_execs::InvariantsExecutable},
+    database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels},
+};
 use log::*;
 
 const DB_URL: &str = "sqlite:resources/gquest.db";
@@ -17,13 +20,26 @@ async fn main() {
 
     // This is for mySql, postgre,
 
-    let db =
-        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(DB_URL, log_levels)
-            .await
-            .expect("Database to be existant");
-    
-    db.close_connection().await;
+    let db = GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(DB_URL, log_levels)
+        .await
+        .expect("Database to be existant");
 
+    let identity = InvariantsExecutable::new(
+        "/home/axel/GitProject/GraphQuest/gquest_core/tests/modules/identity.py".to_string(),
+        ['x'.to_string()].to_vec(),
+        [].to_vec(),
+    )
+    .expect("correct inv");
+
+    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+
+    identity
+        .execute_invariant(geng.get_reader(), &mut |s| {
+            // println!("s: {}", s);
+        })
+        .expect("ok");
+
+    db.close_connection().await;
     info!("Program ends");
 }
 
