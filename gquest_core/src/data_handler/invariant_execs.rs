@@ -3,6 +3,7 @@ use log::{debug, error};
 use regex::Regex;
 use std::{
     collections::HashMap,
+    env,
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
@@ -19,6 +20,8 @@ pub enum InvariantError {
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
     NotExecutable(PathBuf),
+    #[error("Encountered an IoError : \"{0}\"")]
+    IoError(#[from] io::Error),
     #[error("The given name \"{0}\" is not a valid invariant name. An invariant name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$")]
     InvalidName(String),
     #[error(
@@ -92,15 +95,25 @@ impl InvariantsExecutable {
     /// Checks if the given invariant path actually leads to the executable
     fn get_path(exec_path: String) -> Result<PathBuf, InvariantError> {
         // Checks if the given file path exists
-        let tmp_clone = exec_path.clone();
-        let inv_path = Path::new(&tmp_clone);
+        let mut inv_path = Path::new(&exec_path);
+        let curr_path = env::current_dir()?;
+        let joined_path = curr_path.join(inv_path);
 
-        // if the invariant doesn't exist
+        // If the invariant path is not absolute,
+        if !inv_path.is_absolute() {
+            // Turn it into one
+            inv_path = Path::new(&joined_path);
+        }
+
+        // and if the path doesn't lead to a file
         if let Ok(false) = inv_path.try_exists() {
+            // Try to turn it into an absol
             return Err(InvariantError::InvalidPath(inv_path.to_path_buf()));
-        } else if !inv_path.is_executable() {
+        }
+        if !inv_path.is_executable() {
             return Err(InvariantError::NotExecutable(inv_path.to_path_buf()));
         }
+        println!("{:?}", inv_path);
         Ok(inv_path.to_path_buf())
     }
 
