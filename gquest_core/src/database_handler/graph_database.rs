@@ -10,7 +10,7 @@ use tokio_stream::StreamExt;
 
 use crate::{
     database_handler::{database_error, DbQuerySystem, GraphDatabaseError, *},
-    utils::{subject::Observer, table_handler::QueryTable},
+    utils::table_handler::QueryTable,
 };
 
 /// Used to change the logging settings of a sqlx connection.
@@ -20,21 +20,20 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
-pub struct GraphDatabase<'a, T>
+pub struct GraphDatabase<T>
 where
     T: DbQuerySystem,
 {
     pool: Pool<sqlx::Any>,
     url: String,
-    obs: Option<&'a mut dyn Observer>,
     phantom_data: PhantomData<T>,
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+impl<T: DbQuerySystem> GraphDatabase<T> {
     /// Creates the database that will be storing the project.
     /// Returns an in instance of a [GraphDatabase].
     ///
@@ -86,7 +85,7 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
         Ok(GraphDatabase::<T> {
-            obs: None,
+            // obs: None,
             url: db_url.to_string(),
             pool: {
                 let res = match connection_options {
@@ -111,11 +110,6 @@ impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
     pub async fn close_connection(self) {
         self.pool.close().await
     }
-
-    /// Gets the observer contained in this graph
-    pub fn get_observer(&mut self) -> &Option<&'a mut dyn Observer> {
-        &self.obs
-    }
 }
 
 /// Applies the given options to the pool *before* opening it.
@@ -134,16 +128,7 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
-// /// Represents a row from an inveriant table
-// #[derive(Debug, FromRow)]
-// struct InvariantTableRow {
-//     /// Represents the canonical form of a graph
-//     canonic: String,
-//     /// Represents the value of the invariant for this canonical graph
-//     value: String,
-// }
-
-impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
         let query_str = T::get_all_tables_query();
 
@@ -266,7 +251,7 @@ fn create_safe_query(
     Ok(builder)
 }
 
-impl<'a, T: DbQuerySystem> GraphDatabase<'a, T> {
+impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn print_all_tables(&self) -> Result<(), GraphDatabaseError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;

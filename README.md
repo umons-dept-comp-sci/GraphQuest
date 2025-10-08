@@ -9,14 +9,9 @@ We refer to as an *invariant executable* a file that matches the following condi
 * Reads its `stdin` wile running
 * Outputs data to its `stdout`
 
-There are two way of creating an invariant executable, one is to use a dependency file as explained in this [section](#dependency-files-).
+There are two way of creating an invariant executable, one is to use a dependency file as explained in this [section](#dependency-files-), or to create them one by one.
 
-
-The other is to simply call upon the following function :
-```rs
-let inv = InvariantsExecutable::new(..).expect("Correct invariant");
-```
-It takes $3$ arguments :
+$\texttt{gquest}$ needs the following informations in order to correctly execute the file :
 * `exec_path` : The path to the file to execute.
 * `names` : The names of the invariants computed and returned by this program.
   * Each name must respect the following **regex** : `^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$` in order to store it in a database without any troubles or having to change the name.

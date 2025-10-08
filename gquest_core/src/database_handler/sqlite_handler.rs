@@ -16,30 +16,33 @@ impl DbQuerySystem for SqliteGraphDatabase {
         )
     }
 
-    fn get_delete_table_query(table_name: String) -> String {
+    fn get_delete_table_query(_table_name: String) -> String {
         todo!()
     }
 
-    fn get_insert_into_query(table_name: String, signatures_values: &[(String, String)]) -> String {
+    fn get_insert_into_query(
+        _table_name: String,
+        _signatures_values: &[(String, String)],
+    ) -> String {
         todo!()
     }
 
-    fn get_join_table_query(table_names: Vec<String>, common_column_name: String) -> String {
+    fn get_join_table_query(_table_names: Vec<String>, _common_column_name: String) -> String {
         todo!()
     }
 
-    fn get_all_rows_from_table_column(table_name: String, column_name: String) -> String {
+    fn get_all_rows_from_table_column(_table_name: String, _column_name: String) -> String {
         todo!()
     }
 
     fn get_select_batch_from(
-        from_table: String,
-        start_index: Option<usize>,
-        limit: Option<usize>,
+        _from_table: String,
+        _start_index: Option<usize>,
+        _limit: Option<usize>,
     ) -> String {
         todo!()
     }
-    
+
     fn get_all_from_table() -> String {
         "select * from $;".to_string()
     }

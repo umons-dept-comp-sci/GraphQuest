@@ -34,7 +34,7 @@ async fn main() {
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
 
     identity
-        .execute_invariant(geng.get_reader(), &mut |s| {
+        .execute_invariant(geng.get_reader(), &mut |_| {
             // println!("s: {}", s);
         })
         .expect("ok");
