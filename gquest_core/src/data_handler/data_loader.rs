@@ -16,6 +16,7 @@ pub enum MethodError {
     GengExecution,
 }
 
+/// Encapsulates a child process of a call to the `geng` program.
 pub struct GengProcess {
     child: Child,
 }
@@ -66,6 +67,7 @@ impl GengProcess {
         Ok(Self { child: call_res })
     }
 
+    /// Get a buffer to the stdout of the child program.
     pub fn get_reader(mut self) -> BufReader<ChildStdout> {
         let stdout = self.child.stdout.take().expect("present");
         BufReader::new(stdout)

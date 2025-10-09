@@ -32,11 +32,14 @@ async fn main() {
     .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-
+    let db_clone = db.clone();
     identity
-        .execute_invariant(geng.get_reader(), &mut |_| {
+        .execute_invariant(geng.get_reader(), &mut async |s| {
             // println!("s: {}", s);
+            println!("HEY I RECEIVED: {s}");
+            db_clone.print_all_tables().await.expect("huh ?");
         })
+        .await
         .expect("ok");
 
     db.close_connection().await;

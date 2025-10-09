@@ -15,6 +15,16 @@ const MAX_STDIN_SIZE: usize = 10;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
+pub enum InvariantExecutionError {
+    #[error("Failed to start executing the executable \"{0}\"")]
+    FailedExecution(String),
+    #[error("Failed to write to the stdin of the executable \"{1}\", reason \"{0}\"")]
+    FailedWriteStdin(io::Error, String),
+    #[error("The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" ")]
+    EarlyExit(String, String, String),
+}
+
+#[derive(Debug, Error)]
 pub enum InvariantError {
     #[error("The given path \"{0}\" does not lead to a file")]
     InvalidPath(PathBuf),
@@ -36,12 +46,6 @@ pub enum InvariantError {
     AlreadyAddedInvariant(String),
     #[error("Encountered a dependency cycle, thus making the invariant computation impossible")]
     DependencyCycle,
-    #[error("Failed to start executing the executable \"{0}\"")]
-    FailedExecution(String),
-    #[error("Failed to write to the stdin of the executable \"{1}\", reason \"{0}\"")]
-    FailedWriteStdin(io::Error, String),
-    #[error("The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" ")]
-    EarlyExit(String, String, String),
 }
 
 /// Represent an executable file that can be used to compute inveriants.
@@ -132,12 +136,15 @@ impl InvariantsExecutable {
 
     /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
     /// # Errrors
-    /// Returns an [`InvariantError`] if something goes wrong during the execution of the process.
-    pub fn execute_invariant(
+    /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
+    pub async fn execute_invariant<T>(
         &self,
         input_buffer: impl BufRead,
-        output_function: &mut dyn FnMut(String),
-    ) -> Result<(), InvariantError> {
+        output_function: &mut T,
+    ) -> Result<(), InvariantExecutionError>
+    where
+        T: AsyncFnMut(String),
+    {
         debug!("Start executable : {}", self.exec_path.display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
@@ -146,7 +153,7 @@ impl InvariantsExecutable {
             .spawn()
         {
             Ok(res) => res,
-            Err(e) => return Err(InvariantError::FailedExecution(e.to_string())),
+            Err(e) => return Err(InvariantExecutionError::FailedExecution(e.to_string())),
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
@@ -173,13 +180,15 @@ impl InvariantsExecutable {
 
             // Send value to buffer
             if waiting_in_stdin >= MAX_STDIN_SIZE {
-                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
+                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)
+                    .await?;
                 waiting_in_stdin = 0;
             }
         }
         // If there are still data to send
         if waiting_in_stdin > 0 {
-            self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)?;
+            self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)
+                .await?;
         }
         debug!("Finished child execution : {}", self.exec_path.display());
         // Check if the child closed or not during the execution
@@ -188,13 +197,16 @@ impl InvariantsExecutable {
         Ok(())
     }
 
-    fn flush_wait_output(
+    async fn flush_wait_output<T>(
         &self,
         sent_in_stdin: usize,
-        output_function: &mut dyn FnMut(String),
+        output_function: &mut T,
         stdin: &mut ChildStdin,
         stdout: &mut ChildStdout,
-    ) -> Result<(), InvariantError> {
+    ) -> Result<(), InvariantExecutionError>
+    where
+        T: AsyncFnMut(String),
+    {
         debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
         self.exec_stdin_io_call(&mut || stdin.flush())?;
 
@@ -205,7 +217,7 @@ impl InvariantsExecutable {
             debug!("Received : {response:?}");
             // We are waiting for the exact number of data sent to be sent back to us.
             if let Ok(s) = response {
-                output_function(s);
+                output_function(s).await;
             }
             if count == sent_in_stdin - 1 {
                 break;
@@ -218,12 +230,12 @@ impl InvariantsExecutable {
     /// Checks if the child is closed or not.
     /// # Errors :
     /// If the program was closed and an error code is returned, then a
-    ///  [`InvariantError::EarlyExit`] with the error read from the `stderr` will be returned.
+    ///  [`InvariantExecutionError::EarlyExit`] with the error read from the `stderr` will be returned.
     fn check_child_state(
         &self,
         child: &mut Child,
         stderr: &mut ChildStderr,
-    ) -> Result<(), InvariantError> {
+    ) -> Result<(), InvariantExecutionError> {
         if let Ok(Some(status)) = child.try_wait() {
             if status.success() {
                 return Ok(());
@@ -234,7 +246,7 @@ impl InvariantsExecutable {
                 c.push('\n');
                 err.push_str(&c);
             }
-            Err(InvariantError::EarlyExit(
+            Err(InvariantExecutionError::EarlyExit(
                 self.exec_path.display().to_string(),
                 status.to_string(),
                 err,
@@ -247,10 +259,10 @@ impl InvariantsExecutable {
     fn exec_stdin_io_call<T>(
         &self,
         to_call: &mut dyn FnMut() -> Result<T, io::Error>,
-    ) -> Result<T, InvariantError> {
+    ) -> Result<T, InvariantExecutionError> {
         match to_call() {
             Ok(t) => Ok(t),
-            Err(e) => Err(InvariantError::FailedWriteStdin(
+            Err(e) => Err(InvariantExecutionError::FailedWriteStdin(
                 e,
                 self.exec_path.display().to_string(),
             )),
