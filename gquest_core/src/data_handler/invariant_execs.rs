@@ -288,6 +288,7 @@ impl ExecutableSorter {
         Self::default()
     }
 
+    /// Adds an invariant executable to the sorter.
     pub fn add_inv_exec(&mut self, inv: InvariantsExecutable) -> Result<(), InvariantError> {
         if self.path_exec_hashmap.contains_key(&inv.exec_path) {
             return Err(InvariantError::AlreadyAddedExecutable(
