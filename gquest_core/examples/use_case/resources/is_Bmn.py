@@ -1,4 +1,4 @@
-#! /usr/bin/python3
+#! ./resources/env/bin/python3
 """Check if a given graph is isomorphic to B_{m,n} where m is the size and n the
 order.
 

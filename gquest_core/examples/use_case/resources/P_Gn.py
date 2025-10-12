@@ -1,4 +1,4 @@
-#! /usr/bin/python3
+#! ./resources/env/bin/python3
 """Compute the chromatic polynomial of a graph evaluated at n.
 
 Reference:
