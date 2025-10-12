@@ -3,6 +3,7 @@ pub mod utils
     pub mod csv_utils;
     pub mod table_handler;
     pub mod subject;
+    pub mod config_file;
 }
 
 pub mod data_handler

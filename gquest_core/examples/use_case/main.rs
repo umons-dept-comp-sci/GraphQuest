@@ -25,7 +25,7 @@ async fn main() {
             .expect("Database to be okay");
 
     let identity = InvariantsExecutable::new(
-        "/home/axel/GitProject/GraphQuest/gquest_core/tests/modules/identity.py".to_string(),
+        "./resources/m_km_rm.py".to_string(),
         ['x'.to_string()].to_vec(),
         [].to_vec(),
     )
@@ -46,7 +46,7 @@ async fn main() {
     info!("Program ends");
 }
 
-/// Starts the log environment 
+/// Starts the log environment
 pub fn startup_log() {
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)

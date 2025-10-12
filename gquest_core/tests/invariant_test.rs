@@ -176,7 +176,7 @@ fn new_dep_missing_inv_order_test() {
     }
 }
 
-fn get_a_b_c_exec() -> (
+pub fn get_a_b_c_exec() -> (
     InvariantsExecutable,
     InvariantsExecutable,
     InvariantsExecutable,

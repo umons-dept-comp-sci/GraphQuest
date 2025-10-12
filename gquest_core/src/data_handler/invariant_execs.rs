@@ -117,7 +117,6 @@ impl InvariantsExecutable {
         if !inv_path.is_executable() {
             return Err(InvariantError::NotExecutable(inv_path.to_path_buf()));
         }
-        println!("{:?}", inv_path);
         Ok(inv_path.to_path_buf())
     }
 
