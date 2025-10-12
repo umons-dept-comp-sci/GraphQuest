@@ -14,7 +14,8 @@ use crate::{
 };
 
 /// Used to change the logging settings of a sqlx connection.
-/// This is because by default, all debug options will be shown and will fill the logger really quickly. It is really recommended to set them to at least [`log::LevelFilter::Info`].
+/// This is because by default, all debug options will be shown and will fill the logger really quickly.
+///  t is really recommended to set them to at least [`log::LevelFilter::Info`].
 pub struct SqlxLogLevels {
     pub log_statement_level: Option<log::LevelFilter>,
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
@@ -69,6 +70,29 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         }
 
         Self::connect_graph_database(db_url, connection_options).await
+    }
+
+    /// Creates the database that will be storing the project if no database exists with the given url.
+    /// Otherwise, simply connects to it
+    /// Returns an in instance of a [GraphDatabase].
+    ///
+    /// ## Errors
+    ///
+    /// * [GraphDatabaseError::DatabaseError] if an unknown error was uncountered when trying to create/connect to it
+    pub async fn connect_create_graph_database(
+        db_url: &str,
+        connection_options: Option<SqlxLogLevels>,
+    ) -> Result<Self, GraphDatabaseError> {
+        // Install sqlite, postgre and mysql drivers
+        sqlx::any::install_default_drivers();
+
+        if !sqlx::Any::database_exists(db_url).await.unwrap_or(false) {
+            // Creates the database if it didn't already exists
+            Self::create_graph_database(db_url, connection_options).await
+        } else {
+            // Or simply connects to it
+            Self::connect_graph_database(db_url, connection_options).await
+        }
     }
 
     /// Connects to the given database.
@@ -168,9 +192,10 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         Ok(())
     }
 
-    pub async fn add_signature_table(&mut self) -> Result<(), GraphDatabaseError> {
+    /// Adds the canonical table to the database.
+    pub async fn add_canonical_table(&mut self) -> Result<(), GraphDatabaseError> {
         self.add_table(
-            DATASET_TABLE_NAME,
+            CANONICAL_TABLE_NAME,
             PK_NAME,
             ColumnType::String {
                 max_size: Some(SIGNATURE_MAX_SIZE),

@@ -36,7 +36,7 @@ async fn execute_correct_inv() {
 }
 
 #[tokio::test]
-async fn execute_inv_before() {
+async fn execute_crash_before() {
     let identity = InvariantsExecutable::new(
         CRASH_BEFORE_EXEC.to_string(),
         ['x'.to_string()].to_vec(),
@@ -57,7 +57,7 @@ async fn execute_inv_before() {
 }
 
 #[tokio::test]
-async fn execute_inv_during() {
+async fn execute_crash_during() {
     let identity = InvariantsExecutable::new(
         CRASH_DURING_EXEC.to_string(),
         ['x'.to_string()].to_vec(),

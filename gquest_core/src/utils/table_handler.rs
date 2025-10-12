@@ -80,7 +80,7 @@ pub struct QueryTable {
 }
 
 impl QueryTable {
-    // Creates a new empty [QueryTable]
+    /// Creates a new empty [`QueryTable`]
     pub fn new<T: Into<String> + Clone>(header: Vec<T>, mode: QueryTableOptions) -> Self {
         let mut res = Self {
             curr_index: 0,

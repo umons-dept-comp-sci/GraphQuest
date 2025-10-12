@@ -308,8 +308,8 @@ impl ExecutableSorter {
 
     /// Performs a topological sort with the stored [`InvariantsExecutable`]s
     /// # Errors
-    /// * If one of the dependencies from one invariant is not present.
-    /// * If a cycle is found.
+    /// * [`InvariantError::MissingDependency`] if one of the dependencies from one invariant is not present.
+    /// * [`InvariantError::DependencyCycle`] if a cycle is found.
     pub fn sort(mut self) -> Result<Vec<InvariantsExecutable>, InvariantError> {
         // Init the topological sort
         let mut topo_sort: TopoSort<PathBuf> =

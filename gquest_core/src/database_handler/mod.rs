@@ -1,9 +1,9 @@
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE: usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
-pub const DATASET_TABLE_NAME: &str = "Dataset";
+pub const CANONICAL_TABLE_NAME: &str = "Dataset";
 /// The column name of the primary key of the dataset
-pub const PK_NAME: &str = "signature";
+pub const PK_NAME: &str = "canon";
 /// The name of the second column of the dataset
 pub const DATASET_VALUE_NAME: &str = "vertices";
 /// The name of the the metadata table

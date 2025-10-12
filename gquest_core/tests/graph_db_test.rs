@@ -1,4 +1,4 @@
-use gquest_core::database_handler::{GraphDatabase, SqliteGraphDatabase};
+use gquest_core::database_handler::{GraphDatabase, GraphDatabaseError, SqliteGraphDatabase};
 use sqlx::migrate::MigrateDatabase;
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
@@ -30,9 +30,11 @@ async fn create_db_test() {
         .await
         .expect("This was supposed to not cause an error");
     // Already exists
-    GraphDatabase::<SqliteGraphDatabase>::create_graph_database(PHYSICAL_DB_URL, None)
-        .await
-        .expect("This was supposed to cause an error");
+    assert!(matches!(
+        GraphDatabase::<SqliteGraphDatabase>::create_graph_database(PHYSICAL_DB_URL, None).await,
+        Err(GraphDatabaseError::DatabaseAlreadyCreated { .. })
+    ));
+
     // Drop the created db
     sqlx::Any::drop_database(PHYSICAL_DB_URL).await.unwrap();
 }
@@ -40,15 +42,20 @@ async fn create_db_test() {
 #[tokio::test]
 async fn add_table_test() {
     let mut test =
-        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
+        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(MEMORY_DB_URL, None)
             .await
             .unwrap();
 
     // test.close_connection().await;
 
-    test.add_signature_table()
+    test.add_canonical_table()
         .await
         .expect("It should not fail");
+    test.add_canonical_table()
+        .await
+        .expect("It should not fail");
+
+    test.print_all_tables().await.unwrap();
 
     // AnyPool::connect(PHYSICAL_DB_URL).await.expect("db exists").
 }
