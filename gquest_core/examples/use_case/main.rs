@@ -1,12 +1,14 @@
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::{data_loader::GengProcess, invariant_execs::InvariantsExecutable},
+    data_handler::invariant_execs::ExecutableSorter,
     database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels},
+    utils::config_file::ConfigFile,
 };
 use log::*;
 
 const DB_URL: &str = "sqlite:resources/gquest.db";
+const CONFIG_PATH: &str = "resources/configs.json";
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
@@ -24,23 +26,17 @@ async fn main() {
             .await
             .expect("Database to be okay");
 
-    let identity = InvariantsExecutable::new(
-        "./resources/m_km_rm.py".to_string(),
-        ['x'.to_string()].to_vec(),
-        [].to_vec(),
-    )
-    .expect("correct inv");
+    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    let db_clone = db.clone();
-    identity
-        .execute_invariant(geng.get_reader(), &mut async |s| {
-            // println!("s: {}", s);
-            println!("HEY I RECEIVED: {s}");
-            db_clone.print_all_tables().await.expect("huh ?");
-        })
-        .await
-        .expect("ok");
+    let mut sorter = ExecutableSorter::new();
+    for inv in config.executables {
+        sorter.add_inv_exec(inv.clone()).expect("correct");
+    }
+    let man = sorter.group_execs().expect("good manager");
+    println!("{:?}", man.get_groups().first());
+
+    // let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    // let db_clone = db.clone();
 
     db.close_connection().await;
     info!("Program ends");

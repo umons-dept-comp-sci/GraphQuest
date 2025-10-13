@@ -156,7 +156,6 @@ impl InvariantsExecutable {
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
-        // let child_buffer_stderr = BufReader::new(&mut stderr);
 
         // This block forces to close the opened stdin and stdout before
         // waiting for the child process to exit.
@@ -353,5 +352,114 @@ impl ExecutableSorter {
         }
 
         Ok(res)
+    }
+
+    pub fn group_execs(self) -> Result<ExecutableManager, InvariantError> {
+        let sorted_execs = self.sort()?;
+
+        let mut res = ExecDepStore::default();
+        let mut name_index_hash: HashMap<String, usize> = HashMap::new();
+
+        for (index, exec) in sorted_execs.into_iter().enumerate() {
+            for name in &exec.invariant_names {
+                name_index_hash.insert(name.clone(), index); // insert into hashmap for an easy access to his index
+            }
+
+            // Add dependencies
+            for dep_name in &exec.dependencies {
+                // By definition of a topological sort,
+                // these dependencies are from previous executables
+                // and therefore are in the name hashmap
+                res.dep_indexes[*name_index_hash.get(dep_name).expect("should be present")]
+                    .push(index)
+            }
+
+            res.dep_left.push(exec.dependencies.len());
+            res.executables.push(exec);
+            res.dep_indexes.push(vec![]);
+        }
+
+        Ok(res.group_processes())
+    }
+}
+
+#[derive(Debug, Default)]
+/// Used to facilitate the creation of a [`ExecutableManager`] instance.
+struct ExecDepStore {
+    /// The invariants sorted using a topological sort
+    executables: Vec<InvariantsExecutable>,
+    /// The number of dependencies left for an invariants
+    dep_left: Vec<usize>,
+    /// The indexes of the executables that depend on this executable.
+    dep_indexes: Vec<Vec<usize>>,
+}
+
+impl ExecDepStore {
+    fn group_processes(mut self) -> ExecutableManager {
+        let mut manager: ExecutableManager = ExecutableManager::default();
+        println!("Starting manager creation");
+        // While not all execs are sorted
+        while !self.executables.is_empty() {
+            let mut can_now_exec: Vec<InvariantsExecutable> = vec![];
+            let mut can_now_exec_ind: Vec<usize> = vec![];
+
+            // Get all processes that can now be executed
+            // this is what we refer to as a "group"
+            for i in (0..self.executables.len()).rev() {
+                if self.dep_left[i] == 0 {
+                    can_now_exec.push(self.executables.remove(i));
+                    can_now_exec_ind.push(i);
+                    // self.dep_left.remove(i); // FIXME: Prove that this never crashes
+                }
+            }
+
+            manager.groups.push(can_now_exec);
+
+            // Update dependencies
+            can_now_exec_ind.iter().for_each(|i| {
+                for dep_index in self.dep_indexes.remove(*i) {
+                    self.dep_left[dep_index] -= 1;
+                }
+            });
+        }
+        println!("Finished manager creation");
+        manager
+    }
+}
+
+// FIXME: Add more information to this doc
+/// This structs holds a [`Vec<Vec<InvariantsExecutable>>`],
+/// * with the outer vector representing a topological sort
+/// * the middle vector containing a vector of executable that could be executed simultaneously.
+/// * and the inner vector grouping invariants that have the same dependencies.
+///  
+/// # Explanation using an example
+/// Syntax :
+/// - `->` : *depends on*
+/// - `=>` : *then execute*
+///
+/// Let 5 processes `[A, B, C, D, E]`, with the following dependencies (for example B1 means a dependency from the executable B) :
+/// * `[A -> B1, C1; B -> /; C -> D1; D -> B1; E -> /]`
+///
+/// A topological order could be:
+/// * `E => B => A => D => C`.
+///
+/// But since they don't all depend on each others and sometimes have the same dependencies, we could execute multiple ones at the same time like
+/// **E** and **B**, **A** and **D**. So the order of execution could be
+/// * `[E, B] => [A, D] => [C]`
+///
+/// Meaning we now have 3 execution groups, but we also have to think about the max number of process allowed `m`.
+/// If `m = 1` then we would have the following execution order
+/// * `[ [E] => [B] ] => [ [A] => [D] ] => [ [C] ]`
+///
+/// Which is the orginal topological order.
+#[derive(Debug, Clone, Default)]
+pub struct ExecutableManager {
+    groups: Vec<Vec<InvariantsExecutable>>,
+}
+
+impl ExecutableManager {
+    pub fn get_groups(&self) -> &Vec<Vec<InvariantsExecutable>> {
+        &self.groups
     }
 }

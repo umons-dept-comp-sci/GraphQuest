@@ -176,6 +176,19 @@ fn new_dep_missing_inv_order_test() {
     }
 }
 
+#[test]
+fn new_exec_group_test() {
+    let (a, b, c) = get_a_b_c_exec();
+
+    let mut order = ExecutableSorter::new();
+    order.add_inv_exec(c.clone()).expect("no issues");
+    order.add_inv_exec(b.clone()).expect("no issues");
+    order.add_inv_exec(a.clone()).expect("no issues");
+
+    let man = order.group_execs().expect("no error");
+    println!("{man:?}");
+}
+
 pub fn get_a_b_c_exec() -> (
     InvariantsExecutable,
     InvariantsExecutable,
