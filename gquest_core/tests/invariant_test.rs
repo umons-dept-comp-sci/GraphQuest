@@ -1,4 +1,6 @@
-use gquest_core::data_handler::invariant_execs::{ExecutableSorter, InvariantsExecutable};
+use gquest_core::data_handler::invariant_execs::{
+    ExecutableSorter, InvariantError, InvariantsExecutable,
+};
 
 pub const VALID_EXEC_A: &str = "tests/modules/a.py";
 pub const VALID_EXEC_B: &str = "tests/modules/b.py";
@@ -171,9 +173,10 @@ fn new_dep_missing_inv_order_test() {
     order.add_inv_exec(b.clone()).expect("no issues");
     order.add_inv_exec(c.clone()).expect("no issues");
 
-    if order.sort().is_ok() {
-        panic!("Should be dep missing error")
-    }
+    assert!(matches!(
+        order.sort(),
+        Err(InvariantError::MissingDependency(_, _))
+    ));
 }
 
 #[test]
@@ -186,7 +189,9 @@ fn new_exec_group_test() {
     order.add_inv_exec(a.clone()).expect("no issues");
 
     let man = order.group_execs().expect("no error");
-    println!("{man:?}");
+    println!("{man}");
+
+    // FIXME : [[{c}] => [{a}, {b}]] is wrong since a needs b ...
 }
 
 pub fn get_a_b_c_exec() -> (

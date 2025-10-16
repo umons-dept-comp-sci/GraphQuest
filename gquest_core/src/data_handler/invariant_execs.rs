@@ -4,6 +4,7 @@ use regex::Regex;
 use std::{
     collections::HashMap,
     env,
+    fmt::Display,
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
@@ -375,11 +376,23 @@ impl ExecutableSorter {
             }
 
             res.dep_left.push(exec.dependencies.len());
-            res.executables.push(exec);
+            res.executables.push(Some(exec));
             res.dep_indexes.push(vec![]);
         }
-
         Ok(res.group_processes())
+    }
+}
+
+impl TryFrom<Vec<InvariantsExecutable>> for ExecutableSorter {
+    type Error = InvariantError;
+
+    fn try_from(values: Vec<InvariantsExecutable>) -> Result<Self, Self::Error> {
+        let mut sorter = Self::new();
+        for val in values {
+            sorter.add_inv_exec(val)?;
+        }
+
+        Ok(sorter)
     }
 }
 
@@ -387,7 +400,7 @@ impl ExecutableSorter {
 /// Used to facilitate the creation of a [`ExecutableManager`] instance.
 struct ExecDepStore {
     /// The invariants sorted using a topological sort
-    executables: Vec<InvariantsExecutable>,
+    executables: Vec<Option<InvariantsExecutable>>,
     /// The number of dependencies left for an invariants
     dep_left: Vec<usize>,
     /// The indexes of the executables that depend on this executable.
@@ -397,19 +410,19 @@ struct ExecDepStore {
 impl ExecDepStore {
     fn group_processes(mut self) -> ExecutableManager {
         let mut manager: ExecutableManager = ExecutableManager::default();
-        println!("Starting manager creation");
+        let mut to_sort = self.executables.len();
         // While not all execs are sorted
-        while !self.executables.is_empty() {
+        while to_sort > 0 {
             let mut can_now_exec: Vec<InvariantsExecutable> = vec![];
             let mut can_now_exec_ind: Vec<usize> = vec![];
 
             // Get all processes that can now be executed
             // this is what we refer to as a "group"
             for i in (0..self.executables.len()).rev() {
-                if self.dep_left[i] == 0 {
-                    can_now_exec.push(self.executables.remove(i));
+                if self.dep_left[i] == 0 && self.executables[i].is_some() {
+                    can_now_exec.push(self.executables[i].take().expect("present"));
                     can_now_exec_ind.push(i);
-                    // self.dep_left.remove(i); // FIXME: Prove that this never crashes
+                    to_sort -= 1;
                 }
             }
 
@@ -417,12 +430,11 @@ impl ExecDepStore {
 
             // Update dependencies
             can_now_exec_ind.iter().for_each(|i| {
-                for dep_index in self.dep_indexes.remove(*i) {
-                    self.dep_left[dep_index] -= 1;
+                for dep_index in &self.dep_indexes[*i] {
+                    self.dep_left[*dep_index] -= 1;
                 }
             });
         }
-        println!("Finished manager creation");
         manager
     }
 }
@@ -461,5 +473,47 @@ pub struct ExecutableManager {
 impl ExecutableManager {
     pub fn get_groups(&self) -> &Vec<Vec<InvariantsExecutable>> {
         &self.groups
+    }
+}
+
+impl Display for InvariantsExecutable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut inv_list = "{".to_string();
+
+        for inv in &self.invariant_names {
+            inv_list.push_str(inv);
+            inv_list.push_str(", ")
+        }
+        inv_list.pop();
+        inv_list.pop();
+        inv_list.push('}');
+        write!(f, "{}", inv_list)
+    }
+}
+
+impl Display for ExecutableManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut res = "[".to_string();
+        let sep = " => ";
+        for group in &self.groups {
+            let mut group_str = "[".to_string();
+            for inv in group {
+                group_str.push_str(&inv.to_string());
+                group_str.push_str(", ");
+            }
+            group_str.pop();
+            group_str.pop();
+            group_str.push(']');
+            group_str.push_str(sep);
+
+            res.push_str(&group_str);
+        }
+        res.pop();
+        res.pop();
+        res.pop();
+        res.pop();
+        res.push(']');
+
+        write!(f, "{res}")
     }
 }

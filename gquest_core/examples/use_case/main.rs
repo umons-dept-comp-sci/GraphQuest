@@ -28,10 +28,8 @@ async fn main() {
 
     let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let mut sorter = ExecutableSorter::new();
-    for inv in config.executables {
-        sorter.add_inv_exec(inv.clone()).expect("correct");
-    }
+    let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
+    
     let man = sorter.group_execs().expect("good manager");
     println!("{:?}", man.get_groups().first());
 
