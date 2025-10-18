@@ -27,7 +27,7 @@ struct ExecutableJson {
 
     /// The vector of dependencies requiered to compute this invariant.
     /// A dependency cannot be present in the invariant names field.
-    pub dep: Vec<String>,
+    pub dep: Option<Vec<String>>,
 }
 
 /// Private struct simply used to not directly create a config file.
@@ -72,12 +72,12 @@ impl ConfigFile {
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
     let mut executables = vec![];
 
-    for exec in &config_json.executables {
-        executables.push(InvariantsExecutable::new(
-            exec.path.clone(),
-            exec.names.clone(),
-            exec.dep.clone(),
-        )?);
+    for exec in config_json.executables {
+        if let Some(dep) = exec.dep {
+            executables.push(InvariantsExecutable::new(exec.path, exec.names, dep)?);
+        } else {
+            executables.push(InvariantsExecutable::new_no_dep(exec.path, exec.names)?);
+        }
     }
 
     Ok(ConfigFile { executables })

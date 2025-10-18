@@ -19,7 +19,6 @@ pub fn from_value_test() {
                 "names": [
                     "P_Gn"
                 ],
-                "dep": []
             },
             {
                 "path": VALID_EXEC_B,
@@ -28,7 +27,6 @@ pub fn from_value_test() {
                     "km",
                     "rm"
                 ],
-                "dep": []
             },
             {
                 "path": VALID_EXEC_C,
@@ -66,13 +64,12 @@ pub fn get_a_b_c_exec() -> (
     InvariantsExecutable,
     InvariantsExecutable,
 ) {
-    let a = InvariantsExecutable::new(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()], vec![])
+    let a = InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()])
         .expect("Correct inv");
 
-    let b = InvariantsExecutable::new(
+    let b = InvariantsExecutable::new_no_dep(
         VALID_EXEC_B.to_string(),
         vec!["m".to_string(), "km".to_string(), "rm".to_string()],
-        vec![],
     )
     .expect("Correct inv");
 

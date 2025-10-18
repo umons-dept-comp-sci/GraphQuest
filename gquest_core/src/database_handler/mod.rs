@@ -24,14 +24,11 @@ pub const TABLE_NAME_MAX_SIZE: usize = 250;
 // /// The speed at which the observator will be notified (if any present on db)
 // const ITERATION_BEFORE_NOTIFY: u8 = 10;
 
-
-
 pub mod database_error;
 pub use database_error::*;
 
 pub mod graph_database;
 pub use graph_database::*;
-
 
 pub mod sqlite_handler;
 pub use sqlite_handler::*;

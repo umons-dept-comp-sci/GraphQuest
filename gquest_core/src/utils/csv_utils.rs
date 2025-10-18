@@ -47,7 +47,6 @@ impl CsvFile {
         &mut self,
         values: Vec<Vec<T>>,
     ) -> Result<(), CsvFileError> {
-
         // Write the values
         for line in values {
             match self
@@ -67,7 +66,7 @@ impl CsvFile {
 pub fn as_line<T: Into<String> + Clone>(values: &Vec<T>, separator: char) -> String {
     let mut to_write = String::new();
     for value in values {
-        let value : String = value.clone().into();
+        let value: String = value.clone().into();
         to_write.push_str(format!("{}{}", value, separator).as_str())
     }
     to_write.pop(); // remove the last separator

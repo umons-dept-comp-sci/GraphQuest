@@ -11,15 +11,11 @@ pub const UNVALID_EXEC: &str = "tests/modules/non_executable.py";
 
 #[test]
 fn new_inv_exec_path_test() {
-    let _ = InvariantsExecutable::new(VALID_EXEC_A.to_string(), vec!["size".to_string()], vec![])
+    let _ = InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["size".to_string()])
         .expect("Correct path");
 
-    if InvariantsExecutable::new(
-        "WRONG_PATH.py".to_string(),
-        vec!["size".to_string()],
-        vec![],
-    )
-    .is_ok()
+    if InvariantsExecutable::new_no_dep("WRONG_PATH.py".to_string(), vec!["size".to_string()])
+        .is_ok()
     {
         panic!("Should return Err")
     }
@@ -27,7 +23,7 @@ fn new_inv_exec_path_test() {
 
 #[test]
 fn new_non_exec_inv_exec_test() {
-    if InvariantsExecutable::new(UNVALID_EXEC.to_string(), vec!["size".to_string()], vec![]).is_ok()
+    if InvariantsExecutable::new_no_dep(UNVALID_EXEC.to_string(), vec!["size".to_string()]).is_ok()
     {
         panic!("Should return Err")
     }
@@ -35,27 +31,22 @@ fn new_non_exec_inv_exec_test() {
 
 #[test]
 fn new_inv_exec_name_test() {
-    let _ = InvariantsExecutable::new(VALID_EXEC_A.to_string(), vec!["size".to_string()], vec![])
+    let _ = InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["size".to_string()])
         .expect("Correct name");
 
-    if InvariantsExecutable::new(VALID_EXEC_A.to_string(), vec!["3size".to_string()], vec![])
+    if InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["3size".to_string()]).is_ok()
+    {
+        panic!("Should return Err");
+    }
+
+    if InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["🫡fail".to_string()])
         .is_ok()
     {
         panic!("Should return Err");
     }
 
-    if InvariantsExecutable::new(VALID_EXEC_A.to_string(), vec!["🫡fail".to_string()], vec![])
+    if InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["fail space".to_string()])
         .is_ok()
-    {
-        panic!("Should return Err");
-    }
-
-    if InvariantsExecutable::new(
-        VALID_EXEC_A.to_string(),
-        vec!["fail space".to_string()],
-        vec![],
-    )
-    .is_ok()
     {
         panic!("Should return Err");
     }
@@ -165,7 +156,7 @@ fn new_dep_missing_inv_order_test() {
     )
     .expect("Correct inv");
 
-    let c = InvariantsExecutable::new(VALID_EXEC_C.to_string(), vec!["c".to_string()], vec![])
+    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C.to_string(), vec!["c".to_string()])
         .expect("Correct inv");
 
     let mut order = ExecutableSorter::new();
@@ -183,13 +174,13 @@ fn new_dep_missing_inv_order_test() {
 fn new_exec_group_test() {
     let (a, b, c) = get_a_b_c_exec();
 
-    let mut order = ExecutableSorter::new();
-    order.add_inv_exec(c.clone()).expect("no issues");
-    order.add_inv_exec(b.clone()).expect("no issues");
-    order.add_inv_exec(a.clone()).expect("no issues");
+    let order: ExecutableSorter = [a, b, c].to_vec().try_into().expect("ok");
 
     let man = order.group_execs().expect("no error");
-    println!("{man}");
+
+    println!("{man}")
+
+    // let order: ExecutableSorter = [a, b, c].to_vec().try_into().expect("ok");
 
     // FIXME : [[{c}] => [{a}, {b}]] is wrong since a needs b ...
 }
@@ -199,21 +190,13 @@ pub fn get_a_b_c_exec() -> (
     InvariantsExecutable,
     InvariantsExecutable,
 ) {
-    let a = InvariantsExecutable::new(
-        VALID_EXEC_A.to_string(),
-        vec!["a".to_string()],
-        vec!["b".to_string(), "c".to_string()],
-    )
-    .expect("Correct inv");
+    let a =
+        InvariantsExecutable::new(VALID_EXEC_A, vec!["a"], vec!["b", "c"]).expect("Correct inv");
 
-    let b = InvariantsExecutable::new(
-        VALID_EXEC_B.to_string(),
-        vec!["b".to_string()],
-        vec!["c".to_string()],
-    )
-    .expect("Correct inv");
+    let b = InvariantsExecutable::new(VALID_EXEC_B.to_string(), vec!["b".to_string()], vec!["c"])
+        .expect("Correct inv");
 
-    let c = InvariantsExecutable::new(VALID_EXEC_C.to_string(), vec!["c".to_string()], vec![])
+    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C.to_string(), vec!["c".to_string()])
         .expect("Correct inv");
 
     (a, b, c)

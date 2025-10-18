@@ -11,10 +11,9 @@ pub const CRASH_DURING_EXEC: &str = "tests/modules/crash_during.py";
 
 #[tokio::test]
 async fn execute_correct_inv() {
-    let identity = InvariantsExecutable::new(
+    let identity = InvariantsExecutable::new_no_dep(
         VALID_EXEC_IDENTITY.to_string(),
         ['x'.to_string()].to_vec(),
-        [].to_vec(),
     )
     .expect("correct inv");
 
@@ -37,12 +36,9 @@ async fn execute_correct_inv() {
 
 #[tokio::test]
 async fn execute_crash_before() {
-    let identity = InvariantsExecutable::new(
-        CRASH_BEFORE_EXEC.to_string(),
-        ['x'.to_string()].to_vec(),
-        [].to_vec(),
-    )
-    .expect("correct inv");
+    let identity =
+        InvariantsExecutable::new_no_dep(CRASH_BEFORE_EXEC.to_string(), ['x'.to_string()].to_vec())
+            .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
 
@@ -58,12 +54,9 @@ async fn execute_crash_before() {
 
 #[tokio::test]
 async fn execute_crash_during() {
-    let identity = InvariantsExecutable::new(
-        CRASH_DURING_EXEC.to_string(),
-        ['x'.to_string()].to_vec(),
-        [].to_vec(),
-    )
-    .expect("correct inv");
+    let identity =
+        InvariantsExecutable::new_no_dep(CRASH_DURING_EXEC.to_string(), ['x'.to_string()].to_vec())
+            .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
 

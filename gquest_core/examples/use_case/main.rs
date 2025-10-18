@@ -29,7 +29,7 @@ async fn main() {
     let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
     let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
-    
+
     let man = sorter.group_execs().expect("good manager");
     println!("{:?}", man.get_groups().first());
 

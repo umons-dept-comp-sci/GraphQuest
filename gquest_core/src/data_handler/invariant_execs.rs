@@ -60,22 +60,51 @@ pub struct InvariantsExecutable {
 
     /// The vector of dependencies requiered to compute this invariant.
     /// A dependency cannot be present in the invariant names field.
-    pub dependencies: Vec<String>,
+    pub dependencies: Option<Vec<String>>,
 }
 
 impl InvariantsExecutable {
     /// Creates an invariant using the given parameters
     pub fn new(
-        exec_path: String,
-        names: Vec<String>,
-        dependencies: Vec<String>,
+        exec_path: impl Into<String>,
+        names: Vec<impl Into<String>>,
+        dependencies: Vec<impl Into<String>>,
     ) -> Result<Self, InvariantError> {
-        let exec_path = Self::check_validity(exec_path, &names, &dependencies)?;
+        let invariant_names: Vec<String> = names.into_iter().map(|n| n.into()).collect();
+
+        let dependencies: Option<Vec<String>> = {
+            if dependencies.is_empty() {
+                None
+            } else {
+                Some(dependencies.into_iter().map(|n| n.into()).collect())
+            }
+        };
+
+        let exec_path =
+            Self::check_validity(exec_path.into(), &invariant_names, dependencies.as_deref())?;
 
         let i = InvariantsExecutable {
             exec_path,
-            invariant_names: names,
+            invariant_names,
             dependencies,
+        };
+
+        Ok(i)
+    }
+
+    /// Creates an invariant with no dependency using the given parameters.
+    pub fn new_no_dep(
+        exec_path: impl Into<String>,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Self, InvariantError> {
+        let invariant_names: Vec<String> = names.into_iter().map(|n| n.into()).collect();
+
+        let exec_path = Self::check_validity(exec_path.into(), &invariant_names, None)?;
+
+        let i = InvariantsExecutable {
+            exec_path,
+            invariant_names,
+            dependencies: None,
         };
 
         Ok(i)
@@ -85,13 +114,15 @@ impl InvariantsExecutable {
     fn check_validity(
         exec_path: String,
         names: &[String],
-        dependencies: &[String],
+        dependencies: Option<&[String]>,
     ) -> Result<PathBuf, InvariantError> {
         let path = Self::get_path(exec_path)?;
         for name in names {
             Self::check_invariant_name_validity(name)?;
-            if dependencies.contains(name) {
-                return Err(InvariantError::DependsOnSelf(name.to_string()));
+            if let Some(dependencies) = dependencies {
+                if dependencies.contains(name) {
+                    return Err(InvariantError::DependsOnSelf(name.to_string()));
+                }
             }
         }
         Ok(path)
@@ -319,16 +350,18 @@ impl ExecutableSorter {
             // Check that all dependencies of this executable are present
             // And gather all executable path that this executable is relying on
             let mut dependencies: Vec<PathBuf> = vec![];
-            for dep in &exec.dependencies {
-                match self.name_path_hashmap.get(dep) {
-                    Some(path) => {
-                        dependencies.push(path.clone());
-                    }
-                    None => {
-                        return Err(InvariantError::MissingDependency(
-                            dep.to_string(),
-                            exec.exec_path.clone(),
-                        ));
+            if let Some(deps) = &exec.dependencies {
+                for dep in deps {
+                    match self.name_path_hashmap.get(dep) {
+                        Some(path) => {
+                            dependencies.push(path.clone());
+                        }
+                        None => {
+                            return Err(InvariantError::MissingDependency(
+                                dep.to_string(),
+                                exec.exec_path.clone(),
+                            ));
+                        }
                     }
                 }
             }
@@ -367,15 +400,19 @@ impl ExecutableSorter {
             }
 
             // Add dependencies
-            for dep_name in &exec.dependencies {
-                // By definition of a topological sort,
-                // these dependencies are from previous executables
-                // and therefore are in the name hashmap
-                res.dep_indexes[*name_index_hash.get(dep_name).expect("should be present")]
-                    .push(index)
+            if let Some(dependencies) = &exec.dependencies {
+                for dep_name in dependencies {
+                    // By definition of a topological sort,
+                    // these dependencies are from previous executables
+                    // and therefore are in the name hashmap
+                    res.dep_indexes[*name_index_hash.get(dep_name).expect("should be present")]
+                        .push(index)
+                }
+                res.dep_left.push(dependencies.len());
+            } else {
+                res.dep_left.push(0);
             }
 
-            res.dep_left.push(exec.dependencies.len());
             res.executables.push(Some(exec));
             res.dep_indexes.push(vec![]);
         }
@@ -390,6 +427,19 @@ impl TryFrom<Vec<InvariantsExecutable>> for ExecutableSorter {
         let mut sorter = Self::new();
         for val in values {
             sorter.add_inv_exec(val)?;
+        }
+
+        Ok(sorter)
+    }
+}
+
+impl TryFrom<Vec<&InvariantsExecutable>> for ExecutableSorter {
+    type Error = InvariantError;
+
+    fn try_from(values: Vec<&InvariantsExecutable>) -> Result<Self, Self::Error> {
+        let mut sorter = Self::new();
+        for val in values {
+            sorter.add_inv_exec(val.clone())?;
         }
 
         Ok(sorter)
