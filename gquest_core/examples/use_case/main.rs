@@ -31,7 +31,7 @@ async fn main() {
     let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
 
     let man = sorter.group_execs().expect("good manager");
-    println!("{:?}", man.get_groups().first());
+    println!("{man}");
 
     // let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
     // let db_clone = db.clone();

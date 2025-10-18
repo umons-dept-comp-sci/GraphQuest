@@ -171,18 +171,56 @@ fn new_dep_missing_inv_order_test() {
 }
 
 #[test]
-fn new_exec_group_test() {
+fn new_exec_group_test_all_sep() {
     let (a, b, c) = get_a_b_c_exec();
 
-    let order: ExecutableSorter = [a, b, c].to_vec().try_into().expect("ok");
+    let order: ExecutableSorter = [a.clone(), b.clone(), c.clone()]
+        .to_vec()
+        .try_into()
+        .expect("ok");
 
     let man = order.group_execs().expect("no error");
 
-    println!("{man}")
+    assert!(man.get_groups()[0].contains(&c));
+    assert!(man.get_groups()[1].contains(&b));
+    assert!(man.get_groups()[2].contains(&a));
+}
 
-    // let order: ExecutableSorter = [a, b, c].to_vec().try_into().expect("ok");
+#[test]
+fn new_exec_group_test_same_dep() {
+    let a =
+        InvariantsExecutable::new(VALID_EXEC_A, vec!["a"], vec!["d", "c"]).expect("Correct inv");
+    let b = InvariantsExecutable::new(VALID_EXEC_B, vec!["b"], vec!["c"]).expect("Correct inv");
+    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C, vec!["c", "d"]).expect("Correct inv");
 
-    // FIXME : [[{c}] => [{a}, {b}]] is wrong since a needs b ...
+    let order: ExecutableSorter = [a.clone(), c.clone(), b.clone()]
+        .to_vec()
+        .try_into()
+        .expect("ok");
+
+    let man = order.group_execs().expect("no error");
+
+    assert!(man.get_groups()[0].contains(&c));
+    assert!(man.get_groups()[1].contains(&b));
+    assert!(man.get_groups()[1].contains(&a));
+}
+
+#[test]
+fn new_exec_group_test_no_dep() {
+    let a = InvariantsExecutable::new_no_dep(VALID_EXEC_A, vec!["a"]).expect("Correct inv");
+    let b = InvariantsExecutable::new_no_dep(VALID_EXEC_B, vec!["b"]).expect("Correct inv");
+    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C, vec!["c", "d"]).expect("Correct inv");
+
+    let order: ExecutableSorter = [a.clone(), c.clone(), b.clone()]
+        .to_vec()
+        .try_into()
+        .expect("ok");
+
+    let man = order.group_execs().expect("no error");
+
+    assert!(man.get_groups()[0].contains(&c));
+    assert!(man.get_groups()[0].contains(&b));
+    assert!(man.get_groups()[0].contains(&a));
 }
 
 pub fn get_a_b_c_exec() -> (
@@ -193,11 +231,9 @@ pub fn get_a_b_c_exec() -> (
     let a =
         InvariantsExecutable::new(VALID_EXEC_A, vec!["a"], vec!["b", "c"]).expect("Correct inv");
 
-    let b = InvariantsExecutable::new(VALID_EXEC_B.to_string(), vec!["b".to_string()], vec!["c"])
-        .expect("Correct inv");
+    let b = InvariantsExecutable::new(VALID_EXEC_B, vec!["b"], vec!["c"]).expect("Correct inv");
 
-    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C.to_string(), vec!["c".to_string()])
-        .expect("Correct inv");
+    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C, vec!["c"]).expect("Correct inv");
 
     (a, b, c)
 }
