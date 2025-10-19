@@ -41,7 +41,7 @@ pub trait DbQuerySystem: Debug {
     fn get_delete_table_query(table_name: String) -> String;
 
     /// Returns the query that can be used to insert all the given data into a table called `table_name`
-    fn get_insert_into_query(table_name: String, signatures_values: &[(String, String)]) -> String;
+    fn get_insert_into_query(nb_cols: usize, nb_rows: usize) -> String;
 
     /// Get a query that can be used to join all the given tables using a common column
     fn get_join_table_query(table_names: Vec<String>, common_column_name: String) -> String;

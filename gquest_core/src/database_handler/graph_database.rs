@@ -1,6 +1,6 @@
-use std::{fmt::Debug, marker::PhantomData, str::FromStr, time::Duration};
+use std::{fmt::Debug, io::BufRead, marker::PhantomData, str::FromStr, time::Duration};
 
-use log::{debug, error};
+use log::debug;
 use sqlx::{
     any::{AnyConnectOptions, AnyRow},
     migrate::MigrateDatabase,
@@ -152,6 +152,54 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
+// ______________________ DB WRITING ____________
+
+impl<T: DbQuerySystem> GraphDatabase<T> {
+    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
+    /// Will not crash if a signature was already added previously.
+    pub async fn add_to_dataset(
+        &mut self,
+        reader: impl BufRead,
+        batch_size: usize,
+    ) -> Result<(), GraphDatabaseError> {
+        // Add dataset table if not already created
+        let res = self.add_canonical_table().await;
+        match &res {
+            Ok(_) | Err(GraphDatabaseError::TableAlreadyCreatedError(_)) => {}
+            _ => res?,
+        }
+
+        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDatabaseError> {
+            // Get insert query
+            let query_str = T::get_insert_into_query(2, batch_size);
+            let safe_query = create_safe_query(query_str, [CANONICAL_TABLE_NAME].into(), vec)?;
+            self.execute_query_no_return(safe_query).await?;
+            Ok(())
+        };
+
+        let mut data_batch = vec![];
+        
+        for canonical_form in reader.lines().map_while(Result::ok) {
+            let value = get_nb_vertices(&canonical_form);
+            data_batch.push(canonical_form);
+            data_batch.push(value.to_string());
+
+            if data_batch.len() / 2 >= batch_size {
+                push_to_db(data_batch, batch_size).await?;
+                data_batch = vec![];
+            }
+        }
+        if !data_batch.is_empty() {
+            let data_left = data_batch.len() / 2;
+            push_to_db(data_batch, data_left).await?;
+        }
+
+        Ok(())
+    }
+}
+
+// ______________________ UTILS ______________________
+
 impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
         let query_str = T::get_all_tables_query();
@@ -164,7 +212,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         Ok(results.iter().map(|(val,)| val.to_string()).collect())
     }
 
-    pub async fn for_each_row(
+    async fn for_each_row(
         &self,
         table_name: String,
         apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDatabaseError>,
@@ -231,10 +279,19 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                 debug!("Added signature table, result is : {:?}", v);
                 Ok(())
             }
-            Err(e) => {
-                error!("{e}");
-                Err(database_error::sqlx_error_to_db_error(e))
-            }
+            Err(e) => Err(database_error::sqlx_error_to_db_error(e)),
+        }
+    }
+
+    async fn execute_query_no_return(
+        &self,
+        mut query: sqlx::QueryBuilder<'static, sqlx::Any>,
+    ) -> Result<(), GraphDatabaseError> {
+        let res = query.build().execute(&self.pool).await;
+        if let Err(e) = res {
+            Err(database_error::sqlx_error_to_db_error(e))
+        } else {
+            Ok(())
         }
     }
 }
@@ -276,10 +333,29 @@ fn create_safe_query(
     Ok(builder)
 }
 
+fn get_nb_vertices(signature: &String) -> usize {
+    let signature_byte = signature.as_bytes();
+    // Check wether it is the extended format or not
+    if signature_byte[0] != b'~' {
+        (signature_byte[0] as usize) - 63
+    }
+    // Extended format
+    else {
+        (((signature_byte[1] - 63) as usize) << 18)
+            | (((signature_byte[2] - 63) as usize) << 12)
+            | (((signature_byte[3] - 63) as usize) << 6)
+            | (((signature_byte[4] - 63) as usize) << 3)
+    }
+}
+
 impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn print_all_tables(&self) -> Result<(), GraphDatabaseError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
+        if tables.is_empty() {
+            println!("No tables in database");
+            return Ok(());
+        }
         for table in tables {
             let mut table_query: Option<QueryTable> = None;
 
@@ -293,7 +369,10 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                     }
                     table_query = Some(QueryTable::new(
                         headers,
-                        crate::utils::table_handler::QueryTableOptions::Full,
+                        crate::utils::table_handler::QueryTableOptions::Partial {
+                            first_rows_count: 10,
+                            last_rows_count: 10,
+                        },
                     ));
                 }
                 // Add line to query

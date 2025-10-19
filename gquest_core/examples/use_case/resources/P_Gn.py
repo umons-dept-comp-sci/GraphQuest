@@ -13,7 +13,16 @@ def P(G):
     return int(nx.chromatic_polynomial(G).subs({Symbol("x"): n}))
 
 
+max_flush_count = 1
+
 if __name__ == "__main__":
+    flush_count = 0
     for sig in map(str.strip, sys.stdin):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
-        print(sig, P(G), flush=True)
+
+        if flush_count >= max_flush_count-1:
+            print(sig, P(G), flush=True)
+            flush_count = 0
+        else:
+            print(sig, P(G), flush=False)
+            flush_count += 1

@@ -40,31 +40,11 @@ async fn create_db_test() {
 }
 
 #[tokio::test]
-async fn add_table_test() {
-    let mut test =
-        GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(MEMORY_DB_URL, None)
+async fn print_all_db_table_test() {
+    let test =
+        GraphDatabase::<SqliteGraphDatabase>::connect_create_graph_database(MEMORY_DB_URL, None)
             .await
             .unwrap();
-
-    // test.close_connection().await;
-
-    test.add_canonical_table()
-        .await
-        .expect("It should not fail");
-    test.add_canonical_table()
-        .await
-        .expect("It should not fail");
-
-    test.print_all_tables().await.unwrap();
-
-    // AnyPool::connect(PHYSICAL_DB_URL).await.expect("db exists").
-}
-
-#[tokio::test]
-async fn print_all_db_table_test() {
-    let test = GraphDatabase::<SqliteGraphDatabase>::connect_graph_database(PHYSICAL_DB_URL, None)
-        .await
-        .unwrap();
 
     test.print_all_tables().await.expect("No errors");
 }

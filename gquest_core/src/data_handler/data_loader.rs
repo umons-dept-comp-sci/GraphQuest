@@ -57,6 +57,7 @@ impl GengProcess {
         let call_res = match Command::new("geng")
             .args(args)
             .arg("-q")
+            .arg("-l") // Canonical form
             .stdout(Stdio::piped())
             .spawn()
         {

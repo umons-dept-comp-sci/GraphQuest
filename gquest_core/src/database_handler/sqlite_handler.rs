@@ -20,11 +20,26 @@ impl DbQuerySystem for SqliteGraphDatabase {
         todo!()
     }
 
-    fn get_insert_into_query(
-        _table_name: String,
-        _signatures_values: &[(String, String)],
-    ) -> String {
-        todo!()
+    fn get_insert_into_query(nb_rows: usize, nb_value: usize) -> String {
+        let mut query = "INSERT OR REPLACE INTO $ VALUES ".to_string();
+
+        for _ in 0..nb_value {
+            let mut line = "(".to_string();
+            for _ in 0..nb_rows {
+                line.push_str("?, ");
+            }
+            // Remove extra `, `
+            line.pop();
+            line.pop();
+            line.push_str("), ");
+            query.push_str(&line);
+        }
+        // Remove extra `, `
+        query.pop();
+        query.pop();
+        query.push(';');
+
+        query
     }
 
     fn get_join_table_query(_table_names: Vec<String>, _common_column_name: String) -> String {

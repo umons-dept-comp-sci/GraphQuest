@@ -17,38 +17,38 @@ pub enum GraphDatabaseError {
     },
     #[error("The given table name does not exist \"{table_name}\"")]
     TableNotFoundError { table_name: String },
-    #[error("The given table was already created: \"{table_name:?}\"")]
-    TableAlreadyCreatedError { table_name: Option<String> },
+    #[error("A table was already created: \"{0}\"")]
+    TableAlreadyCreatedError(sqlx::Error),
     #[error("The following action is forbidden: \"{action}\"")]
     ForbiddenActionError { action: String },
-    #[error("An unknown error happened with the following message: \"{error_message}\"")]
-    UnknownError { error_message: String },
-    #[error(
-        "An error happened when trying to execute the query \"{query}\" : \"{error_message}\""
-    )]
-    QueryError {
-        query: String,
-        error_message: String,
-    },
+    #[error("An unknown error happened with the following message: \"{0}\"")]
+    UnknownError(#[from] sqlx::Error),
+    #[error("An error happened when trying to execute a query : \"{0}\"")]
+    QueryError(sqlx::Error),
 }
 
 pub fn sqlx_error_to_db_error(e: sqlx::Error) -> GraphDatabaseError {
-    match e {
+    match &e {
         sqlx::Error::Database(database_error) => match database_error.kind() {
             sqlx::error::ErrorKind::UniqueViolation => todo!(),
             sqlx::error::ErrorKind::ForeignKeyViolation => todo!(),
             sqlx::error::ErrorKind::NotNullViolation => todo!(),
             sqlx::error::ErrorKind::CheckViolation => todo!(),
             sqlx::error::ErrorKind::Other => {
-                GraphDatabaseError::TableAlreadyCreatedError { table_name: None }
+                let e_str = e.to_string();
+                if e_str.contains("table") && e_str.contains("already exists") {
+                    GraphDatabaseError::TableAlreadyCreatedError(e)
+                } else if e_str.contains("syntax") {
+                    GraphDatabaseError::QueryError(e)
+                } else {
+                    e.into()
+                }
             }
             _ => todo!(),
         },
         _ => {
             error!("Sqlx error not handled : {}", e);
-            GraphDatabaseError::UnknownError {
-                error_message: e.to_string(),
-            }
+            e.into()
         }
     }
 }

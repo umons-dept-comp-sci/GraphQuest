@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::invariant_execs::ExecutableSorter,
-    database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels},
-    utils::config_file::ConfigFile,
+    data_handler::data_loader::GengProcess, database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels}, utils::config_file::ConfigFile
 };
 use log::*;
 
@@ -21,20 +19,18 @@ async fn main() {
     });
 
     // Create (or connects) to the given database url.
-    let db =
+    let mut db =
         GraphDatabase::<SqliteGraphDatabase>::connect_create_graph_database(DB_URL, log_levels)
             .await
             .expect("Database to be okay");
 
-    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    let _config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
+    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
 
-    let man = sorter.group_execs().expect("good manager");
-    println!("{man}");
-
-    // let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    // let db_clone = db.clone();
+    db.add_to_dataset(geng.get_reader(), 10000).await.expect("correct");
+    
+    db.print_all_tables().await.expect("good");
 
     db.close_connection().await;
     info!("Program ends");
@@ -48,3 +44,14 @@ pub fn startup_log() {
         .format_timestamp(None)
         .init();
 }
+
+/*
+
+let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
+
+let man = sorter.group_execs().expect("good manager");
+println!("{man}");
+
+let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
+
+*/

@@ -12,7 +12,7 @@ use std::{
 use thiserror::Error;
 use topo_sort::TopoSort;
 
-const MAX_STDIN_SIZE: usize = 10;
+const MAX_STDIN_SIZE: usize = 40;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
