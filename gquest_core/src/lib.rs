@@ -11,3 +11,5 @@ pub mod data_handler {
 }
 
 pub mod database_handler;
+
+pub mod workplace;

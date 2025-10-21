@@ -168,13 +168,15 @@ impl InvariantsExecutable {
     /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
     /// # Errrors
     /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
-    pub async fn execute_invariant<T>(
+    pub async fn execute_invariant<T, F, E>(
         &self,
-        input_buffer: impl BufRead,
-        output_function: &mut T,
+        // input_buffer: impl BufRead,
+        input_function: &mut T,
+        output_function: &mut F,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut(String),
+        T: AsyncFnMut() -> Option<Result<String, E>>,
+        F: AsyncFnMut(String),
     {
         debug!("Start executable : {}", self.exec_path.display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
@@ -188,38 +190,47 @@ impl InvariantsExecutable {
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
-
-        // This block forces to close the opened stdin and stdout before
-        // waiting for the child process to exit.
-        // Otherwise a deadlock might appear
-        let mut stdin = call_res.stdin.take().expect("stdin to be open");
         let mut stdout = call_res.stdout.take().expect("stdout to be open");
 
         // let value_to_send
 
         let mut waiting_in_stdin = 0;
-        // For every value to send
-        for val in input_buffer.lines().map_while(Result::ok) {
-            // Check if the child closed or not during the execution
-            self.check_child_state(&mut call_res, &mut stderr)?;
+        // This block is simply to force the stdin to close by it going out of scope
+        {
+            let mut stdin = call_res.stdin.take().expect("stdin to be open");
+            // For every value to send
+            // for val in input_buffer.lines().map_while(Result::ok) {
+            // FIXME: Check if val is an error
+            while let Some(Ok(val)) = input_function().await {
+                // Check if the child closed or not during the execution
+                self.check_child_state(&mut call_res, &mut stderr)?;
 
-            // Push this value to content
-            debug!("Wrote to child stdin: {val}");
-            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
-            waiting_in_stdin += 1;
+                // Push this value to content
+                debug!("Wrote to child stdin: {val}");
+                self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+                waiting_in_stdin += 1;
 
-            // Send value to buffer
-            if waiting_in_stdin >= MAX_STDIN_SIZE {
-                self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)
+                // Send value to buffer
+                if waiting_in_stdin >= MAX_STDIN_SIZE {
+                    self.flush_wait_output(
+                        waiting_in_stdin,
+                        output_function,
+                        &mut stdin,
+                        &mut stdout,
+                    )
                     .await?;
-                waiting_in_stdin = 0;
+                    waiting_in_stdin = 0;
+                }
             }
+            // Flush the stdin one last time
+            self.exec_stdin_io_call(&mut || stdin.flush())?;
         }
         // If there are still data to send
         if waiting_in_stdin > 0 {
-            self.flush_wait_output(waiting_in_stdin, output_function, &mut stdin, &mut stdout)
+            self.wait_output(waiting_in_stdin, output_function, &mut stdout)
                 .await?;
         }
+
         debug!("Finished child execution : {}", self.exec_path.display());
         // Check if the child closed or not during the execution
         self.check_child_state(&mut call_res, &mut stderr)?;
@@ -237,9 +248,23 @@ impl InvariantsExecutable {
     where
         T: AsyncFnMut(String),
     {
-        debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
+        debug!("Flusing stdin");
         self.exec_stdin_io_call(&mut || stdin.flush())?;
 
+        self.wait_output(sent_in_stdin, output_function, stdout)
+            .await
+    }
+
+    async fn wait_output<T>(
+        &self,
+        sent_in_stdin: usize,
+        output_function: &mut T,
+        stdout: &mut ChildStdout,
+    ) -> Result<(), InvariantExecutionError>
+    where
+        T: AsyncFnMut(String),
+    {
+        debug!("Waiting for {sent_in_stdin} responses");
         // A buffer helps us to not read all lines at the time but as a flow of data.
         let child_output = BufReader::new(stdout);
 
@@ -333,6 +358,17 @@ impl ExecutableSorter {
                 .insert(name.to_string(), inv.exec_path.clone());
         }
         self.path_exec_hashmap.insert(inv.exec_path.clone(), inv);
+        Ok(())
+    }
+
+    /// Adds multiple invariant executables to the sorter.
+    pub fn add_inv_execs(
+        &mut self,
+        execs: Vec<InvariantsExecutable>,
+    ) -> Result<(), InvariantError> {
+        for inv in execs {
+            self.add_inv_exec(inv)?;
+        }
         Ok(())
     }
 
@@ -523,6 +559,10 @@ pub struct ExecutableManager {
 impl ExecutableManager {
     pub fn get_groups(&self) -> &Vec<Vec<InvariantsExecutable>> {
         &self.groups
+    }
+
+    pub fn as_vec(self) -> Vec<Vec<InvariantsExecutable>> {
+        self.groups
     }
 }
 

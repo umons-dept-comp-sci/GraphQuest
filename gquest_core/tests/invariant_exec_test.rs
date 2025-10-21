@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{BufRead, Read};
 
 use gquest_core::data_handler::{
     data_loader::GengProcess,
@@ -23,9 +23,10 @@ async fn execute_correct_inv() {
     let expected_res: Vec<&str> = res.split_ascii_whitespace().collect();
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let mut reader = geng.get_reader().lines();
     let mut actual_res: Vec<String> = vec![];
     identity
-        .execute_invariant(geng.get_reader(), &mut async |s| {
+        .execute_invariant(&mut async || reader.next(), &mut async |s| {
             actual_res.push(s);
         })
         .await
@@ -41,9 +42,9 @@ async fn execute_crash_before() {
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-
+    let mut reader = geng.get_reader().lines();
     let error = identity
-        .execute_invariant(geng.get_reader(), &mut async |_| {})
+        .execute_invariant(&mut async || reader.next(), &mut async |_| {})
         .await;
 
     assert!(matches!(
@@ -59,9 +60,9 @@ async fn execute_crash_during() {
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-
+    let mut reader = geng.get_reader().lines();
     let error = identity
-        .execute_invariant(geng.get_reader(), &mut async |_| {})
+        .execute_invariant(&mut async || reader.next(), &mut async |_| {})
         .await;
 
     assert!(matches!(
