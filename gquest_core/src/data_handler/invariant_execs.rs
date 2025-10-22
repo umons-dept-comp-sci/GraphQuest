@@ -193,38 +193,37 @@ impl InvariantsExecutable {
         // This block forces to close the opened stdin and stdout before
         // waiting for the child process to exit.
         // Otherwise a deadlock might appear
-        let mut stdin = call_res.stdin.take().expect("stdin to be open");
         let mut stdout = call_res.stdout.take().expect("stdout to be open");
-
-        // let value_to_send
-
+        
         let mut waiting_in_stdin = 0;
-        // For every value to send
-        while let Some(Ok(val)) = input_function().await {
-            // Check if the child closed or not during the execution
-            self.check_child_state(&mut call_res, &mut stderr)?;
+        {
+            let mut stdin = call_res.stdin.take().expect("stdin to be open");
+            // For every value to send
+            while let Some(Ok(val)) = input_function().await {
+                // Check if the child closed or not during the execution
+                self.check_child_state(&mut call_res, &mut stderr)?;
 
-            // Push this value to content
-            debug!("Wrote to child stdin: {val}");
-            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
-            waiting_in_stdin += 1;
+                // Push this value to content
+                debug!("Wrote to child stdin: {val}");
+                self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+                waiting_in_stdin += 1;
 
-            // Send value to buffer
-            if waiting_in_stdin >= MAX_STDIN_SIZE {
-                self.exec_stdin_io_call(&mut || stdin.flush())?;
-                self.flush_wait_output(
-                    &mut call_res,
-                    waiting_in_stdin,
-                    output_function,
-                    &mut stdout,
-                    &mut stderr,
-                )
-                .await?;
-                waiting_in_stdin = 0;
+                // Send value to buffer
+                if waiting_in_stdin >= MAX_STDIN_SIZE {
+                    self.exec_stdin_io_call(&mut || stdin.flush())?;
+                    self.flush_wait_output(
+                        &mut call_res,
+                        waiting_in_stdin,
+                        output_function,
+                        &mut stdout,
+                        &mut stderr,
+                    )
+                    .await?;
+                    waiting_in_stdin = 0;
+                }
             }
+            self.exec_stdin_io_call(&mut || stdin.flush())?;
         }
-
-        self.exec_stdin_io_call(&mut || stdin.flush())?;
         // If there are still data to send
         if waiting_in_stdin > 0 {
             self.flush_wait_output(
@@ -278,7 +277,11 @@ impl InvariantsExecutable {
         // If the stdout finished *before* receiving all the values sent
         // then it means the child probably crashed.
         if received != sent_in_stdin {
-            self.check_child_state(child, stderr)
+            // We loop multiple time because sometimes the stdin closes before the program
+            // has actually the time to write to the stderr and close itself
+            loop {
+                self.check_child_state(child, stderr)?
+            }
         } else {
             Ok(())
         }
