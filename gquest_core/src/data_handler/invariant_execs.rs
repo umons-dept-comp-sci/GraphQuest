@@ -189,13 +189,13 @@ impl InvariantsExecutable {
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
-
-        // This block forces to close the opened stdin and stdout before
-        // waiting for the child process to exit.
-        // Otherwise a deadlock might appear
         let mut stdout = call_res.stdout.take().expect("stdout to be open");
-        
+
         let mut waiting_in_stdin = 0;
+
+        // This block forces to close the opened stdin before
+        // waiting for the child process to exit.
+        // Otherwise a deadlock might appear because the child didn't flush in time.
         {
             let mut stdin = call_res.stdin.take().expect("stdin to be open");
             // For every value to send
@@ -530,11 +530,9 @@ impl ExecDepStore {
     }
 }
 
-// FIXME: Add more information to this doc
 /// This structs holds a [`Vec<Vec<InvariantsExecutable>>`],
 /// * with the outer vector representing a topological sort
-/// * the middle vector containing a vector of executable that could be executed simultaneously.
-/// * and the inner vector grouping invariants that have the same dependencies.
+/// * and the middle vector containing a vector of executable that could be executed simultaneously.
 ///  
 /// # Explanation using an example
 /// Syntax :
@@ -550,12 +548,6 @@ impl ExecDepStore {
 /// But since they don't all depend on each others and sometimes have the same dependencies, we could execute multiple ones at the same time like
 /// **E** and **B**, **A** and **D**. So the order of execution could be
 /// * `[E, B] => [A, D] => [C]`
-///
-/// Meaning we now have 3 execution groups, but we also have to think about the max number of process allowed `m`.
-/// If `m = 1` then we would have the following execution order
-/// * `[ [E] => [B] ] => [ [A] => [D] ] => [ [C] ]`
-///
-/// Which is the orginal topological order.
 #[derive(Debug, Clone, Default)]
 pub struct ExecutableManager {
     groups: Vec<Vec<InvariantsExecutable>>,

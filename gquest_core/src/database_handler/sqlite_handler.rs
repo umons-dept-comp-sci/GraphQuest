@@ -8,20 +8,29 @@ impl DbQuerySystem for SqliteGraphDatabase {
         "SELECT name FROM sqlite_master WHERE type='table';".to_string()
     }
 
-    fn get_create_table_query(pk_column_type: ColumnType, value_column_type: ColumnType) -> String {
+    fn get_create_table_query(
+        table_name: impl ToString,
+        pk_column_name: impl ToString,
+        pk_column_type: ColumnType,
+        value_column_name: impl ToString,
+        value_column_type: ColumnType,
+    ) -> String {
         format!(
-            "CREATE TABLE $ ($ {} PRIMARY KEY NOT NULL, $ {})",
+            "CREATE TABLE {} ({} {} PRIMARY KEY NOT NULL, {} {})",
+            table_name.to_string(),
+            pk_column_name.to_string(),
             translate_column(pk_column_type),
+            value_column_name.to_string(),
             translate_column(value_column_type)
         )
     }
 
-    fn get_delete_table_query(_table_name: String) -> String {
-        todo!()
+    fn get_delete_table_query() -> String {
+        "DROP TABLE $".to_string()
     }
 
-    fn get_insert_into_query(nb_rows: usize, nb_value: usize) -> String {
-        let mut query = "INSERT OR REPLACE INTO $ VALUES ".to_string();
+    fn get_insert_into_query(table_name: impl ToString, nb_rows: usize, nb_value: usize) -> String {
+        let mut query = format!("INSERT OR REPLACE INTO {} VALUES ", table_name.to_string());
 
         for _ in 0..nb_value {
             let mut line = "(".to_string();
@@ -42,24 +51,63 @@ impl DbQuerySystem for SqliteGraphDatabase {
         query
     }
 
-    fn get_join_table_query(_table_names: Vec<String>, _common_column_name: String) -> String {
-        todo!()
+    fn get_join_table_query(
+        table_names: Vec<impl ToString>,
+        common_column_name: impl ToString,
+    ) -> String {
+        let mut table_name_iterator = table_names.into_iter();
+        let mut res = format!(
+            "SELECT * FROM ({})",
+            table_name_iterator
+                .next()
+                .expect("at least one val")
+                .to_string()
+        );
+        for table_name in table_name_iterator {
+            res.push_str(
+                format!(
+                    " INNER JOIN {} USING ({})",
+                    table_name.to_string(),
+                    common_column_name.to_string()
+                )
+                .as_str(),
+            );
+        }
+
+        res
     }
 
-    fn get_all_rows_from_table_column(_table_name: String, _column_name: String) -> String {
-        todo!()
+    fn get_all_rows_from_table_column(
+        table_name: impl ToString,
+        column_name: impl ToString,
+    ) -> String {
+        format!(
+            "SELECT {} FROM {}",
+            table_name.to_string(),
+            column_name.to_string()
+        )
     }
 
     fn get_select_batch_from(
-        _from_table: String,
-        _start_index: Option<usize>,
-        _limit: Option<usize>,
+        from_table: String,
+        start_index: Option<usize>,
+        limit: Option<usize>,
     ) -> String {
-        todo!()
+        let start = start_index.unwrap_or(0);
+
+        let mut res = format!("SELECT * FROM ({from_table})");
+
+        if let Some(length) = limit {
+            res.push_str(&format!(" LIMIT {length}"));
+        }
+
+        res.push_str(&format!(" OFFSET {start}"));
+
+        res
     }
 
-    fn get_all_from_table() -> String {
-        "select * from $;".to_string()
+    fn get_all_from_table(table_name: impl ToString) -> String {
+        format!("select * from {};", table_name.to_string())
     }
 }
 

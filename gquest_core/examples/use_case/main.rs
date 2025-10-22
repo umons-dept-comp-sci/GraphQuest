@@ -26,7 +26,7 @@ async fn main() {
 
     let _config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(8, &"".to_string(), (None, None)).expect("correct call");
 
     db.add_to_dataset(geng.get_reader(), 10000).await.expect("correct");
     

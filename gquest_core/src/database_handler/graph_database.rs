@@ -171,14 +171,14 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 
         let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDatabaseError> {
             // Get insert query
-            let query_str = T::get_insert_into_query(2, batch_size);
-            let safe_query = create_safe_query(query_str, [CANONICAL_TABLE_NAME].into(), vec)?;
+            let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+            let safe_query = create_safe_query(query_str, vec)?;
             self.execute_query_no_return(safe_query).await?;
             Ok(())
         };
 
         let mut data_batch = vec![];
-        
+
         for canonical_form in reader.lines().map_while(Result::ok) {
             let value = get_nb_vertices(&canonical_form);
             data_batch.push(canonical_form);
@@ -217,10 +217,9 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         table_name: String,
         apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDatabaseError>,
     ) -> Result<(), GraphDatabaseError> {
-        let query_str = T::get_all_from_table();
+        let query_str = T::get_all_from_table(table_name);
 
-        let mut builder =
-            create_safe_query(query_str, [table_name].to_vec(), Vec::<String>::new())?;
+        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
 
         // Execute query :
         let mut results = builder.build().fetch(&self.pool);
@@ -260,19 +259,21 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 
     pub async fn add_table(
         &mut self,
-        table_name: impl Into<String>,
-        pk_name: impl Into<String>,
+        table_name: impl ToString,
+        pk_name: impl ToString,
         pk_column_type: ColumnType,
-        value_name: impl Into<String>,
+        value_name: impl ToString,
         value_column_type: ColumnType,
     ) -> Result<(), GraphDatabaseError> {
-        let query_str = T::get_create_table_query(pk_column_type, value_column_type);
-        let mut builder = create_safe_query(
-            query_str,
-            [table_name.into(), pk_name.into(), value_name.into()].to_vec(),
-            Vec::<String>::new(),
-        )
-        .expect("all identifier present");
+        let query_str = T::get_create_table_query(
+            table_name,
+            pk_name,
+            pk_column_type,
+            value_name,
+            value_column_type,
+        );
+
+        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
 
         match builder.build().execute(&self.pool).await {
             Ok(v) => {
@@ -299,11 +300,9 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 // Will panic if there are more or less identifier/argument symbols than the given number.
 fn create_safe_query(
     query_str: String,
-    identifiers: Vec<impl ToString>,
     arguments: Vec<impl ToString>,
 ) -> Result<sqlx::QueryBuilder<'static, sqlx::Any>, GraphDatabaseError> {
     let mut builder = QueryBuilder::<sqlx::Any>::new("");
-    let mut identifiers = identifiers.iter();
     let mut arguments = arguments.iter();
 
     for c in query_str.chars() {
@@ -311,16 +310,6 @@ fn create_safe_query(
             match arguments.next() {
                 Some(arg) => {
                     builder.push_bind::<String>(arg.to_string());
-                }
-                None => {
-                    todo!("error !")
-                }
-            }
-        } else if c == '$' {
-            match identifiers.next() {
-                Some(id) => {
-                    // We can trust that the identifiers are "safe" in this context
-                    builder.push(id.to_string());
                 }
                 None => {
                     todo!("error !")

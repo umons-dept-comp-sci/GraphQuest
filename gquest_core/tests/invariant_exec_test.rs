@@ -38,11 +38,8 @@ async fn execute_correct_inv() {
 
 #[tokio::test]
 async fn execute_late_inv() {
-    let identity = InvariantsExecutable::new_no_dep(
-        LATE_FLUSH_EXEC.to_string(),
-        ['x'].to_vec(),
-    )
-    .expect("correct inv");
+    let identity = InvariantsExecutable::new_no_dep(LATE_FLUSH_EXEC.to_string(), ['x'].to_vec())
+        .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
     let mut res: String = String::default();
@@ -61,7 +58,6 @@ async fn execute_late_inv() {
 
     assert_eq!(expected_res, actual_res);
 }
-
 
 #[tokio::test]
 async fn execute_crash_before() {
@@ -90,8 +86,7 @@ async fn execute_crash_during() {
     let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
     let mut reader = geng.get_reader().lines();
     let error = identity
-        .execute_invariant(&mut async || reader.next(), &mut async |_| {
-        })
+        .execute_invariant(&mut async || reader.next(), &mut async |_| {})
         .await;
 
     assert!(matches!(
