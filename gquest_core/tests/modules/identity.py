@@ -3,7 +3,7 @@
 import sys
 
 flush_count = 0
-max_flush_count = 100
+max_flush_count = 1
 
 if __name__ == "__main__":
     count = 1

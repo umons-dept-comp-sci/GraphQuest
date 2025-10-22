@@ -7,7 +7,7 @@ use std::{
     fmt::Display,
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStderr, ChildStdout, Command, Stdio},
 };
 use thiserror::Error;
 use topo_sort::TopoSort;
@@ -170,7 +170,6 @@ impl InvariantsExecutable {
     /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
     pub async fn execute_invariant<T, F, E>(
         &self,
-        // input_buffer: impl BufRead,
         input_function: &mut T,
         output_function: &mut F,
     ) -> Result<(), InvariantExecutionError>
@@ -190,48 +189,55 @@ impl InvariantsExecutable {
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
+
+        // This block forces to close the opened stdin and stdout before
+        // waiting for the child process to exit.
+        // Otherwise a deadlock might appear
+        let mut stdin = call_res.stdin.take().expect("stdin to be open");
         let mut stdout = call_res.stdout.take().expect("stdout to be open");
 
         // let value_to_send
 
         let mut waiting_in_stdin = 0;
-        // This block is simply to force the stdin to close by it going out of scope
-        {
-            let mut stdin = call_res.stdin.take().expect("stdin to be open");
-            // For every value to send
-            // for val in input_buffer.lines().map_while(Result::ok) {
-            // FIXME: Check if val is an error
-            while let Some(Ok(val)) = input_function().await {
-                // Check if the child closed or not during the execution
-                self.check_child_state(&mut call_res, &mut stderr)?;
+        // For every value to send
+        while let Some(Ok(val)) = input_function().await {
+            // Check if the child closed or not during the execution
+            self.check_child_state(&mut call_res, &mut stderr)?;
 
-                // Push this value to content
-                debug!("Wrote to child stdin: {val}");
-                self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
-                waiting_in_stdin += 1;
+            // Push this value to content
+            debug!("Wrote to child stdin: {val}");
+            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+            waiting_in_stdin += 1;
 
-                // Send value to buffer
-                if waiting_in_stdin >= MAX_STDIN_SIZE {
-                    self.flush_wait_output(
-                        waiting_in_stdin,
-                        output_function,
-                        &mut stdin,
-                        &mut stdout,
-                    )
-                    .await?;
-                    waiting_in_stdin = 0;
-                }
+            // Send value to buffer
+            if waiting_in_stdin >= MAX_STDIN_SIZE {
+                self.exec_stdin_io_call(&mut || stdin.flush())?;
+                self.flush_wait_output(
+                    &mut call_res,
+                    waiting_in_stdin,
+                    output_function,
+                    &mut stdout,
+                    &mut stderr,
+                )
+                .await?;
+                waiting_in_stdin = 0;
             }
-            // Flush the stdin one last time
-            self.exec_stdin_io_call(&mut || stdin.flush())?;
         }
+
+        self.exec_stdin_io_call(&mut || stdin.flush())?;
         // If there are still data to send
         if waiting_in_stdin > 0 {
-            self.wait_output(waiting_in_stdin, output_function, &mut stdout)
-                .await?;
+            self.flush_wait_output(
+                &mut call_res,
+                waiting_in_stdin,
+                output_function,
+                &mut stdout,
+                &mut stderr,
+            )
+            .await?;
         }
-
         debug!("Finished child execution : {}", self.exec_path.display());
+
         // Check if the child closed or not during the execution
         self.check_child_state(&mut call_res, &mut stderr)?;
 
@@ -240,46 +246,42 @@ impl InvariantsExecutable {
 
     async fn flush_wait_output<T>(
         &self,
+        child: &mut Child,
         sent_in_stdin: usize,
         output_function: &mut T,
-        stdin: &mut ChildStdin,
         stdout: &mut ChildStdout,
+        stderr: &mut ChildStderr,
     ) -> Result<(), InvariantExecutionError>
     where
         T: AsyncFnMut(String),
     {
-        debug!("Flusing stdin");
-        self.exec_stdin_io_call(&mut || stdin.flush())?;
+        debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
 
-        self.wait_output(sent_in_stdin, output_function, stdout)
-            .await
-    }
-
-    async fn wait_output<T>(
-        &self,
-        sent_in_stdin: usize,
-        output_function: &mut T,
-        stdout: &mut ChildStdout,
-    ) -> Result<(), InvariantExecutionError>
-    where
-        T: AsyncFnMut(String),
-    {
-        debug!("Waiting for {sent_in_stdin} responses");
         // A buffer helps us to not read all lines at the time but as a flow of data.
         let child_output = BufReader::new(stdout);
 
-        for (count, response) in child_output.lines().enumerate() {
+        let mut received = 0;
+
+        for response in child_output.lines() {
             debug!("Received : {response:?}");
             // We are waiting for the exact number of data sent to be sent back to us.
             if let Ok(s) = response {
                 output_function(s).await;
             }
-            if count == sent_in_stdin - 1 {
+
+            received += 1;
+            if received == sent_in_stdin {
                 break;
             }
         }
         debug!("Finished waiting");
-        Ok(())
+        // If the stdout finished *before* receiving all the values sent
+        // then it means the child probably crashed.
+        if received != sent_in_stdin {
+            self.check_child_state(child, stderr)
+        } else {
+            Ok(())
+        }
     }
 
     /// Checks if the child is closed or not.

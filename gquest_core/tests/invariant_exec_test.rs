@@ -59,7 +59,7 @@ async fn execute_crash_during() {
         InvariantsExecutable::new_no_dep(CRASH_DURING_EXEC.to_string(), ['x'.to_string()].to_vec())
             .expect("correct inv");
 
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
     let mut reader = geng.get_reader().lines();
     let error = identity
         .execute_invariant(&mut async || reader.next(), &mut async |_| {})
