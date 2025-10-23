@@ -56,6 +56,9 @@ pub trait DbQuerySystem: Debug {
         column_name: impl ToString,
     ) -> String;
 
+    /// Get a query that can be used to retrieve the number of rows from the given table
+    fn get_nb_rows_from_table(table_name: impl ToString) -> String;
+
     /// Get a query that can be used to select a batch from a given table.
     /// ## Args
     /// * `start_index` : The index of the table to start fetching the data at
@@ -67,4 +70,8 @@ pub trait DbQuerySystem: Debug {
         start_index: Option<usize>,
         limit: Option<usize>,
     ) -> String;
+
+    /// Checks if the given table is present inside a database.
+    /// Returns true (or 1) if the table is present, false (or 0) otherwise.
+    fn get_is_table_present(table_name: impl ToString) -> String;
 }

@@ -88,6 +88,10 @@ impl DbQuerySystem for SqliteGraphDatabase {
         )
     }
 
+    fn get_nb_rows_from_table(table_name: impl ToString) -> String {
+        format!("SELECT count(*) FROM {};", table_name.to_string())
+    }
+
     fn get_select_batch_from(
         from_table: String,
         start_index: Option<usize>,
@@ -108,6 +112,13 @@ impl DbQuerySystem for SqliteGraphDatabase {
 
     fn get_all_from_table(table_name: impl ToString) -> String {
         format!("select * from {};", table_name.to_string())
+    }
+
+    fn get_is_table_present(table_name: impl ToString) -> String {
+        format!(
+            "SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';",
+            table_name.to_string()
+        )
     }
 }
 

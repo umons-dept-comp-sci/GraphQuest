@@ -34,18 +34,28 @@ Topological sort
 
 
 
+#### Batches :
+
+At the end of a batch the following keyword will be sent :
+
+```bash
+flush
+```
+
+This means that the program should flush its output when receiving this value in order to **not** deadlock the main program.
+
 #### End :
 When all the data was sent by $\texttt{gquest}$, it will close the *stdin* linking it to the child program.
 
 
 ### Outputs :
 
-
-<!-- > [!WARNING]
-> Do not forget to often flush the stdout, otherwise a *deadlock* might arise because $\texttt{gquest}$ will wait for data that will never be accessible.
+<!-- 
+> [!WARNING]
+> Do not forget to often flush the stdout, otherwise a *deadlock* might arise because $\texttt{gquest}$ will wait for data that will never be accessible. -->
 
 > [!TIP]
-> Let $n$ the total number of lines of data sent, flush the stdout, after writing $m$ lines (with $m \leq n$). -->
+> Let $n$ the total number of lines of data sent, flush the stdout, after writing $m$ lines (with $m \leq n$).
 
 
 While running, if the program needs the value from another (already) computed invariant then instead of writing the previously mentionned format in it's stdout, it can return :

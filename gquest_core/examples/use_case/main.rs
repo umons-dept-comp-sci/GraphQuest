@@ -32,6 +32,8 @@ async fn main() {
     
     db.print_all_tables().await.expect("good");
 
+    println!("{:?}", db.get_size_of_table("Dataset").await);
+
     db.close_connection().await;
     info!("Program ends");
 }

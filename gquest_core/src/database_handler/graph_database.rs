@@ -212,6 +212,32 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         Ok(results.iter().map(|(val,)| val.to_string()).collect())
     }
 
+    /// TODO: Add unit test
+    pub async fn is_table_added(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<bool, GraphDatabaseError> {
+        let query_str = T::get_is_table_present(table_name);
+        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
+        let res: Result<i16, sqlx::Error> =
+            builder.build_query_scalar().fetch_one(&self.pool).await;
+
+        match res {
+            Ok(val) => Ok(val == 1),
+            Err(e) => Err(database_error::sqlx_error_to_db_error(e)),
+        }
+    }
+
+    /// TODO: Add unit test
+    pub async fn get_size_of_table(&self, table_name: &str) -> Result<usize, GraphDatabaseError> {
+        let query_str = T::get_nb_rows_from_table(table_name);
+
+        let res: Result<i64, sqlx::Error> =
+            sqlx::query_scalar(&query_str).fetch_one(&self.pool).await;
+
+        Ok(res? as usize)
+    }
+
     async fn for_each_row(
         &self,
         table_name: String,
