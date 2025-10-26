@@ -2,19 +2,20 @@ use thiserror::Error;
 
 use crate::{
     data_handler::invariant_execs::{ExecutableSorter, InvariantError, InvariantsExecutable},
-    database_handler::{DbQuerySystem, GraphDatabase, GraphDatabaseError},
+    database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError},
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
 
 #[derive(Debug, Error)]
 pub enum WorkplaceError {
     #[error("Encountered an error from the database : \"{0}\"")]
-    GraphDatabaseError(#[from] GraphDatabaseError),
+    GraphDatabaseError(#[from] GraphDbRuntimeError),
     #[error("Encountered an error from an invariant executable : \"{0}\"")]
     InvariantError(#[from] InvariantError),
 }
 
 pub struct Workplace<T: DbQuerySystem> {
+    _name: Option<String>,
     db: GraphDatabase<T>,
     execs: Vec<InvariantsExecutable>,
     _nb_threads: usize,

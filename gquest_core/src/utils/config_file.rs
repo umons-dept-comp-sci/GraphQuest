@@ -33,6 +33,12 @@ struct ExecutableJson {
 /// Private struct simply used to not directly create a config file.
 #[derive(Serialize, Deserialize)]
 struct ConfigJsonFile {
+    /// The optional name of the workplace
+    name: Option<String>,
+
+    /// The number of data being sent between the executables and the databases
+    batch_size: Option<usize>,
+
     /// The list of executables that should be executed by the program.
     executables: Vec<ExecutableJson>,
 }

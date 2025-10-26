@@ -1,9 +1,8 @@
-use gquest_core::database_handler::{GraphDatabase, GraphDatabaseError, SqliteGraphDatabase};
+use gquest_core::database_handler::{GraphDatabase, GraphDbStartupError, SqliteGraphDatabase};
 use sqlx::migrate::MigrateDatabase;
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
-// const FUNNY: &str = "sqlite:/home/axel/Téléchargements/chinook.db";
 
 const BAD_DB_URL: &str = "sqlite::bad_url";
 
@@ -32,7 +31,7 @@ async fn create_db_test() {
     // Already exists
     assert!(matches!(
         GraphDatabase::<SqliteGraphDatabase>::create_graph_database(PHYSICAL_DB_URL, None).await,
-        Err(GraphDatabaseError::DatabaseAlreadyCreated { .. })
+        Err(GraphDbStartupError::DatabaseAlreadyCreated { .. })
     ));
 
     // Drop the created db

@@ -12,8 +12,8 @@ pub const METADATA_TABLE_NAME: &str = "Metadata";
 pub const METADATA_PK_NAME: &str = "table_name";
 /// The name of the second column of the metadata table
 pub const METADATA_VALUE_NAME: &str = "stopped_at";
-// The name of the column in an invariant table where the values are stored
-//pub const INVARIANT_COLUMN_NAME : &str = "value";
+/// The name of the column in an invariant table where the values are stored
+pub const INVARIANT_COLUMN_NAME: &str = "value";
 /// The name of the table that has all the data
 pub const FULL_TABLE_NAME: &str = "AllInv";
 

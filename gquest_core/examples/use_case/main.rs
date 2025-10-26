@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::data_loader::GengProcess, database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels}, utils::config_file::ConfigFile
+    data_handler::data_loader::GengProcess,
+    database_handler::{GraphDatabase, SqliteGraphDatabase, SqlxLogLevels},
+    utils::config_file::ConfigFile,
 };
 use log::*;
 
@@ -24,12 +26,15 @@ async fn main() {
             .await
             .expect("Database to be okay");
 
-    let _config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    let _config =
+        ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
     let geng = GengProcess::call_geng(8, &"".to_string(), (None, None)).expect("correct call");
 
-    db.add_to_dataset(geng.get_reader(), 10000).await.expect("correct");
-    
+    db.add_to_dataset(geng.get_reader(), 10000)
+        .await
+        .expect("correct");
+
     db.print_all_tables().await.expect("good");
 
     println!("{:?}", db.get_size_of_table("Dataset").await);

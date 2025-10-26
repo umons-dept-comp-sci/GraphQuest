@@ -9,7 +9,7 @@ use sqlx::{
 use tokio_stream::StreamExt;
 
 use crate::{
-    database_handler::{database_error, DbQuerySystem, GraphDatabaseError, *},
+    database_handler::{database_error, DbQuerySystem, GraphDbRuntimeError, *},
     utils::table_handler::QueryTable,
 };
 
@@ -29,7 +29,7 @@ where
     T: DbQuerySystem,
 {
     pool: Pool<sqlx::Any>,
-    url: String,
+    _url: String,
     phantom_data: PhantomData<T>,
 }
 
@@ -45,7 +45,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn create_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
-    ) -> Result<Self, GraphDatabaseError> {
+    ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
 
@@ -56,15 +56,12 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                 Ok(_) => {
                     debug!("Success creating the database {}", db_url);
                 }
-                Err(error) => {
-                    return Err(GraphDatabaseError::DatabaseError {
-                        database_name: db_url.to_string(),
-                        reason: error.to_string(),
-                    });
+                Err(e) => {
+                    return Err(e.into());
                 }
             }
         } else {
-            return Err(GraphDatabaseError::DatabaseAlreadyCreated {
+            return Err(GraphDbStartupError::DatabaseAlreadyCreated {
                 database_name: db_url.to_string(),
             });
         }
@@ -74,15 +71,15 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 
     /// Creates the database that will be storing the project if no database exists with the given url.
     /// Otherwise, simply connects to it
-    /// Returns an in instance of a [GraphDatabase].
+    /// Returns an in instance of a [`GraphDatabase`].
     ///
     /// ## Errors
     ///
-    /// * [GraphDatabaseError::DatabaseError] if an unknown error was uncountered when trying to create/connect to it
+    /// * [`GraphDatabaseError::DatabaseError`] if an unknown error was uncountered when trying to create/connect to it
     pub async fn connect_create_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
-    ) -> Result<Self, GraphDatabaseError> {
+    ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
 
@@ -96,21 +93,21 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     }
 
     /// Connects to the given database.
-    /// Returns an in instance of a [GraphDatabase].
+    /// Returns an in instance of a [`GraphDatabase`].
     ///
     /// ## Errors
     ///
     /// Returns a:
-    /// *   [GraphDatabaseError::DatabaseError] if something went wrong during the connection.
+    /// *   [`GraphDatabaseError::DatabaseError`] if something went wrong during the connection.
     pub async fn connect_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
-    ) -> Result<Self, GraphDatabaseError> {
+    ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
         sqlx::any::install_default_drivers();
         Ok(GraphDatabase::<T> {
             // obs: None,
-            url: db_url.to_string(),
+            _url: db_url.to_string(),
             pool: {
                 let res = match connection_options {
                     Some(opt) => connect_with_options(db_url, opt).await,
@@ -118,12 +115,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                 };
                 match res {
                     Ok(p) => p,
-                    Err(e) => {
-                        return Err(GraphDatabaseError::DatabaseError {
-                            database_name: db_url.to_string(),
-                            reason: e.to_string(),
-                        })
-                    }
+                    Err(e) => return Err(e.into()),
                 }
             },
             phantom_data: PhantomData,
@@ -152,121 +144,11 @@ async fn connect_with_options(
     AnyPool::connect_with(connect_opt).await
 }
 
-// ______________________ DB WRITING ____________
+// ______________________ ADD TABLES ____________
 
 impl<T: DbQuerySystem> GraphDatabase<T> {
-    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
-    /// Will not crash if a signature was already added previously.
-    pub async fn add_to_dataset(
-        &mut self,
-        reader: impl BufRead,
-        batch_size: usize,
-    ) -> Result<(), GraphDatabaseError> {
-        // Add dataset table if not already created
-        let res = self.add_canonical_table().await;
-        match &res {
-            Ok(_) | Err(GraphDatabaseError::TableAlreadyCreatedError(_)) => {}
-            _ => res?,
-        }
-
-        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDatabaseError> {
-            // Get insert query
-            let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
-            let safe_query = create_safe_query(query_str, vec)?;
-            self.execute_query_no_return(safe_query).await?;
-            Ok(())
-        };
-
-        let mut data_batch = vec![];
-
-        for canonical_form in reader.lines().map_while(Result::ok) {
-            let value = get_nb_vertices(&canonical_form);
-            data_batch.push(canonical_form);
-            data_batch.push(value.to_string());
-
-            if data_batch.len() / 2 >= batch_size {
-                push_to_db(data_batch, batch_size).await?;
-                data_batch = vec![];
-            }
-        }
-        if !data_batch.is_empty() {
-            let data_left = data_batch.len() / 2;
-            push_to_db(data_batch, data_left).await?;
-        }
-
-        Ok(())
-    }
-}
-
-// ______________________ UTILS ______________________
-
-impl<T: DbQuerySystem> GraphDatabase<T> {
-    pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDatabaseError> {
-        let query_str = T::get_all_tables_query();
-
-        let results: Vec<(String,)> = sqlx::query_as(&query_str)
-            .fetch_all(&self.pool)
-            .await
-            .expect("no crash");
-
-        Ok(results.iter().map(|(val,)| val.to_string()).collect())
-    }
-
-    /// TODO: Add unit test
-    pub async fn is_table_added(
-        &self,
-        table_name: impl ToString,
-    ) -> Result<bool, GraphDatabaseError> {
-        let query_str = T::get_is_table_present(table_name);
-        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
-        let res: Result<i16, sqlx::Error> =
-            builder.build_query_scalar().fetch_one(&self.pool).await;
-
-        match res {
-            Ok(val) => Ok(val == 1),
-            Err(e) => Err(database_error::sqlx_error_to_db_error(e)),
-        }
-    }
-
-    /// TODO: Add unit test
-    pub async fn get_size_of_table(&self, table_name: &str) -> Result<usize, GraphDatabaseError> {
-        let query_str = T::get_nb_rows_from_table(table_name);
-
-        let res: Result<i64, sqlx::Error> =
-            sqlx::query_scalar(&query_str).fetch_one(&self.pool).await;
-
-        Ok(res? as usize)
-    }
-
-    async fn for_each_row(
-        &self,
-        table_name: String,
-        apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDatabaseError>,
-    ) -> Result<(), GraphDatabaseError> {
-        let query_str = T::get_all_from_table(table_name);
-
-        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
-
-        // Execute query :
-        let mut results = builder.build().fetch(&self.pool);
-
-        while let Some(result_row) = results.next().await {
-            match result_row {
-                Ok(row) => apply_fn(row)?,
-                Err(e) => {
-                    return Err(GraphDatabaseError::DatabaseError {
-                        database_name: self.url.to_string(),
-                        reason: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Adds the canonical table to the database.
-    pub async fn add_canonical_table(&mut self) -> Result<(), GraphDatabaseError> {
+    pub async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
             CANONICAL_TABLE_NAME,
             PK_NAME,
@@ -283,6 +165,51 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         .await
     }
 
+    /// Adds a metadata table to the database that will be used to not recompute the [`FULL_TABLE_NAME`] table.
+    ///
+    /// ## Exemple of table
+    /// ```text
+    /// Metadata -> | table_name  | stopped_at |
+    ///             |-------------|------------|
+    ///             | InitDataset | 1500       |
+    ///             | Euler       | 753        |
+    ///             |            ...           |
+    /// ```
+    /// ## Exceptions
+    /// Returns:
+    /// * [`GraphDatabaseError`] if something went wrong with the query
+    async fn _add_meta_data_table(&mut self) -> Result<(), GraphDbRuntimeError> {
+        self.add_table(
+            METADATA_TABLE_NAME,
+            METADATA_PK_NAME,
+            ColumnType::String {
+                max_size: Some(TABLE_NAME_MAX_SIZE),
+                default_value: None,
+            },
+            METADATA_VALUE_NAME,
+            ColumnType::Integer {
+                default_value: Some(0),
+            },
+        )
+        .await
+    }
+
+    async fn _add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
+        self.add_table(
+            inv,
+            PK_NAME,
+            ColumnType::String {
+                max_size: Some(TABLE_NAME_MAX_SIZE),
+                default_value: None,
+            },
+            INVARIANT_COLUMN_NAME,
+            ColumnType::Integer {
+                default_value: None,
+            },
+        )
+        .await
+    }
+
     pub async fn add_table(
         &mut self,
         table_name: impl ToString,
@@ -290,7 +217,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         pk_column_type: ColumnType,
         value_name: impl ToString,
         value_column_type: ColumnType,
-    ) -> Result<(), GraphDatabaseError> {
+    ) -> Result<(), GraphDbRuntimeError> {
         let query_str = T::get_create_table_query(
             table_name,
             pk_name,
@@ -313,7 +240,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     async fn execute_query_no_return(
         &self,
         mut query: sqlx::QueryBuilder<'static, sqlx::Any>,
-    ) -> Result<(), GraphDatabaseError> {
+    ) -> Result<(), GraphDbRuntimeError> {
         let res = query.build().execute(&self.pool).await;
         if let Err(e) = res {
             Err(database_error::sqlx_error_to_db_error(e))
@@ -327,7 +254,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 fn create_safe_query(
     query_str: String,
     arguments: Vec<impl ToString>,
-) -> Result<sqlx::QueryBuilder<'static, sqlx::Any>, GraphDatabaseError> {
+) -> Result<sqlx::QueryBuilder<'static, sqlx::Any>, GraphDbRuntimeError> {
     let mut builder = QueryBuilder::<sqlx::Any>::new("");
     let mut arguments = arguments.iter();
 
@@ -364,7 +291,7 @@ fn get_nb_vertices(signature: &String) -> usize {
 }
 
 impl<T: DbQuerySystem> GraphDatabase<T> {
-    pub async fn print_all_tables(&self) -> Result<(), GraphDatabaseError> {
+    pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
         if tables.is_empty() {
@@ -418,6 +345,120 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
             .await?;
             if let Some(tab) = table_query {
                 println!("{tab}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
+    /// Will not crash if a signature was already added previously.
+    pub async fn add_to_dataset(
+        &mut self,
+        reader: impl BufRead,
+        batch_size: usize,
+    ) -> Result<(), GraphDbRuntimeError> {
+        // Add dataset table if not already created
+        let res = self.add_canonical_table().await;
+        match &res {
+            Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
+            _ => res?,
+        }
+
+        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
+            // Get insert query
+            let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+            let safe_query = create_safe_query(query_str, vec)?;
+            self.execute_query_no_return(safe_query).await?;
+            Ok(())
+        };
+
+        let mut data_batch = vec![];
+
+        for canonical_form in reader.lines().map_while(Result::ok) {
+            let value = get_nb_vertices(&canonical_form);
+            data_batch.push(canonical_form);
+            data_batch.push(value.to_string());
+
+            if data_batch.len() / 2 >= batch_size {
+                push_to_db(data_batch, batch_size).await?;
+                data_batch = vec![];
+            }
+        }
+        if !data_batch.is_empty() {
+            let data_left = data_batch.len() / 2;
+            push_to_db(data_batch, data_left).await?;
+        }
+
+        Ok(())
+    }
+}
+
+// ______________________ UTILS ______________________
+
+impl<T: DbQuerySystem> GraphDatabase<T> {
+    pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
+        let query_str = T::get_all_tables_query();
+
+        let results: Result<Vec<(String,)>, sqlx::Error> =
+            sqlx::query_as(&query_str).fetch_all(&self.pool).await;
+
+        match results {
+            Ok(val) => Ok(val.iter().map(|(val_str,)| val_str.to_string()).collect()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// TODO: Add unit test
+    pub async fn is_table_added(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<bool, GraphDbRuntimeError> {
+        let query_str = T::get_is_table_present(table_name);
+        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
+        let res: Result<i16, sqlx::Error> =
+            builder.build_query_scalar().fetch_one(&self.pool).await;
+
+        match res {
+            Ok(val) => Ok(val == 1),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// TODO: Add unit test
+    pub async fn get_size_of_table(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<usize, GraphDbRuntimeError> {
+        let query_str = T::get_nb_rows_from_table(table_name);
+
+        let res: Result<i64, sqlx::Error> =
+            sqlx::query_scalar(&query_str).fetch_one(&self.pool).await;
+
+        match res {
+            Ok(val) => Ok(val as usize),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn for_each_row(
+        &self,
+        table_name: String,
+        apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDbRuntimeError>,
+    ) -> Result<(), GraphDbRuntimeError> {
+        let query_str = T::get_all_from_table(table_name);
+
+        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
+
+        // Execute query :
+        let mut results = builder.build().fetch(&self.pool);
+
+        while let Some(result_row) = results.next().await {
+            match result_row {
+                Ok(row) => apply_fn(row)?,
+                Err(e) => {
+                    return Err(e.into());
+                }
             }
         }
 

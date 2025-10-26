@@ -72,6 +72,6 @@ pub trait DbQuerySystem: Debug {
     ) -> String;
 
     /// Checks if the given table is present inside a database.
-    /// Returns true (or 1) if the table is present, false (or 0) otherwise.
+    /// Returns 1 if the table is present, 0 otherwise.
     fn get_is_table_present(table_name: impl ToString) -> String;
 }
