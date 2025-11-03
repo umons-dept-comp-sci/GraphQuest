@@ -12,7 +12,6 @@ use std::{
 use thiserror::Error;
 use topo_sort::TopoSort;
 
-const MAX_STDIN_SIZE: usize = 40;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
@@ -23,6 +22,8 @@ pub enum InvariantExecutionError {
     FailedWriteStdin(io::Error, String),
     #[error("The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" ")]
     EarlyExit(String, String, String),
+    #[error("The executable \"{0}\" returned \"{1}\" values instead of \"{2}\"")]
+    UnexpectedOutput(String, usize, usize),
 }
 
 #[derive(Debug, Error)]
@@ -143,7 +144,7 @@ impl InvariantsExecutable {
 
         // and if the path doesn't lead to a file
         if let Ok(false) = inv_path.try_exists() {
-            // Try to turn it into an absol
+            // Try to turn it into an absolute path
             return Err(InvariantError::InvalidPath(inv_path.to_path_buf()));
         }
         if !inv_path.is_executable() {
@@ -172,10 +173,11 @@ impl InvariantsExecutable {
         &self,
         input_function: &mut T,
         output_function: &mut F,
+        batch_size: usize,
     ) -> Result<(), InvariantExecutionError>
     where
         T: AsyncFnMut() -> Option<Result<String, E>>,
-        F: AsyncFnMut(String),
+        F: AsyncFnMut(Vec<String>),
     {
         debug!("Start executable : {}", self.exec_path.display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
@@ -209,7 +211,7 @@ impl InvariantsExecutable {
                 waiting_in_stdin += 1;
 
                 // Send value to buffer
-                if waiting_in_stdin >= MAX_STDIN_SIZE {
+                if waiting_in_stdin >= batch_size {
                     self.exec_stdin_io_call(&mut || stdin.flush())?;
                     self.flush_wait_output(
                         &mut call_res,
@@ -252,7 +254,7 @@ impl InvariantsExecutable {
         stderr: &mut ChildStderr,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut(String),
+        T: AsyncFnMut(Vec<String>),
     {
         debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
 
@@ -265,7 +267,16 @@ impl InvariantsExecutable {
             debug!("Received : {response:?}");
             // We are waiting for the exact number of data sent to be sent back to us.
             if let Ok(s) = response {
-                output_function(s).await;
+                let vals: Vec<String> = s.split(' ').map(|v| v.to_string()).collect();
+                // Should return the signature and a value for each invariants
+                if vals.len() != self.invariant_names.len() + 1 {
+                    return Err(InvariantExecutionError::UnexpectedOutput(
+                        self.exec_path.display().to_string(),
+                        vals.len(),
+                        self.invariant_names.len() + 1,
+                    ));
+                }
+                output_function(vals).await;
             }
 
             received += 1;
@@ -429,6 +440,9 @@ impl ExecutableSorter {
         Ok(res)
     }
 
+    /// Consumes the sorter and turns it into an [`ExecutableManager`]
+    /// # Errors
+    /// See the [`ExecutableSorter::sort`] method. 
     pub fn group_execs(self) -> Result<ExecutableManager, InvariantError> {
         let sorted_execs = self.sort()?;
 
@@ -489,6 +503,7 @@ impl TryFrom<Vec<&InvariantsExecutable>> for ExecutableSorter {
 
 #[derive(Debug, Default)]
 /// Used to facilitate the creation of a [`ExecutableManager`] instance.
+/// Is not meant to be used for another purpuse.
 struct ExecDepStore {
     /// The invariants sorted using a topological sort
     executables: Vec<Option<InvariantsExecutable>>,
@@ -554,11 +569,11 @@ pub struct ExecutableManager {
 }
 
 impl ExecutableManager {
-    pub fn get_groups(&self) -> &Vec<Vec<InvariantsExecutable>> {
+    pub fn get_groups_ref(&self) -> &Vec<Vec<InvariantsExecutable>> {
         &self.groups
     }
 
-    pub fn as_vec(self) -> Vec<Vec<InvariantsExecutable>> {
+    pub fn get_groups(self) -> Vec<Vec<InvariantsExecutable>> {
         self.groups
     }
 }

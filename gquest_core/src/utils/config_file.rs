@@ -33,8 +33,8 @@ struct ExecutableJson {
 /// Private struct simply used to not directly create a config file.
 #[derive(Serialize, Deserialize)]
 struct ConfigJsonFile {
-    /// The optional name of the workplace
-    name: Option<String>,
+    /// The optional uri of the workplace
+    uri: Option<String>,
 
     /// The number of data being sent between the executables and the databases
     batch_size: Option<usize>,

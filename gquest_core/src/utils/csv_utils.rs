@@ -13,7 +13,7 @@ pub struct CsvFile {
 impl CsvFile {
     /// Creates a new file at the given path (or crushes the one already present)
     /// # Errors
-    /// Will return a [CsvFileError] if there was a problem during the creation of the file
+    /// Will return a [`CsvFileError`] if there was a problem during the creation of the file
     pub fn new<T: Into<String> + Clone>(
         file_path: &String,
         separator: Option<char>,
@@ -42,7 +42,7 @@ impl CsvFile {
     ///
     /// The `column_names` vector will only be used for the first time this function is called on this struct, after this you can give an empty vec.
     /// # Errors
-    /// Will return a [CsvFileError] if there was a problem during the creation of the file
+    /// Will return a [`CsvFileError`] if there was a problem during the creation of the file
     pub fn write_lines_to_file<T: Into<String> + Clone>(
         &mut self,
         values: Vec<Vec<T>>,
@@ -77,7 +77,7 @@ pub fn as_line<T: Into<String> + Clone>(values: &Vec<T>, separator: char) -> Str
 //______________________________ ERRORS STRUCT
 
 #[derive(Debug)]
-/// Enum used to report a [CsvFile] error
+/// Enum used to report a [`CsvFile`] error
 pub enum CsvFileError {
     /// Is used when there is an error during the creation of the file
     CreationError(String),

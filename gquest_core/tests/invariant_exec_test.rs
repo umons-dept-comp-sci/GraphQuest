@@ -5,6 +5,8 @@ use gquest_core::data_handler::{
     invariant_execs::{InvariantExecutionError, InvariantsExecutable},
 };
 
+const MAX_STDIN_SIZE: usize = 40;
+
 pub const VALID_EXEC_IDENTITY: &str = "tests/modules/identity.py";
 pub const LATE_FLUSH_EXEC: &str = "tests/modules/late_flush.py";
 pub const CRASH_BEFORE_EXEC: &str = "tests/modules/crash_before.py";
@@ -27,9 +29,13 @@ async fn execute_correct_inv() {
     let mut reader = geng.get_reader().lines();
     let mut actual_res: Vec<String> = vec![];
     identity
-        .execute_invariant(&mut async || reader.next(), &mut async |s| {
-            actual_res.push(s);
-        })
+        .execute_invariant(
+            &mut async || reader.next(),
+            &mut async |s| {
+                actual_res.push(s[1].clone());
+            },
+            MAX_STDIN_SIZE,
+        )
         .await
         .expect("ok");
 
@@ -50,9 +56,13 @@ async fn execute_late_inv() {
     let mut reader = geng.get_reader().lines();
     let mut actual_res: Vec<String> = vec![];
     identity
-        .execute_invariant(&mut async || reader.next(), &mut async |s| {
-            actual_res.push(s);
-        })
+        .execute_invariant(
+            &mut async || reader.next(),
+            &mut async |s| {
+                actual_res.push(s[1].clone());
+            },
+            MAX_STDIN_SIZE,
+        )
         .await
         .expect("ok");
 
@@ -68,7 +78,11 @@ async fn execute_crash_before() {
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
     let mut reader = geng.get_reader().lines();
     let error = identity
-        .execute_invariant(&mut async || reader.next(), &mut async |_| {})
+        .execute_invariant(
+            &mut async || reader.next(),
+            &mut async |_| {},
+            MAX_STDIN_SIZE,
+        )
         .await;
 
     assert!(matches!(
@@ -86,7 +100,11 @@ async fn execute_crash_during() {
     let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
     let mut reader = geng.get_reader().lines();
     let error = identity
-        .execute_invariant(&mut async || reader.next(), &mut async |_| {})
+        .execute_invariant(
+            &mut async || reader.next(),
+            &mut async |_| {},
+            MAX_STDIN_SIZE,
+        )
         .await;
 
     assert!(matches!(

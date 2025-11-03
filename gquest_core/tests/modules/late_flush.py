@@ -8,4 +8,4 @@ if __name__ == "__main__":
         # This program does not flush by itself
         # However since gquest will only send one batch of data then close the
         # stdin, it should not cause any issues
-        print(sig, flush=False)
+        print(sig, sig, flush=False)

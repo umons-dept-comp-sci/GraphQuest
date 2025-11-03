@@ -181,9 +181,9 @@ fn new_exec_group_test_all_sep() {
 
     let man = order.group_execs().expect("no error");
 
-    assert!(man.get_groups()[0].contains(&c));
-    assert!(man.get_groups()[1].contains(&b));
-    assert!(man.get_groups()[2].contains(&a));
+    assert!(man.get_groups_ref()[0].contains(&c));
+    assert!(man.get_groups_ref()[1].contains(&b));
+    assert!(man.get_groups_ref()[2].contains(&a));
 }
 
 #[test]
@@ -200,9 +200,9 @@ fn new_exec_group_test_same_dep() {
 
     let man = order.group_execs().expect("no error");
 
-    assert!(man.get_groups()[0].contains(&c));
-    assert!(man.get_groups()[1].contains(&b));
-    assert!(man.get_groups()[1].contains(&a));
+    assert!(man.get_groups_ref()[0].contains(&c));
+    assert!(man.get_groups_ref()[1].contains(&b));
+    assert!(man.get_groups_ref()[1].contains(&a));
 }
 
 #[test]
@@ -218,9 +218,9 @@ fn new_exec_group_test_no_dep() {
 
     let man = order.group_execs().expect("no error");
 
-    assert!(man.get_groups()[0].contains(&c));
-    assert!(man.get_groups()[0].contains(&b));
-    assert!(man.get_groups()[0].contains(&a));
+    assert!(man.get_groups_ref()[0].contains(&c));
+    assert!(man.get_groups_ref()[0].contains(&b));
+    assert!(man.get_groups_ref()[0].contains(&a));
 }
 
 pub fn get_a_b_c_exec() -> (

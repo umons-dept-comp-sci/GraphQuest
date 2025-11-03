@@ -23,7 +23,6 @@ pub struct Workplace<T: DbQuerySystem> {
 
 impl<T: DbQuerySystem> Workplace<T> {
     pub async fn init_workplace(
-        _db_url: &str,
         _config: Option<ConfigFile>,
     ) -> Result<Self, WorkplaceError> {
         todo!()
@@ -61,7 +60,7 @@ impl<T: DbQuerySystem> Workplace<T> {
         let man = sorter.group_execs()?;
 
         // Execute them by groups
-        for _group in man.as_vec() {}
+        for _group in man.get_groups() {}
         Ok(())
     }
 

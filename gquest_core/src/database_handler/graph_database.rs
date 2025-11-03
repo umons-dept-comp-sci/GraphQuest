@@ -9,7 +9,7 @@ use sqlx::{
 use tokio_stream::StreamExt;
 
 use crate::{
-    database_handler::{database_error, DbQuerySystem, GraphDbRuntimeError, *},
+    database_handler::{DbQuerySystem, GraphDbRuntimeError, *},
     utils::table_handler::QueryTable,
 };
 
@@ -40,8 +40,8 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     ///
     /// ## Errors
     ///
-    /// * [GraphDatabaseError::DatabaseAlreadyCreated] if the database was already created
-    /// * [GraphDatabaseError::DatabaseError] if an unknown error was uncountered when trying to create it
+    /// * [`GraphDbStartupError::DatabaseAlreadyCreated`] if the database was already created
+    /// * [`GraphDbStartupError::DatabaseError`] if an unknown error was uncountered when trying to create it
     pub async fn create_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
@@ -75,7 +75,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     ///
     /// ## Errors
     ///
-    /// * [`GraphDatabaseError::DatabaseError`] if an unknown error was uncountered when trying to create/connect to it
+    /// * [`GraphDbRuntimeError`] if an unknown error was uncountered when trying to create/connect to it
     pub async fn connect_create_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
@@ -98,7 +98,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     /// ## Errors
     ///
     /// Returns a:
-    /// *   [`GraphDatabaseError::DatabaseError`] if something went wrong during the connection.
+    /// *   [`GraphDbStartupError`] if something went wrong during the connection.
     pub async fn connect_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
@@ -177,7 +177,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     /// ```
     /// ## Exceptions
     /// Returns:
-    /// * [`GraphDatabaseError`] if something went wrong with the query
+    /// * [`GraphDbRuntimeError`] if something went wrong with the query
     async fn _add_meta_data_table(&mut self) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
             METADATA_TABLE_NAME,
@@ -233,7 +233,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                 debug!("Added signature table, result is : {:?}", v);
                 Ok(())
             }
-            Err(e) => Err(database_error::sqlx_error_to_db_error(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -243,14 +243,13 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     ) -> Result<(), GraphDbRuntimeError> {
         let res = query.build().execute(&self.pool).await;
         if let Err(e) = res {
-            Err(database_error::sqlx_error_to_db_error(e))
+            Err(e.into())
         } else {
             Ok(())
         }
     }
 }
 
-// Will panic if there are more or less identifier/argument symbols than the given number.
 fn create_safe_query(
     query_str: String,
     arguments: Vec<impl ToString>,
@@ -265,7 +264,9 @@ fn create_safe_query(
                     builder.push_bind::<String>(arg.to_string());
                 }
                 None => {
-                    todo!("error !")
+                    return Err(GraphDbRuntimeError::QueryCreationError(
+                        builder.into_sql().to_string(),
+                    ));
                 }
             }
         } else {
@@ -291,6 +292,7 @@ fn get_nb_vertices(signature: &String) -> usize {
 }
 
 impl<T: DbQuerySystem> GraphDatabase<T> {
+    /// Pretty prints all table to the standart output.
     pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
@@ -392,6 +394,40 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
 
         Ok(())
     }
+
+    async fn _add_to_inv_table(
+        &mut self,
+        inv_name: &String,
+        values: Vec<String>,
+    ) -> Result<(), GraphDbRuntimeError> {
+        let query_str = T::get_insert_into_query(inv_name, 2, inv_name.len());
+        let safe_query = create_safe_query(query_str, values)?;
+        self.execute_query_no_return(safe_query).await?;
+        Ok(())
+    }
+
+    // pub async fn compute_executable(&mut self, executable: &InvariantsExecutable, batch_size: usize) -> Result<(), GraphDbRuntimeError> {
+    //     let query_str =
+    //     if let Some(dep) = &executable.dependencies {
+    //         // Get dependencies
+    //         let query_str = T::get_join_table_query(dep.clone(), INVARIANT_COLUMN_NAME);
+
+    //         //
+    //     }
+
+    //     let mut batch_to_store = vec![];
+    //     executable.execute_invariant(&mut async || {
+    //         Some(Ok("test".to_string()))
+    //     }, &mut async |val| {
+    //         batch_to_store.push(val);
+    //         if batch_to_store.len() >= batch_size {
+    //             self.add_to_inv_table(inv_name, values)
+    //             batch_to_store = vec![];
+    //         }
+    //     }, batch_size);
+
+    //     todo!()
+    // }
 }
 
 // ______________________ UTILS ______________________
@@ -409,6 +445,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         }
     }
 
+    /// Checks if the given table was added.
     /// TODO: Add unit test
     pub async fn is_table_added(
         &self,
@@ -425,6 +462,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         }
     }
 
+    /// Gets the number values inside the given table.
     /// TODO: Add unit test
     pub async fn get_size_of_table(
         &self,
