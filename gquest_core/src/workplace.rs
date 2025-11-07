@@ -1,3 +1,4 @@
+use sqlx::Database;
 use thiserror::Error;
 
 use crate::{
@@ -14,17 +15,15 @@ pub enum WorkplaceError {
     InvariantError(#[from] InvariantError),
 }
 
-pub struct Workplace<T: DbQuerySystem> {
+pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
     _name: Option<String>,
-    db: GraphDatabase<T>,
+    db: GraphDatabase<DB>,
     execs: Vec<InvariantsExecutable>,
     _nb_threads: usize,
 }
 
-impl<T: DbQuerySystem> Workplace<T> {
-    pub async fn init_workplace(
-        _config: Option<ConfigFile>,
-    ) -> Result<Self, WorkplaceError> {
+impl<DB: Database + DbQuerySystem<DB>> Workplace<DB> {
+    pub async fn init_workplace(_config: Option<ConfigFile>) -> Result<Self, WorkplaceError> {
         todo!()
     }
 

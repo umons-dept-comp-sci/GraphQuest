@@ -33,5 +33,8 @@ pub use graph_database::*;
 pub mod sqlite_handler;
 pub use sqlite_handler::*;
 
+pub mod mysql_handler;
+pub use mysql_handler::*;
+
 pub mod db_query_system;
 pub use db_query_system::*;

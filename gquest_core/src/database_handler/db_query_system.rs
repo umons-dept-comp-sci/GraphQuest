@@ -1,4 +1,9 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, pin::Pin};
+
+use sqlx::{Database, FromRow, Pool, QueryBuilder};
+use tokio_stream::{Stream, StreamExt};
+
+use crate::database_handler::GraphDbRuntimeError;
 
 pub enum ColumnType {
     String {
@@ -22,7 +27,36 @@ pub enum ColumnType {
 ///
 /// The maximum number of bind symbols depends on what database system you are currently implementing,
 /// please refer to this documentation for more informations [`sqlx::query::Query::bind`].
-pub trait DbQuerySystem: Debug {
+pub trait DbQuerySystem<DB>: Debug
+where
+    DB: Database,
+{
+    fn execute_query_no_return(
+        pool: &Pool<DB>,
+        query_builder: QueryBuilder<'_, DB>,
+    ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send;
+
+    fn execute_query_fetch_all<V>(
+        pool: &Pool<DB>,
+        query_builder: QueryBuilder<'_, DB>,
+    ) -> impl std::future::Future<Output = Result<Vec<V>, GraphDbRuntimeError>> + Send
+    where
+        V: for<'r> FromRow<'r, DB::Row> + Send + Unpin;
+
+    fn execute_query_fetch_one<V>(
+        pool: &Pool<DB>,
+        query_builder: QueryBuilder<'_, DB>,
+    ) -> impl std::future::Future<Output = Result<V, GraphDbRuntimeError>> + Send
+    where
+        V: for<'r> FromRow<'r, DB::Row> + Send + Unpin;
+
+    fn execute_query_fetch<'e, V>(
+        pool: &'e Pool<DB>,
+        query_builder: &'e mut sqlx::QueryBuilder<'_, DB>,
+    ) -> Pin<Box<dyn Stream<Item = Result<V, sqlx::Error>> + Send + 'e>>
+    where
+        V: for<'r> FromRow<'r, <DB as sqlx::Database>::Row> + Send + Unpin + 'e;
+
     /// Gets a query that returns all the table names from the database.
     fn get_all_tables_query() -> String;
 

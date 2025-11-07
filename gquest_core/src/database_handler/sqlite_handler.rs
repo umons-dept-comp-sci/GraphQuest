@@ -1,9 +1,36 @@
-use crate::database_handler::{ColumnType, DbQuerySystem};
+use sqlx::{
+    sqlite::{Sqlite, SqliteError},
+    FromRow, Pool,
+};
 
-#[derive(Clone, Default, Debug)]
-pub struct SqliteGraphDatabase {}
+use crate::database_handler::{ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError};
 
-impl DbQuerySystem for SqliteGraphDatabase {
+/// An alias for [`GraphDatabase`] specialized for Sqlite
+pub type SqliteGraphDB = GraphDatabase<Sqlite>;
+
+impl DbQuerySystem<Sqlite> for Sqlite {
+    async fn execute_query_no_return(
+        pool: &Pool<Sqlite>,
+        mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> Result<(), GraphDbRuntimeError> {
+        let query = query_builder.build();
+
+        query.execute(pool).await?;
+        Ok(())
+    }
+
+    async fn execute_query_fetch_all<V>(
+        pool: &Pool<Sqlite>,
+        mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> Result<Vec<V>, GraphDbRuntimeError>
+    where
+        V: for<'r> FromRow<'r, sqlx::sqlite::SqliteRow> + std::marker::Send + std::marker::Unpin,
+    {
+        let query = query_builder.build_query_as();
+
+        Ok(query.fetch_all(pool).await?)
+    }
+
     fn get_all_tables_query() -> String {
         "SELECT name FROM sqlite_master WHERE type='table';".to_string()
     }
@@ -23,6 +50,10 @@ impl DbQuerySystem for SqliteGraphDatabase {
             value_column_name.to_string(),
             translate_column(value_column_type)
         )
+    }
+
+    fn get_all_from_table(table_name: impl ToString) -> String {
+        format!("select * from {};", table_name.to_string())
     }
 
     fn get_delete_table_query() -> String {
@@ -110,15 +141,40 @@ impl DbQuerySystem for SqliteGraphDatabase {
         res
     }
 
-    fn get_all_from_table(table_name: impl ToString) -> String {
-        format!("select * from {};", table_name.to_string())
-    }
-
     fn get_is_table_present(table_name: impl ToString) -> String {
         format!(
             "SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';",
             table_name.to_string()
         )
+    }
+
+    fn execute_query_fetch<'e, V>(
+        pool: &'e Pool<Sqlite>,
+        query_builder: &'e mut sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<V, sqlx::Error>> + Send + 'e>>
+    where
+        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
+            + std::marker::Send
+            + std::marker::Unpin
+            + 'e,
+    {
+        let query = query_builder.build_query_as();
+
+        query.fetch(pool)
+    }
+
+    async fn execute_query_fetch_one<V>(
+        pool: &Pool<Sqlite>,
+        mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> Result<V, GraphDbRuntimeError>
+    where
+        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
+            + std::marker::Send
+            + std::marker::Unpin,
+    {
+        let query = query_builder.build_query_as();
+
+        Ok(query.fetch_one(pool).await?)
     }
 }
 
@@ -162,5 +218,12 @@ fn translate_column(column_type: ColumnType) -> String {
             }
             tmp
         }
+    }
+}
+
+impl From<SqliteError> for GraphDbRuntimeError {
+    fn from(val: SqliteError) -> Self {
+        let error: sqlx::Error = val.into();
+        error.into()
     }
 }

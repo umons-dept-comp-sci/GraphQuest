@@ -1,17 +1,13 @@
-use std::{fmt::Debug, io::BufRead, marker::PhantomData, str::FromStr, time::Duration};
+use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::{
-    any::{AnyConnectOptions, AnyRow},
-    migrate::MigrateDatabase,
-    AnyPool, Column, ConnectOptions, Pool, QueryBuilder, Row,
-};
+use sqlx::any::AnyRow;
+use sqlx::{migrate::MigrateDatabase, pool::PoolOptions, Database, FromRow, Pool, QueryBuilder};
+use sqlx::{Column, Row};
 use tokio_stream::StreamExt;
 
-use crate::{
-    database_handler::{DbQuerySystem, GraphDbRuntimeError, *},
-    utils::table_handler::QueryTable,
-};
+use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::utils::table_handler::QueryTable;
 
 /// Used to change the logging settings of a sqlx connection.
 /// This is because by default, all debug options will be shown and will fill the logger really quickly.
@@ -24,17 +20,16 @@ pub struct SqlxLogLevels {
 #[derive(Debug, Clone)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
-pub struct GraphDatabase<T>
+pub struct GraphDatabase<DB>
 where
-    T: DbQuerySystem,
+    DB: Database + DbQuerySystem<DB>,
 {
-    pool: Pool<sqlx::Any>,
     _url: String,
-    phantom_data: PhantomData<T>,
+    pool: Pool<DB>,
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<T: DbQuerySystem> GraphDatabase<T> {
+impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB> {
     /// Creates the database that will be storing the project.
     /// Returns an in instance of a [GraphDatabase].
     ///
@@ -98,27 +93,25 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     /// ## Errors
     ///
     /// Returns a:
-    /// *   [`GraphDbStartupError`] if something went wrong during the connection.
+    /// * [`GraphDbStartupError`] if something went wrong during the connection.
     pub async fn connect_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
-        // Install sqlite, postgre and mysql drivers
-        sqlx::any::install_default_drivers();
-        Ok(GraphDatabase::<T> {
+        let pool = {
+            let res = match connection_options {
+                Some(opt) => Self::connect_with_options(db_url, opt).await,
+                None => sqlx::Pool::connect(db_url).await,
+            };
+            match res {
+                Ok(p) => p,
+                Err(e) => return Err(e.into()),
+            }
+        };
+        Ok(GraphDatabase::<DB> {
             // obs: None,
             _url: db_url.to_string(),
-            pool: {
-                let res = match connection_options {
-                    Some(opt) => connect_with_options(db_url, opt).await,
-                    None => sqlx::AnyPool::connect(db_url).await,
-                };
-                match res {
-                    Ok(p) => p,
-                    Err(e) => return Err(e.into()),
-                }
-            },
-            phantom_data: PhantomData,
+            pool,
         })
     }
 
@@ -126,27 +119,34 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
     pub async fn close_connection(self) {
         self.pool.close().await
     }
-}
 
-/// Applies the given options to the pool *before* opening it.
-async fn connect_with_options(
-    url: &str,
-    log_levels: SqlxLogLevels,
-) -> Result<AnyPool, sqlx::Error> {
-    let mut connect_opt = AnyConnectOptions::from_str(url)?;
+    /// Applies the given options to the pool *before* opening it.
+    async fn connect_with_options(
+        url: &str,
+        log_levels: SqlxLogLevels,
+    ) -> Result<Pool<DB>, sqlx::Error> {
+        let mut connect_opt = PoolOptions::new();
 
-    if let Some(level) = log_levels.log_statement_level {
-        connect_opt = connect_opt.log_statements(level);
+        if let Some(_level) = log_levels.log_statement_level {
+            // connect_opt = connect_opt..(level).log_statements(level);
+            // todo!("FIX THIS !")
+            // TODO: AHHH
+        }
+        if let Some(level) = log_levels.log_slow_statement_level {
+            connect_opt = connect_opt
+                .acquire_slow_level(level.0)
+                .acquire_slow_threshold(level.1);
+        }
+        connect_opt.connect(url).await
     }
-    if let Some(level) = log_levels.log_slow_statement_level {
-        connect_opt = connect_opt.log_slow_statements(level.0, level.1);
-    }
-    AnyPool::connect_with(connect_opt).await
 }
 
 // ______________________ ADD TABLES ____________
 
-impl<T: DbQuerySystem> GraphDatabase<T> {
+impl<DB> GraphDatabase<DB>
+where
+    DB: Database + DbQuerySystem<DB>,
+{
     /// Adds the canonical table to the database.
     pub async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
@@ -157,8 +157,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
                 default_value: None,
             },
             DATASET_VALUE_NAME,
-            ColumnType::String {
-                max_size: None,
+            ColumnType::Integer {
                 default_value: None,
             },
         )
@@ -218,7 +217,7 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
         value_name: impl ToString,
         value_column_type: ColumnType,
     ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = T::get_create_table_query(
+        let query_str = DB::get_create_table_query(
             table_name,
             pk_name,
             pk_column_type,
@@ -226,54 +225,286 @@ impl<T: DbQuerySystem> GraphDatabase<T> {
             value_column_type,
         );
 
-        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
-
-        match builder.build().execute(&self.pool).await {
-            Ok(v) => {
-                debug!("Added signature table, result is : {:?}", v);
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    async fn execute_query_no_return(
-        &self,
-        mut query: sqlx::QueryBuilder<'static, sqlx::Any>,
-    ) -> Result<(), GraphDbRuntimeError> {
-        let res = query.build().execute(&self.pool).await;
-        if let Err(e) = res {
-            Err(e.into())
-        } else {
-            Ok(())
-        }
+        let builder = QueryBuilder::<DB>::new(query_str);
+        DB::execute_query_no_return(&self.pool, builder).await
     }
 }
 
-fn create_safe_query(
-    query_str: String,
-    arguments: Vec<impl ToString>,
-) -> Result<sqlx::QueryBuilder<'static, sqlx::Any>, GraphDbRuntimeError> {
-    let mut builder = QueryBuilder::<sqlx::Any>::new("");
-    let mut arguments = arguments.iter();
+// ______________________ UTILS ______________________
 
-    for c in query_str.chars() {
-        if c == '?' {
-            match arguments.next() {
-                Some(arg) => {
-                    builder.push_bind::<String>(arg.to_string());
-                }
-                None => {
-                    return Err(GraphDbRuntimeError::QueryCreationError(
-                        builder.into_sql().to_string(),
-                    ));
+// TODO: Remove useless import
+impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+where
+    usize: sqlx::ColumnIndex<<DB as sqlx::Database>::Row>,
+    String: sqlx::Decode<'static, DB>,
+    String: sqlx::Type<DB>,
+    i16: sqlx::Decode<'static, DB>,
+    i16: sqlx::Type<DB>,
+    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    i64: sqlx::Decode<'static, DB>,
+    i64: sqlx::Type<DB>,
+    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+{
+    pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
+        let query_str = DB::get_all_tables_query();
+        let builder = QueryBuilder::<DB>::new(query_str);
+        let results: Vec<(String,)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+
+        Ok(results
+            .iter()
+            .map(|(val_str,)| val_str.to_string())
+            .collect())
+    }
+
+    /// Checks if the given table was added.=
+    pub async fn is_table_added(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<bool, GraphDbRuntimeError> {
+        let query_str = DB::get_is_table_present(table_name);
+        let builder = QueryBuilder::<DB>::new(query_str);
+        let res: (i16,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
+
+        Ok(res.0 == 1)
+    }
+
+    /// Gets the number values inside the given table.
+    /// TODO: Add unit test
+    pub async fn get_size_of_table(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<usize, GraphDbRuntimeError> {
+        let query_str = DB::get_nb_rows_from_table(table_name);
+
+        let res: (i64,) =
+            DB::execute_query_fetch_one(&self.pool, QueryBuilder::<DB>::new(query_str)).await?;
+
+        Ok(res.0 as usize)
+    }
+
+    async fn for_each_row<'e, V>(
+        &self,
+        table_name: String,
+        apply_fn: &mut dyn FnMut(V) -> Result<(), GraphDbRuntimeError>,
+    ) -> Result<(), GraphDbRuntimeError>
+    where
+        V: for<'r> FromRow<'r, DB::Row> + Send + Unpin,
+    {
+        let query_str = DB::get_all_from_table(table_name);
+
+        let mut builder = QueryBuilder::<DB>::new(query_str);
+
+        // Execute query :
+        let mut results = DB::execute_query_fetch(&self.pool, &mut builder);
+
+        while let Some(result_row) = results.next().await {
+            match result_row {
+                Ok(row) => apply_fn(row)?,
+                Err(e) => {
+                    return Err(e.into());
                 }
             }
-        } else {
-            builder.push(c);
         }
+
+        Ok(())
     }
-    Ok(builder)
+
+    /// Reads and returns all values contained inside the [`CANONICAL_TABLE_NAME`].
+    ///
+    /// # Warning
+    /// Only use this method when using small database because everything will be stored and returned.
+    pub async fn read_all_dataset(&self) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
+        let query_str = DB::get_all_from_table(CANONICAL_TABLE_NAME);
+
+        let builder = QueryBuilder::new(query_str);
+
+        // Execute query :
+        let results: Vec<(String, i16)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+
+        Ok(results)
+    }
+
+    
+    // /// Pretty prints all table to the standart output.
+    // pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
+    //     // Get all tables :
+    //     let tables = self.get_all_table_names().await?;
+    //     if tables.is_empty() {
+    //         println!("No tables in database");
+    //         return Ok(());
+    //     }
+    //     for table in tables {
+    //         let mut table_query: Option<QueryTable> = None;
+
+    //         self.for_each_row(table, &mut |row: DB::Row| {
+    //             // Fetch all header first
+    //             if table_query.is_none() {
+    //                 //
+    //                 let mut headers = vec![];
+    //                 for col in row.columns() {
+    //                     headers.push(col.name().to_string());
+    //                 }
+    //                 table_query = Some(QueryTable::new(
+    //                     headers,
+    //                     crate::utils::table_handler::QueryTableOptions::Partial {
+    //                         first_rows_count: 10,
+    //                         last_rows_count: 10,
+    //                     },
+    //                 ));
+    //             }
+    //             // Add line to query
+    //             table_query.as_mut().expect("is some").push_line({
+    //                 let mut row_vec: Vec<String> = vec![];
+
+    //                 for (i, col) in row.columns().iter().enumerate() {
+    //                     // match col.type_info()() {
+    //                     //     sqlx::any::AnyTypeInfoKind::BigInt
+    //                     //     | sqlx::any::AnyTypeInfoKind::Integer => {
+    //                     //         let value: i64 = row.get(i);
+    //                     //         row_vec.push(value.to_string());
+    //                     //     }
+    //                     //     _ => {
+    //                     //         if let Ok(value) = row.try_get(i) {
+    //                     //             row_vec.push(value);
+    //                     //         } else {
+    //                     //             row_vec.push("[?Cannot convert to string?]".to_string());
+    //                     //         }
+    //                     //     }
+    //                     //     sqlx::any::AnyTypeInfoKind::Null => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::Bool => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::SmallInt => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::Real => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::Double => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::Text => todo!(),
+    //                     //     sqlx::any::AnyTypeInfoKind::Blob => todo!(),
+    //                     // }
+    //                 }
+
+    //                 row_vec
+    //             });
+    //             Ok(())
+    //         })
+    //         .await?;
+    //         if let Some(tab) = table_query {
+    //             println!("{tab}");
+    //         }
+    //     }
+
+    //     Ok(())
+    // }
+
+    // /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
+    // /// Will not crash if a signature was already added previously.
+    // pub async fn add_to_dataset(
+    //     &mut self,
+    //     reader: impl BufRead,
+    //     batch_size: usize,
+    // ) -> Result<(), GraphDbRuntimeError> {
+    //     // Add dataset table if not already created
+    //     let res = self.add_canonical_table().await;
+    //     match &res {
+    //         Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
+    //         _ => res?,
+    //     }
+
+    //     let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
+    //         // Get insert query
+    //         let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+    //         let safe_query = create_safe_query(query_str, vec)?;
+    //         T::execute_query_no_return(&self.pool, safe_query).await?;
+    //         Ok(())
+    //     };
+
+    //     let mut data_batch = vec![];
+
+    //     for canonical_form in reader.lines().map_while(Result::ok) {
+    //         let value = get_nb_vertices(&canonical_form);
+    //         data_batch.push(canonical_form);
+    //         data_batch.push(value.to_string());
+
+    //         if data_batch.len() / 2 >= batch_size {
+    //             push_to_db(data_batch, batch_size).await?;
+    //             data_batch = vec![];
+    //         }
+    //     }
+    //     if !data_batch.is_empty() {
+    //         let data_left = data_batch.len() / 2;
+    //         push_to_db(data_batch, data_left).await?;
+    //     }
+
+    //     Ok(())
+    // }
+
+    // async fn _add_to_inv_table(
+    //     &mut self,
+    //     inv_name: &String,
+    //     values: Vec<String>,
+    // ) -> Result<(), GraphDbRuntimeError> {
+    //     let query_str = T::get_insert_into_query(inv_name, 2, inv_name.len());
+    //     let safe_query = create_safe_query(query_str, values)?;
+    //     self.execute_query_no_return(safe_query).await?;
+    //     Ok(())
+    // }
+
+    // fn create_safe_query(
+    //     query_str: String,
+    //     arguments: Vec<impl ToString>,
+    // ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
+    //     let mut builder = QueryBuilder::<DB>::new("");
+    //     let mut arguments = arguments.iter();
+
+    //     for c in query_str.chars() {
+    //         if c == '?' {
+    //             match arguments.next() {
+    //                 Some(arg) => {
+    //                     builder.push_bind::<String>(arg.to_string());
+    //                 }
+    //                 None => {
+    //                     return Err(GraphDbRuntimeError::QueryCreationError(
+    //                         builder.into_sql().to_string(),
+    //                     ));
+    //                 }
+    //             }
+    //         } else {
+    //             builder.push(c);
+    //         }
+    //     }
+    //     Ok(builder)
+    // }
+
+    // pub async fn compute_executable(
+    //     &mut self,
+    //     executable: &InvariantsExecutable,
+    //     batch_size: usize,
+    // ) -> Result<(), GraphDbRuntimeError> {
+    //     // Check if we can compute this invariant
+    //     for dep in &executable. {
+
+    //     }
+
+    //     // let query_str =
+    //     // if let Some(dep) = &executable.dependencies {
+    //     //     // Get dependencies
+    //     //     let query_str = T::get_join_table_query(dep.clone(), INVARIANT_COLUMN_NAME);
+
+    //     //     //
+    //     // }
+
+    //     // let mut batch_to_store = vec![];
+    //     // executable.execute_invariant(&mut async || {
+    //     //     Some(Ok("test".to_string()))
+    //     // }, &mut async |val| {
+    //     //     batch_to_store.push(val);
+    //     //     if batch_to_store.len() >= batch_size {
+    //     //         self.add_to_inv_table(inv_name, values)
+    //     //         batch_to_store = vec![];
+    //     //     }
+    //     // }, batch_size);
+
+    //     todo!()
+    // }
 }
 
 fn get_nb_vertices(signature: &String) -> usize {
@@ -288,218 +519,5 @@ fn get_nb_vertices(signature: &String) -> usize {
             | (((signature_byte[2] - 63) as usize) << 12)
             | (((signature_byte[3] - 63) as usize) << 6)
             | (((signature_byte[4] - 63) as usize) << 3)
-    }
-}
-
-impl<T: DbQuerySystem> GraphDatabase<T> {
-    /// Pretty prints all table to the standart output.
-    pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
-        // Get all tables :
-        let tables = self.get_all_table_names().await?;
-        if tables.is_empty() {
-            println!("No tables in database");
-            return Ok(());
-        }
-        for table in tables {
-            let mut table_query: Option<QueryTable> = None;
-
-            self.for_each_row(table, &mut |row| {
-                // Fetch all header first
-                if table_query.is_none() {
-                    //
-                    let mut headers = vec![];
-                    for col in row.columns() {
-                        headers.push(col.name().to_string());
-                    }
-                    table_query = Some(QueryTable::new(
-                        headers,
-                        crate::utils::table_handler::QueryTableOptions::Partial {
-                            first_rows_count: 10,
-                            last_rows_count: 10,
-                        },
-                    ));
-                }
-                // Add line to query
-                table_query.as_mut().expect("is some").push_line({
-                    let mut row_vec: Vec<String> = vec![];
-
-                    for (i, col) in row.columns().iter().enumerate() {
-                        match col.type_info().kind() {
-                            sqlx::any::AnyTypeInfoKind::BigInt
-                            | sqlx::any::AnyTypeInfoKind::Integer => {
-                                let value: i64 = row.get(i);
-                                row_vec.push(value.to_string());
-                            }
-                            _ => {
-                                if let Ok(value) = row.try_get(i) {
-                                    row_vec.push(value);
-                                } else {
-                                    row_vec.push("[?Cannot convert to string?]".to_string());
-                                }
-                            }
-                        }
-                    }
-
-                    row_vec
-                });
-                Ok(())
-            })
-            .await?;
-            if let Some(tab) = table_query {
-                println!("{tab}");
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
-    /// Will not crash if a signature was already added previously.
-    pub async fn add_to_dataset(
-        &mut self,
-        reader: impl BufRead,
-        batch_size: usize,
-    ) -> Result<(), GraphDbRuntimeError> {
-        // Add dataset table if not already created
-        let res = self.add_canonical_table().await;
-        match &res {
-            Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
-            _ => res?,
-        }
-
-        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
-            // Get insert query
-            let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
-            let safe_query = create_safe_query(query_str, vec)?;
-            self.execute_query_no_return(safe_query).await?;
-            Ok(())
-        };
-
-        let mut data_batch = vec![];
-
-        for canonical_form in reader.lines().map_while(Result::ok) {
-            let value = get_nb_vertices(&canonical_form);
-            data_batch.push(canonical_form);
-            data_batch.push(value.to_string());
-
-            if data_batch.len() / 2 >= batch_size {
-                push_to_db(data_batch, batch_size).await?;
-                data_batch = vec![];
-            }
-        }
-        if !data_batch.is_empty() {
-            let data_left = data_batch.len() / 2;
-            push_to_db(data_batch, data_left).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn _add_to_inv_table(
-        &mut self,
-        inv_name: &String,
-        values: Vec<String>,
-    ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = T::get_insert_into_query(inv_name, 2, inv_name.len());
-        let safe_query = create_safe_query(query_str, values)?;
-        self.execute_query_no_return(safe_query).await?;
-        Ok(())
-    }
-
-    // pub async fn compute_executable(&mut self, executable: &InvariantsExecutable, batch_size: usize) -> Result<(), GraphDbRuntimeError> {
-    //     let query_str =
-    //     if let Some(dep) = &executable.dependencies {
-    //         // Get dependencies
-    //         let query_str = T::get_join_table_query(dep.clone(), INVARIANT_COLUMN_NAME);
-
-    //         //
-    //     }
-
-    //     let mut batch_to_store = vec![];
-    //     executable.execute_invariant(&mut async || {
-    //         Some(Ok("test".to_string()))
-    //     }, &mut async |val| {
-    //         batch_to_store.push(val);
-    //         if batch_to_store.len() >= batch_size {
-    //             self.add_to_inv_table(inv_name, values)
-    //             batch_to_store = vec![];
-    //         }
-    //     }, batch_size);
-
-    //     todo!()
-    // }
-}
-
-// ______________________ UTILS ______________________
-
-impl<T: DbQuerySystem> GraphDatabase<T> {
-    pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
-        let query_str = T::get_all_tables_query();
-
-        let results: Result<Vec<(String,)>, sqlx::Error> =
-            sqlx::query_as(&query_str).fetch_all(&self.pool).await;
-
-        match results {
-            Ok(val) => Ok(val.iter().map(|(val_str,)| val_str.to_string()).collect()),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Checks if the given table was added.
-    /// TODO: Add unit test
-    pub async fn is_table_added(
-        &self,
-        table_name: impl ToString,
-    ) -> Result<bool, GraphDbRuntimeError> {
-        let query_str = T::get_is_table_present(table_name);
-        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
-        let res: Result<i16, sqlx::Error> =
-            builder.build_query_scalar().fetch_one(&self.pool).await;
-
-        match res {
-            Ok(val) => Ok(val == 1),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Gets the number values inside the given table.
-    /// TODO: Add unit test
-    pub async fn get_size_of_table(
-        &self,
-        table_name: impl ToString,
-    ) -> Result<usize, GraphDbRuntimeError> {
-        let query_str = T::get_nb_rows_from_table(table_name);
-
-        let res: Result<i64, sqlx::Error> =
-            sqlx::query_scalar(&query_str).fetch_one(&self.pool).await;
-
-        match res {
-            Ok(val) => Ok(val as usize),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    async fn for_each_row(
-        &self,
-        table_name: String,
-        apply_fn: &mut dyn FnMut(AnyRow) -> Result<(), GraphDbRuntimeError>,
-    ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = T::get_all_from_table(table_name);
-
-        let mut builder = QueryBuilder::<sqlx::Any>::new(query_str);
-
-        // Execute query :
-        let mut results = builder.build().fetch(&self.pool);
-
-        while let Some(result_row) = results.next().await {
-            match result_row {
-                Ok(row) => apply_fn(row)?,
-                Err(e) => {
-                    return Err(e.into());
-                }
-            }
-        }
-
-        Ok(())
     }
 }
