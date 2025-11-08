@@ -1,4 +1,4 @@
-use sqlx::Database;
+use sqlx::{migrate::MigrateDatabase, Database};
 use thiserror::Error;
 
 use crate::{
@@ -22,7 +22,10 @@ pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
     _nb_threads: usize,
 }
 
-impl<DB: Database + DbQuerySystem<DB>> Workplace<DB> {
+impl<DB: Database + DbQuerySystem<DB>> Workplace<DB>
+where
+    DB: MigrateDatabase,
+{
     pub async fn init_workplace(_config: Option<ConfigFile>) -> Result<Self, WorkplaceError> {
         todo!()
     }

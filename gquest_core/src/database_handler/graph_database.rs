@@ -2,17 +2,15 @@ use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::any::AnyRow;
 use sqlx::{migrate::MigrateDatabase, pool::PoolOptions, Database, FromRow, Pool, QueryBuilder};
-use sqlx::{Column, Row};
+// use sqlx::{Column, Row};
 use tokio_stream::StreamExt;
 
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
-use crate::utils::table_handler::QueryTable;
 
 /// Used to change the logging settings of a sqlx connection.
 /// This is because by default, all debug options will be shown and will fill the logger really quickly.
-///  t is really recommended to set them to at least [`log::LevelFilter::Info`].
+/// It is really recommended to set them to at least [`log::LevelFilter::Info`].
 pub struct SqlxLogLevels {
     pub log_statement_level: Option<log::LevelFilter>,
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
@@ -30,7 +28,10 @@ where
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB> {
+impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+where
+    DB: MigrateDatabase,
+{
     /// Creates the database that will be storing the project.
     /// Returns an in instance of a [GraphDatabase].
     ///
@@ -43,12 +44,12 @@ impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB> {
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
-        sqlx::any::install_default_drivers();
+        // sqlx::any::install_default_drivers();
 
         // Creates the database if it didn't already exists
-        if !sqlx::Any::database_exists(db_url).await.unwrap_or(false) {
+        if !DB::database_exists(db_url).await.unwrap_or(false) {
             debug!("Creating database {}", db_url);
-            match sqlx::Any::create_database(db_url).await {
+            match DB::create_database(db_url).await {
                 Ok(_) => {
                     debug!("Success creating the database {}", db_url);
                 }
@@ -71,15 +72,15 @@ impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB> {
     ///
     /// ## Errors
     ///
-    /// * [`GraphDbRuntimeError`] if an unknown error was uncountered when trying to create/connect to it
+    /// * [`GraphDbStartupError`] if an unknown error was uncountered when trying to create/connect to it
     pub async fn connect_create_graph_database(
         db_url: &str,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
-        sqlx::any::install_default_drivers();
+        // sqlx::any::install_default_drivers();
 
-        if !sqlx::Any::database_exists(db_url).await.unwrap_or(false) {
+        if !DB::database_exists(db_url).await.unwrap_or(false) {
             // Creates the database if it didn't already exists
             Self::create_graph_database(db_url, connection_options).await
         } else {
@@ -334,7 +335,10 @@ where
     }
 
     // /// Pretty prints all table to the standart output.
-    // pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
+    // pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError>
+    // where
+    //     for<'r> DB::Row: FromRow<'r, DB::Row>,
+    // {
     //     // Get all tables :
     //     let tables = self.get_all_table_names().await?;
     //     if tables.is_empty() {
@@ -365,27 +369,10 @@ where
     //                 let mut row_vec: Vec<String> = vec![];
 
     //                 for (i, col) in row.columns().iter().enumerate() {
-    //                     // match col.type_info()() {
-    //                     //     sqlx::any::AnyTypeInfoKind::BigInt
-    //                     //     | sqlx::any::AnyTypeInfoKind::Integer => {
-    //                     //         let value: i64 = row.get(i);
-    //                     //         row_vec.push(value.to_string());
-    //                     //     }
-    //                     //     _ => {
-    //                     //         if let Ok(value) = row.try_get(i) {
-    //                     //             row_vec.push(value);
-    //                     //         } else {
-    //                     //             row_vec.push("[?Cannot convert to string?]".to_string());
-    //                     //         }
-    //                     //     }
-    //                     //     sqlx::any::AnyTypeInfoKind::Null => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::Bool => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::SmallInt => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::Real => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::Double => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::Text => todo!(),
-    //                     //     sqlx::any::AnyTypeInfoKind::Blob => todo!(),
+    //                     // match col.type_info() {
+
     //                     // }
+    //                     println!("{col:?}")
     //                 }
 
     //                 row_vec
@@ -443,16 +430,15 @@ where
         Ok(())
     }
 
-    // async fn _add_to_inv_table(
-    //     &mut self,
-    //     inv_name: &String,
-    //     values: Vec<String>,
-    // ) -> Result<(), GraphDbRuntimeError> {
-    //     let query_str = T::get_insert_into_query(inv_name, 2, inv_name.len());
-    //     let safe_query = create_safe_query(query_str, values)?;
-    //     self.execute_query_no_return(safe_query).await?;
-    //     Ok(())
-    // }
+    async fn _add_to_inv_table(
+        &mut self,
+        inv_name: &String,
+        values: Vec<String>,
+    ) -> Result<(), GraphDbRuntimeError> {
+        let query_str = DB::get_insert_into_query(inv_name, 2, inv_name.len());
+        let safe_query = Self::create_safe_query(query_str, values)?;
+        DB::execute_query_no_return(&self.pool, safe_query).await
+    }
 
     fn create_safe_query(
         query_str: String,

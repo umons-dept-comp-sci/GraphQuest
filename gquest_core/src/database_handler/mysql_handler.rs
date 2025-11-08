@@ -50,16 +50,16 @@ impl DbQuerySystem<MySql> for MySql {
     }
 
     fn get_create_table_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-        value_column_name: impl ToString,
-        value_column_type: ColumnType,
+        _table_name: impl ToString,
+        _pk_column_name: impl ToString,
+        _pk_column_type: ColumnType,
+        _value_column_name: impl ToString,
+        _value_column_type: ColumnType,
     ) -> String {
         todo!()
     }
 
-    fn get_all_from_table(table_name: impl ToString) -> String {
+    fn get_all_from_table(_table_name: impl ToString) -> String {
         todo!()
     }
 
@@ -67,37 +67,41 @@ impl DbQuerySystem<MySql> for MySql {
         todo!()
     }
 
-    fn get_insert_into_query(table_name: impl ToString, nb_cols: usize, nb_rows: usize) -> String {
+    fn get_insert_into_query(
+        _table_name: impl ToString,
+        _nb_cols: usize,
+        _nb_rows: usize,
+    ) -> String {
         todo!()
     }
 
     fn get_join_table_query(
-        table_names: Vec<impl ToString>,
-        common_column_name: impl ToString,
+        _table_names: Vec<impl ToString>,
+        _common_column_name: impl ToString,
     ) -> String {
         todo!()
     }
 
     fn get_all_rows_from_table_column(
-        table_name: impl ToString,
-        column_name: impl ToString,
+        _table_name: impl ToString,
+        _column_name: impl ToString,
     ) -> String {
         todo!()
     }
 
-    fn get_nb_rows_from_table(table_name: impl ToString) -> String {
+    fn get_nb_rows_from_table(_table_name: impl ToString) -> String {
         todo!()
     }
 
     fn get_select_batch_from(
-        from_table: String,
-        start_index: Option<usize>,
-        limit: Option<usize>,
+        _from_table: String,
+        _start_index: Option<usize>,
+        _limit: Option<usize>,
     ) -> String {
         todo!()
     }
 
-    fn get_is_table_present(table_name: impl ToString) -> String {
+    fn get_is_table_present(_table_name: impl ToString) -> String {
         todo!()
     }
 

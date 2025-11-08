@@ -1,14 +1,9 @@
 use gquest_core::{
     data_handler::data_loader::GengProcess,
-    database_handler::{
-        CANONICAL_TABLE_NAME, GraphDatabase, GraphDbStartupError, SqliteGraphDB
-    },
+    database_handler::{GraphDbStartupError, SqliteGraphDB, CANONICAL_TABLE_NAME},
 };
-use sqlx::migrate::MigrateDatabase;
-use std::{
-    io::{BufRead, Lines, Read},
-    process::ChildStdout,
-};
+use sqlx::{migrate::MigrateDatabase, Sqlite};
+use std::{io::Read, process::ChildStdout};
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
@@ -17,12 +12,9 @@ const BAD_DB_URL: &str = "sqlite::bad_url";
 
 #[tokio::test]
 async fn connect_db_test_success() {
-    remove_all_created_df().await;
     let test = SqliteGraphDB::connect_graph_database(MEMORY_DB_URL, None)
         .await
         .unwrap();
-
-    sqlx::Any::drop_database(MEMORY_DB_URL).await.unwrap();
     test.close_connection().await;
 }
 
@@ -36,10 +28,11 @@ async fn connect_db_test_bad_url() {
 
 #[tokio::test]
 async fn create_db_test() {
-    remove_all_created_df().await;
+    // remove_all_created_df().await;
     SqliteGraphDB::create_graph_database(PHYSICAL_DB_URL, None)
         .await
         .expect("This was supposed to not cause an error");
+
     // Already exists
     assert!(matches!(
         SqliteGraphDB::create_graph_database(PHYSICAL_DB_URL, None).await,
@@ -47,27 +40,25 @@ async fn create_db_test() {
     ));
 
     // Drop the created db
-    sqlx::Any::drop_database(PHYSICAL_DB_URL).await.unwrap();
+    Sqlite::drop_database(PHYSICAL_DB_URL).await.unwrap();
 }
 
 #[tokio::test]
 async fn print_all_db_table_test() {
-    remove_all_created_df().await;
-    let test =
-        SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
-            .await
-            .unwrap();
+    // remove_all_created_df().await;
+    let _test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
 
-    test.print_all_tables().await.expect("No errors");
+    // test.print_all_tables().await.expect("No errors");
 }
 
 #[tokio::test]
 async fn add_to_dataset_test() {
     remove_all_created_df().await;
-    let mut test =
-        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
-            .await
-            .unwrap();
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
     let (expected, geng_reader) = get_geng_values();
 
     test.add_to_dataset(geng_reader, 1000)
@@ -85,10 +76,15 @@ async fn add_to_dataset_test() {
 #[tokio::test]
 async fn is_table_added_test() {
     remove_all_created_df().await;
-    let test =
-        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
-            .await
-            .unwrap();
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
+
+    let (_, geng_reader) = get_geng_values();
+
+    test.add_to_dataset(geng_reader, 1000)
+        .await
+        .expect("no issues");
 
     assert!(test
         .is_table_added(CANONICAL_TABLE_NAME)
@@ -101,10 +97,9 @@ async fn is_table_added_test() {
 #[tokio::test]
 async fn get_size_of_table_test() {
     remove_all_created_df().await;
-    let mut test =
-        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
-            .await
-            .unwrap();
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
     let (expected, geng_reader) = get_geng_values();
 
     test.add_to_dataset(geng_reader, 1000)
@@ -121,12 +116,12 @@ async fn get_size_of_table_test() {
 
 async fn remove_all_created_df() {
     // Install sqlite, postgre and mysql drivers
-    sqlx::any::install_default_drivers();
+    // sqlx::any::install_default_drivers();
 
     // Drop the created db
-    let _ = sqlx::Any::drop_database(PHYSICAL_DB_URL).await;
-    let _ = sqlx::Any::drop_database(BAD_DB_URL).await;
-    let _ = sqlx::Any::drop_database(MEMORY_DB_URL).await;
+    let _ = Sqlite::drop_database(PHYSICAL_DB_URL).await;
+    let _ = Sqlite::drop_database(BAD_DB_URL).await;
+    let _ = Sqlite::drop_database(MEMORY_DB_URL).await;
 }
 
 fn get_geng_values() -> (Vec<String>, std::io::BufReader<ChildStdout>) {
