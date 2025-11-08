@@ -1,7 +1,7 @@
 use std::{fmt::Debug, pin::Pin};
 
 use sqlx::{Database, FromRow, Pool, QueryBuilder};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 
 use crate::database_handler::GraphDbRuntimeError;
 
@@ -18,24 +18,24 @@ pub enum ColumnType {
     },
 }
 
-/// A trait used to get all the necessary queries to execute.
-/// This is the trait to implement in order to add another database system to the crate.
+/// A trait used to get all the necessary functions needed to execute queries on a specific database.
 ///
 /// All values passed as arguments to the implemented functions will be safe to add to the query.
 /// And all unsafe values will be taken care of by the function's callers, this is why some functions **will require** you to add some **binding symbols**,
 /// which are symbols that will be replaced by user inputed values in a safe way (to prevent SQL injections for exemple).
 ///
-/// The maximum number of bind symbols depends on what database system you are currently implementing,
-/// please refer to this documentation for more informations [`sqlx::query::Query::bind`].
+/// Please refer to the following documentation for more informations : [`sqlx::query::Query::bind`].
 pub trait DbQuerySystem<DB>: Debug
 where
     DB: Database,
 {
+    /// Executes a query and discard the result (useful for inserting for example) but still checks for erros.
     fn execute_query_no_return(
         pool: &Pool<DB>,
         query_builder: QueryBuilder<'_, DB>,
     ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send;
 
+    /// Executes a query and stores all the result in a vector
     fn execute_query_fetch_all<V>(
         pool: &Pool<DB>,
         query_builder: QueryBuilder<'_, DB>,
@@ -43,6 +43,7 @@ where
     where
         V: for<'r> FromRow<'r, DB::Row> + Send + Unpin;
 
+    /// Executes a query and returns the first returned value (or an error if none are present).
     fn execute_query_fetch_one<V>(
         pool: &Pool<DB>,
         query_builder: QueryBuilder<'_, DB>,
@@ -50,6 +51,8 @@ where
     where
         V: for<'r> FromRow<'r, DB::Row> + Send + Unpin;
 
+    /// Executes a query and returns a stream of value.
+    /// Useful to iterate over many values returned by a query without the risk of storing too many.
     fn execute_query_fetch<'e, V>(
         pool: &'e Pool<DB>,
         query_builder: &'e mut sqlx::QueryBuilder<'_, DB>,

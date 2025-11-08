@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
@@ -24,7 +25,7 @@ pub struct GraphDatabase<DB>
 where
     DB: Database + DbQuerySystem<DB>,
 {
-    _url: String,
+    // _url: String,
     pool: Pool<DB>,
 }
 
@@ -110,9 +111,14 @@ impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB> {
         };
         Ok(GraphDatabase::<DB> {
             // obs: None,
-            _url: db_url.to_string(),
+            // _url: db_url.to_string(),
             pool,
         })
+    }
+
+    /// Simply uses the given pool as the connection to the database.
+    pub async fn connect_pool(pool: Pool<DB>) -> Self {
+        GraphDatabase::<DB> { pool }
     }
 
     /// Closes the connection with the database (and drops this [`GraphDatabase`] instance)
@@ -236,6 +242,7 @@ where
 impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
 where
     usize: sqlx::ColumnIndex<<DB as sqlx::Database>::Row>,
+    String: sqlx::Encode<'static, DB>,
     String: sqlx::Decode<'static, DB>,
     String: sqlx::Type<DB>,
     i16: sqlx::Decode<'static, DB>,
@@ -284,7 +291,7 @@ where
         Ok(res.0 as usize)
     }
 
-    async fn for_each_row<'e, V>(
+    async fn _for_each_row<'e, V>(
         &self,
         table_name: String,
         apply_fn: &mut dyn FnMut(V) -> Result<(), GraphDbRuntimeError>,
@@ -326,7 +333,6 @@ where
         Ok(results)
     }
 
-    
     // /// Pretty prints all table to the standart output.
     // pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
     //     // Get all tables :
@@ -395,47 +401,47 @@ where
     //     Ok(())
     // }
 
-    // /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
-    // /// Will not crash if a signature was already added previously.
-    // pub async fn add_to_dataset(
-    //     &mut self,
-    //     reader: impl BufRead,
-    //     batch_size: usize,
-    // ) -> Result<(), GraphDbRuntimeError> {
-    //     // Add dataset table if not already created
-    //     let res = self.add_canonical_table().await;
-    //     match &res {
-    //         Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
-    //         _ => res?,
-    //     }
+    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
+    /// Will not crash if a signature was already added previously.
+    pub async fn add_to_dataset(
+        &mut self,
+        reader: impl BufRead,
+        batch_size: usize,
+    ) -> Result<(), GraphDbRuntimeError> {
+        // Add dataset table if not already created
+        let res = self.add_canonical_table().await;
+        match &res {
+            Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
+            _ => res?,
+        }
 
-    //     let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
-    //         // Get insert query
-    //         let query_str = T::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
-    //         let safe_query = create_safe_query(query_str, vec)?;
-    //         T::execute_query_no_return(&self.pool, safe_query).await?;
-    //         Ok(())
-    //     };
+        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
+            // Get insert query
+            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+            let safe_query = Self::create_safe_query(query_str, vec)?;
+            DB::execute_query_no_return(&self.pool, safe_query).await?;
+            Ok(())
+        };
 
-    //     let mut data_batch = vec![];
+        let mut data_batch = vec![];
 
-    //     for canonical_form in reader.lines().map_while(Result::ok) {
-    //         let value = get_nb_vertices(&canonical_form);
-    //         data_batch.push(canonical_form);
-    //         data_batch.push(value.to_string());
+        for canonical_form in reader.lines().map_while(Result::ok) {
+            let value = get_nb_vertices(&canonical_form);
+            data_batch.push(canonical_form);
+            data_batch.push(value.to_string());
 
-    //         if data_batch.len() / 2 >= batch_size {
-    //             push_to_db(data_batch, batch_size).await?;
-    //             data_batch = vec![];
-    //         }
-    //     }
-    //     if !data_batch.is_empty() {
-    //         let data_left = data_batch.len() / 2;
-    //         push_to_db(data_batch, data_left).await?;
-    //     }
+            if data_batch.len() / 2 >= batch_size {
+                push_to_db(data_batch, batch_size).await?;
+                data_batch = vec![];
+            }
+        }
+        if !data_batch.is_empty() {
+            let data_left = data_batch.len() / 2;
+            push_to_db(data_batch, data_left).await?;
+        }
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // async fn _add_to_inv_table(
     //     &mut self,
@@ -448,31 +454,31 @@ where
     //     Ok(())
     // }
 
-    // fn create_safe_query(
-    //     query_str: String,
-    //     arguments: Vec<impl ToString>,
-    // ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
-    //     let mut builder = QueryBuilder::<DB>::new("");
-    //     let mut arguments = arguments.iter();
+    fn create_safe_query(
+        query_str: String,
+        arguments: Vec<impl ToString>,
+    ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
+        let mut builder = QueryBuilder::<DB>::new("");
+        let mut arguments = arguments.iter();
 
-    //     for c in query_str.chars() {
-    //         if c == '?' {
-    //             match arguments.next() {
-    //                 Some(arg) => {
-    //                     builder.push_bind::<String>(arg.to_string());
-    //                 }
-    //                 None => {
-    //                     return Err(GraphDbRuntimeError::QueryCreationError(
-    //                         builder.into_sql().to_string(),
-    //                     ));
-    //                 }
-    //             }
-    //         } else {
-    //             builder.push(c);
-    //         }
-    //     }
-    //     Ok(builder)
-    // }
+        for c in query_str.chars() {
+            if c == '?' {
+                match arguments.next() {
+                    Some(arg) => {
+                        builder.push_bind::<String>(arg.to_string());
+                    }
+                    None => {
+                        return Err(GraphDbRuntimeError::QueryCreationError(
+                            builder.into_sql().to_string(),
+                        ));
+                    }
+                }
+            } else {
+                builder.push(c);
+            }
+        }
+        Ok(builder)
+    }
 
     // pub async fn compute_executable(
     //     &mut self,

@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use gquest_core::{
     data_handler::data_loader::GengProcess,
-    database_handler::{GraphDatabase, MySqlGraphDB, SqliteGraphDB, SqlxLogLevels},
+    database_handler::{SqliteGraphDB, SqlxLogLevels},
     utils::config_file::ConfigFile,
 };
 use log::*;
-use sqlx::Sqlite;
 
 const DB_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
@@ -33,12 +32,11 @@ async fn main() {
 
     let geng = GengProcess::call_geng(8, &"".to_string(), (None, None)).expect("correct call");
 
-    // db.add_to_dataset(geng.get_reader(), 10000)
-    //     .await
-    //     .expect("correct");
+    db.add_to_dataset(geng.get_reader(), 10000)
+        .await
+        .expect("correct");
 
     // db.get_all_table_names().await.expect("good");
-
 
     // println!("{:?}", db.get_size_of_table("Dataset").await);
     // println!("{:?}", db.read_all_dataset().await);

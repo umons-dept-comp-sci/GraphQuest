@@ -31,6 +31,35 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         Ok(query.fetch_all(pool).await?)
     }
 
+    async fn execute_query_fetch_one<V>(
+        pool: &Pool<Sqlite>,
+        mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> Result<V, GraphDbRuntimeError>
+    where
+        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
+            + std::marker::Send
+            + std::marker::Unpin,
+    {
+        let query = query_builder.build_query_as();
+
+        Ok(query.fetch_one(pool).await?)
+    }
+
+    fn execute_query_fetch<'e, V>(
+        pool: &'e Pool<Sqlite>,
+        query_builder: &'e mut sqlx::QueryBuilder<'_, Sqlite>,
+    ) -> std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<V, sqlx::Error>> + Send + 'e>>
+    where
+        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
+            + std::marker::Send
+            + std::marker::Unpin
+            + 'e,
+    {
+        let query = query_builder.build_query_as();
+
+        query.fetch(pool)
+    }
+
     fn get_all_tables_query() -> String {
         "SELECT name FROM sqlite_master WHERE type='table';".to_string()
     }
@@ -146,35 +175,6 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             "SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';",
             table_name.to_string()
         )
-    }
-
-    fn execute_query_fetch<'e, V>(
-        pool: &'e Pool<Sqlite>,
-        query_builder: &'e mut sqlx::QueryBuilder<'_, Sqlite>,
-    ) -> std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<V, sqlx::Error>> + Send + 'e>>
-    where
-        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
-            + std::marker::Send
-            + std::marker::Unpin
-            + 'e,
-    {
-        let query = query_builder.build_query_as();
-
-        query.fetch(pool)
-    }
-
-    async fn execute_query_fetch_one<V>(
-        pool: &Pool<Sqlite>,
-        mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
-    ) -> Result<V, GraphDbRuntimeError>
-    where
-        V: for<'r> FromRow<'r, <Sqlite as sqlx::Database>::Row>
-            + std::marker::Send
-            + std::marker::Unpin,
-    {
-        let query = query_builder.build_query_as();
-
-        Ok(query.fetch_one(pool).await?)
     }
 }
 

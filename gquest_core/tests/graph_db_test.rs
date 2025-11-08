@@ -1,7 +1,7 @@
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        GraphDatabase, GraphDbStartupError, SqliteQuerySystem, CANONICAL_TABLE_NAME,
+        CANONICAL_TABLE_NAME, GraphDatabase, GraphDbStartupError, SqliteGraphDB
     },
 };
 use sqlx::migrate::MigrateDatabase;
@@ -18,7 +18,7 @@ const BAD_DB_URL: &str = "sqlite::bad_url";
 #[tokio::test]
 async fn connect_db_test_success() {
     remove_all_created_df().await;
-    let test = GraphDatabase::<SqliteQuerySystem>::connect_graph_database(MEMORY_DB_URL, None)
+    let test = SqliteGraphDB::connect_graph_database(MEMORY_DB_URL, None)
         .await
         .unwrap();
 
@@ -29,7 +29,7 @@ async fn connect_db_test_success() {
 #[tokio::test]
 async fn connect_db_test_bad_url() {
     remove_all_created_df().await;
-    GraphDatabase::<SqliteQuerySystem>::connect_graph_database(BAD_DB_URL, None)
+    SqliteGraphDB::connect_graph_database(BAD_DB_URL, None)
         .await
         .expect_err("Expected an error because the db doesn't exist");
 }
@@ -37,12 +37,12 @@ async fn connect_db_test_bad_url() {
 #[tokio::test]
 async fn create_db_test() {
     remove_all_created_df().await;
-    GraphDatabase::<SqliteQuerySystem>::create_graph_database(PHYSICAL_DB_URL, None)
+    SqliteGraphDB::create_graph_database(PHYSICAL_DB_URL, None)
         .await
         .expect("This was supposed to not cause an error");
     // Already exists
     assert!(matches!(
-        GraphDatabase::<SqliteQuerySystem>::create_graph_database(PHYSICAL_DB_URL, None).await,
+        SqliteGraphDB::create_graph_database(PHYSICAL_DB_URL, None).await,
         Err(GraphDbStartupError::DatabaseAlreadyCreated { .. })
     ));
 
@@ -54,7 +54,7 @@ async fn create_db_test() {
 async fn print_all_db_table_test() {
     remove_all_created_df().await;
     let test =
-        GraphDatabase::<SqliteQuerySystem>::connect_create_graph_database(MEMORY_DB_URL, None)
+        SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
             .await
             .unwrap();
 
@@ -65,7 +65,7 @@ async fn print_all_db_table_test() {
 async fn add_to_dataset_test() {
     remove_all_created_df().await;
     let mut test =
-        GraphDatabase::<SqliteQuerySystem>::connect_create_graph_database(PHYSICAL_DB_URL, None)
+        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
             .await
             .unwrap();
     let (expected, geng_reader) = get_geng_values();
@@ -86,7 +86,7 @@ async fn add_to_dataset_test() {
 async fn is_table_added_test() {
     remove_all_created_df().await;
     let test =
-        GraphDatabase::<SqliteQuerySystem>::connect_create_graph_database(PHYSICAL_DB_URL, None)
+        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
             .await
             .unwrap();
 
@@ -102,7 +102,7 @@ async fn is_table_added_test() {
 async fn get_size_of_table_test() {
     remove_all_created_df().await;
     let mut test =
-        GraphDatabase::<SqliteQuerySystem>::connect_create_graph_database(PHYSICAL_DB_URL, None)
+        SqliteGraphDB::connect_create_graph_database(PHYSICAL_DB_URL, None)
             .await
             .unwrap();
     let (expected, geng_reader) = get_geng_values();
