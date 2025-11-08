@@ -16,15 +16,28 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
+/// Can be cloned cheaply (since it will just clone the associated [`Pool`]).
 pub struct GraphDatabase<DB>
 where
     DB: Database + DbQuerySystem<DB>,
 {
     // _url: String,
     pool: Pool<DB>,
+}
+
+// Note: We are not using derive since we don't have to force the DB to be clonable, only the pools.
+impl<DB> Clone for GraphDatabase<DB>
+where
+    DB: Database + DbQuerySystem<DB>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pool: self.pool.clone(),
+        }
+    }
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
