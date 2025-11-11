@@ -271,6 +271,7 @@ where
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
+    /// Returns all the table name stored inside the database
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
         let query_str = DB::get_all_tables_query();
         let builder = QueryBuilder::<DB>::new(query_str);
