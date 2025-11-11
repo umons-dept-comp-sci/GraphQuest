@@ -1,3 +1,4 @@
+use sqlx::{Database, FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 
 use crate::{
@@ -14,17 +15,38 @@ pub enum WorkplaceError {
     InvariantError(#[from] InvariantError),
 }
 
-pub struct Workplace<T: DbQuerySystem> {
+pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
     _name: Option<String>,
-    db: GraphDatabase<T>,
+    pub db: GraphDatabase<DB>,
     execs: Vec<InvariantsExecutable>,
     _nb_threads: usize,
 }
 
-impl<T: DbQuerySystem> Workplace<T> {
-    pub async fn init_workplace(
-        _config: Option<ConfigFile>,
-    ) -> Result<Self, WorkplaceError> {
+impl<DB: Database + DbQuerySystem<DB>> Workplace<DB>
+where
+    DB: MigrateDatabase,
+    usize: sqlx::ColumnIndex<DB::Row>,
+    String: sqlx::Encode<'static, DB>,
+    for<'a> String: sqlx::Decode<'a, DB>,
+    String: sqlx::Type<DB>,
+    i16: sqlx::Decode<'static, DB>,
+    i16: sqlx::Type<DB>,
+    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    for<'a> i64: sqlx::Decode<'a, DB>,
+    i64: sqlx::Type<DB>,
+    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+{
+    pub fn new(db: GraphDatabase<DB>, configs: ConfigFile) -> Self {
+        Self {
+            _name: None,
+            db,
+            execs: configs.executables,
+            _nb_threads: 1,
+        }
+    }
+    pub async fn init_workplace(_config: Option<ConfigFile>) -> Result<Self, WorkplaceError> {
         todo!()
     }
 
@@ -60,7 +82,14 @@ impl<T: DbQuerySystem> Workplace<T> {
         let man = sorter.group_execs()?;
 
         // Execute them by groups
-        for _group in man.get_groups() {}
+        for group in man.get_groups() {
+            for inv in group {
+                self.db
+                    .compute_executable(&inv, 1000)
+                    .await
+                    .expect("no errors");
+            }
+        }
         Ok(())
     }
 

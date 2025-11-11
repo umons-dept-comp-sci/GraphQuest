@@ -43,6 +43,7 @@ struct ConfigJsonFile {
     executables: Vec<ExecutableJson>,
 }
 
+#[derive(Debug)]
 /// Contains data that will affect how the program should be ran.
 pub struct ConfigFile {
     /// The list of executables that should be executed by the program.
