@@ -30,9 +30,13 @@ async fn execute_correct_inv() {
     let mut actual_res: Vec<String> = vec![];
     identity
         .execute_invariant(
-            &mut async || reader.next(),
+            &mut async || -> Option<Result<Vec<String>, ()>> {
+                let v = reader.next()?.ok()?;
+                Some(Ok([v].to_vec()))
+            },
             &mut async |s| {
                 actual_res.push(s[1].clone());
+                Ok(())
             },
             MAX_STDIN_SIZE,
         )
@@ -57,9 +61,13 @@ async fn execute_late_inv() {
     let mut actual_res: Vec<String> = vec![];
     identity
         .execute_invariant(
-            &mut async || reader.next(),
+            &mut async || -> Option<Result<Vec<String>, ()>> {
+                let v = reader.next()?.ok()?;
+                Some(Ok([v].to_vec()))
+            },
             &mut async |s| {
                 actual_res.push(s[1].clone());
+                Ok(())
             },
             MAX_STDIN_SIZE,
         )
@@ -79,8 +87,11 @@ async fn execute_crash_before() {
     let mut reader = geng.get_reader().lines();
     let error = identity
         .execute_invariant(
-            &mut async || reader.next(),
-            &mut async |_| {},
+            &mut async || -> Option<Result<Vec<String>, ()>> {
+                let v = reader.next()?.ok()?;
+                Some(Ok([v].to_vec()))
+            },
+            &mut async |_| Ok(()),
             MAX_STDIN_SIZE,
         )
         .await;
@@ -101,8 +112,11 @@ async fn execute_crash_during() {
     let mut reader = geng.get_reader().lines();
     let error = identity
         .execute_invariant(
-            &mut async || reader.next(),
-            &mut async |_| {},
+            &mut async || -> Option<Result<Vec<String>, ()>> {
+                let v = reader.next()?.ok()?;
+                Some(Ok([v].to_vec()))
+            },
+            &mut async |_| Ok(()),
             MAX_STDIN_SIZE,
         )
         .await;
@@ -112,3 +126,8 @@ async fn execute_crash_during() {
         Err(InvariantExecutionError::EarlyExit(_, _, _))
     ))
 }
+
+
+// TODO: Tests -> unexpected input and outputs
+
+// Also the test when the input function fails during exec

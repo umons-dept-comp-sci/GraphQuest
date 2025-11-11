@@ -1,7 +1,7 @@
 use log::error;
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::InvariantsExecutable;
+use crate::data_handler::invariant_execs::{InvariantExecutionError, InvariantsExecutable};
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
@@ -31,8 +31,12 @@ pub enum GraphDbRuntimeError {
     ViolationError(sqlx::Error),
     #[error("Too many bind characters found when working on the query : \"{0}\"")]
     QueryCreationError(String),
-    #[error("Could not compute the invariant \"{0}\" because the \"{1}\" is not present in the database")]
+    #[error(
+        "Could not compute the invariant \"{0}\" because the \"{1}\" is not present in the database"
+    )]
     InvariantDependencyError(InvariantsExecutable, String),
+    #[error("Ran into an error while computing an executable : \"{0}\"")]
+    InvariantExecutionError(#[from] InvariantExecutionError),
 }
 
 impl From<sqlx::Error> for GraphDbRuntimeError {

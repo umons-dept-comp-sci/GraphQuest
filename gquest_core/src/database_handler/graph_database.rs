@@ -2,11 +2,14 @@ use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::{migrate::MigrateDatabase, pool::PoolOptions, Database, FromRow, Pool, QueryBuilder};
+use sqlx::{Column, Row, TypeInfo};
+use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 // use sqlx::{Column, Row};
 use tokio_stream::StreamExt;
 
+use crate::data_handler::invariant_execs::InvariantsExecutable;
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::utils::table_handler::QueryTable;
 
 /// Used to change the logging settings of a sqlx connection.
 /// This is because by default, all debug options will be shown and will fill the logger really quickly.
@@ -255,14 +258,14 @@ where
 // TODO: Remove useless import
 impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
 where
-    usize: sqlx::ColumnIndex<<DB as sqlx::Database>::Row>,
+    usize: sqlx::ColumnIndex<DB::Row>,
     String: sqlx::Encode<'static, DB>,
-    String: sqlx::Decode<'static, DB>,
+    for<'a> String: sqlx::Decode<'a, DB>,
     String: sqlx::Type<DB>,
     i16: sqlx::Decode<'static, DB>,
     i16: sqlx::Type<DB>,
     (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    i64: sqlx::Decode<'static, DB>,
+    for<'a> i64: sqlx::Decode<'a, DB>,
     i64: sqlx::Type<DB>,
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
@@ -291,8 +294,7 @@ where
         Ok(res.0 == 1)
     }
 
-    /// Gets the number values inside the given table.
-    /// TODO: Add unit test
+    /// Gets the number values stored inside the given table.
     pub async fn get_size_of_table(
         &self,
         table_name: impl ToString,
@@ -303,33 +305,6 @@ where
             DB::execute_query_fetch_one(&self.pool, QueryBuilder::<DB>::new(query_str)).await?;
 
         Ok(res.0 as usize)
-    }
-
-    async fn _for_each_row<'e, V>(
-        &self,
-        table_name: String,
-        apply_fn: &mut dyn FnMut(V) -> Result<(), GraphDbRuntimeError>,
-    ) -> Result<(), GraphDbRuntimeError>
-    where
-        V: for<'r> FromRow<'r, DB::Row> + Send + Unpin,
-    {
-        let query_str = DB::get_all_from_table(table_name);
-
-        let mut builder = QueryBuilder::<DB>::new(query_str);
-
-        // Execute query :
-        let mut results = DB::execute_query_fetch(&self.pool, &mut builder);
-
-        while let Some(result_row) = results.next().await {
-            match result_row {
-                Ok(row) => apply_fn(row)?,
-                Err(e) => {
-                    return Err(e.into());
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// Reads and returns all values contained inside the [`CANONICAL_TABLE_NAME`].
@@ -347,59 +322,71 @@ where
         Ok(results)
     }
 
-    // /// Pretty prints all table to the standart output.
-    // pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError>
-    // where
-    //     for<'r> DB::Row: FromRow<'r, DB::Row>,
-    // {
-    //     // Get all tables :
-    //     let tables = self.get_all_table_names().await?;
-    //     if tables.is_empty() {
-    //         println!("No tables in database");
-    //         return Ok(());
-    //     }
-    //     for table in tables {
-    //         let mut table_query: Option<QueryTable> = None;
+    /// Pretty prints all table to the standart output.
+    pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
+        // Get all tables :
+        let tables = self.get_all_table_names().await?;
+        if tables.is_empty() {
+            println!("No tables in database");
+            return Ok(());
+        }
+        for table in tables {
+            let mut table_query: Option<QueryTable> = None;
+            let query_str = DB::get_all_from_table(table);
 
-    //         self.for_each_row(table, &mut |row: DB::Row| {
-    //             // Fetch all header first
-    //             if table_query.is_none() {
-    //                 //
-    //                 let mut headers = vec![];
-    //                 for col in row.columns() {
-    //                     headers.push(col.name().to_string());
-    //                 }
-    //                 table_query = Some(QueryTable::new(
-    //                     headers,
-    //                     crate::utils::table_handler::QueryTableOptions::Partial {
-    //                         first_rows_count: 10,
-    //                         last_rows_count: 10,
-    //                     },
-    //                 ));
-    //             }
-    //             // Add line to query
-    //             table_query.as_mut().expect("is some").push_line({
-    //                 let mut row_vec: Vec<String> = vec![];
+            // Execute query :
+            let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query_str));
 
-    //                 for (i, col) in row.columns().iter().enumerate() {
-    //                     // match col.type_info() {
+            // Add each returned row to the table
+            while let Some(result_row) = results.next().await {
+                let row = result_row?;
+                // Fetch all header first
+                if table_query.is_none() {
+                    let mut headers = vec![];
+                    for col in row.columns() {
+                        headers.push(col.name().to_string());
+                    }
+                    table_query = Some(QueryTable::new(
+                        headers,
+                        crate::utils::table_handler::QueryTableOptions::Partial {
+                            first_rows_count: 10,
+                            last_rows_count: 10,
+                        },
+                    ));
+                }
+                // Store each value from that row
+                table_query
+                    .as_mut()
+                    .expect("is some")
+                    .push_line(Self::read_row_values(&row));
+            }
+        }
 
-    //                     // }
-    //                     println!("{col:?}")
-    //                 }
+        Ok(())
+    }
 
-    //                 row_vec
-    //             });
-    //             Ok(())
-    //         })
-    //         .await?;
-    //         if let Some(tab) = table_query {
-    //             println!("{tab}");
-    //         }
-    //     }
+    fn read_row_values(row: &DB::Row) -> Vec<String> {
+        let mut row_vec: Vec<String> = vec![];
 
-    //     Ok(())
-    // }
+        for col_i in 0..row.columns().len() {
+            row_vec.push(Self::read_row_col_value(row, col_i));
+        }
+
+        row_vec
+    }
+
+    fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
+        let col = row.column(col_index);
+        let col_type = col.type_info().name();
+        if col_type == "INTEGER" {
+            let value = row.get::<i64, usize>(col_index);
+            value.to_string()
+        } else if col_type == "TEXT" {
+            row.get::<String, usize>(col_index)
+        } else {
+            "No string value".to_string()
+        }
+    }
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
     /// Will not crash if a signature was already added previously.
@@ -418,7 +405,7 @@ where
         let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
             // Get insert query
             let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
-            let safe_query = Self::create_safe_query(query_str, vec)?;
+            let safe_query = Self::create_safe_query(query_str, &vec)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
             Ok(())
         };
@@ -443,19 +430,20 @@ where
         Ok(())
     }
 
-    async fn _add_to_inv_table(
+    async fn add_to_inv_table(
         &mut self,
-        inv_name: &String,
-        values: Vec<String>,
+        inv_name: impl ToString,
+        values: &[impl ToString],
     ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = DB::get_insert_into_query(inv_name, 2, inv_name.len());
+        let inv_name = inv_name.to_string();
+        let query_str = DB::get_insert_into_query(&inv_name, 2, inv_name.len());
         let safe_query = Self::create_safe_query(query_str, values)?;
         DB::execute_query_no_return(&self.pool, safe_query).await
     }
 
     fn create_safe_query(
         query_str: String,
-        arguments: Vec<impl ToString>,
+        arguments: &[impl ToString],
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
         let mut arguments = arguments.iter();
@@ -479,37 +467,92 @@ where
         Ok(builder)
     }
 
-    // pub async fn compute_executable(
-    //     &mut self,
-    //     executable: &InvariantsExecutable,
-    //     batch_size: usize,
-    // ) -> Result<(), GraphDbRuntimeError> {
-    //     // Check if we can compute this invariant
-    //     for dep in &executable. {
+    /// Computes an executable and store its results in a table
+    pub async fn compute_executable(
+        &mut self,
+        executable: &InvariantsExecutable,
+        batch_size: usize,
+    ) -> Result<(), GraphDbRuntimeError> {
+        // Check if we can compute this invariant
+        // by checking that every dependency was added before
+        if let Some(deps) = &executable.dependencies {
+            for dep in deps {
+                if !&self.is_table_added(dep).await? {
+                    return Err(GraphDbRuntimeError::InvariantDependencyError(
+                        executable.clone(),
+                        dep.to_string(),
+                    ));
+                }
+            }
+        }
 
-    //     }
+        // Get join dependency query
+        let join_query = {
+            if let Some(dep) = &executable.dependencies
+                && !dep.is_empty()
+            {
+                // Get dependencies
+                DB::get_join_table_query(dep.clone(), PK_NAME)
+            } else {
+                DB::get_all_rows_from_table_column(DATASET_VALUE_NAME, PK_NAME)
+            }
+        };
 
-    //     // let query_str =
-    //     // if let Some(dep) = &executable.dependencies {
-    //     //     // Get dependencies
-    //     //     let query_str = T::get_join_table_query(dep.clone(), INVARIANT_COLUMN_NAME);
+        // Set the capacity of the vector to save time (since we know their sizes)
+        let mut batch_to_store = Vec::with_capacity(executable.invariant_names.len());
+        (0..batch_to_store.len()).for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
+        let mut count = 0;
 
-    //     //     //
-    //     // }
+        let mut db_clone = self.clone();
+        let mut fetch_handle =
+            DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&join_query));
+        executable
+            .execute_invariant(
+                &mut async || -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
+                    let res = fetch_handle.next().await?.ok()?;
+                    Some(Ok(Self::read_row_values(&res)))
+                },
+                &mut async |values| {
+                    // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
+                    for (i, inv_values) in values.into_iter().enumerate() {
+                        // Push into the related storing vector
+                        batch_to_store
+                            .get_mut(i)
+                            .expect("correct index")
+                            .push(inv_values);
+                    }
+                    count += 1;
 
-    //     // let mut batch_to_store = vec![];
-    //     // executable.execute_invariant(&mut async || {
-    //     //     Some(Ok("test".to_string()))
-    //     // }, &mut async |val| {
-    //     //     batch_to_store.push(val);
-    //     //     if batch_to_store.len() >= batch_size {
-    //     //         self.add_to_inv_table(inv_name, values)
-    //     //         batch_to_store = vec![];
-    //     //     }
-    //     // }, batch_size);
+                    if count >= batch_size {
+                        db_clone.push_batch(&mut batch_to_store, executable).await?;
+                        count = 0;
+                    }
+                    Ok(())
+                },
+                batch_size,
+            )
+            .await?;
 
-    //     todo!()
-    // }
+        if !batch_to_store.is_empty() {
+            db_clone.push_batch(&mut batch_to_store, executable).await?;
+        }
+        Ok(())
+    }
+
+    async fn push_batch(
+        &mut self,
+        batch_to_store: &mut [Vec<String>],
+        executable: &InvariantsExecutable,
+    ) -> Result<(), GraphDbRuntimeError> {
+        for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
+            // Push data to related invariant table
+            self.add_to_inv_table(&executable.invariant_names[i], inv_values)
+                .await?;
+
+            inv_values.clear(); // no affects on capacity
+        }
+        Ok(())
+    }
 }
 
 fn get_nb_vertices(signature: &String) -> usize {

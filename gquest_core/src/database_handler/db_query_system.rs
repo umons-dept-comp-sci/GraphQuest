@@ -1,6 +1,6 @@
 use std::{fmt::Debug, pin::Pin};
 
-use sqlx::{Database, FromRow, Pool, QueryBuilder};
+use sqlx::{Database, FromRow, Pool, QueryBuilder, query::Query};
 use tokio_stream::Stream;
 
 use crate::database_handler::GraphDbRuntimeError;
@@ -59,6 +59,11 @@ where
     ) -> Pin<Box<dyn Stream<Item = Result<V, sqlx::Error>> + Send + 'e>>
     where
         V: for<'r> FromRow<'r, <DB as sqlx::Database>::Row> + Send + Unpin + 'e;
+
+    fn execute_query_fetch_sql_rows<'e>(
+        pool: &'e Pool<DB>,
+        query: Query<'e, DB, DB::Arguments<'e>>,
+    ) -> Pin<Box<dyn Stream<Item = Result<DB::Row, sqlx::Error>> + Send + 'e>>;
 
     /// Gets a query that returns all the table names from the database.
     fn get_all_tables_query() -> String;

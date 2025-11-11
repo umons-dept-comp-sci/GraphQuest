@@ -1,7 +1,8 @@
 use sqlx::{
-    sqlite::{Sqlite, SqliteError},
-    FromRow, Pool,
+    FromRow, Pool, query::Query, sqlite::{Sqlite, SqliteError}
 };
+
+use tokio_stream::Stream;
 
 use crate::database_handler::{ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError};
 
@@ -57,6 +58,15 @@ impl DbQuerySystem<Sqlite> for Sqlite {
     {
         let query = query_builder.build_query_as();
 
+        query.fetch(pool)
+    }
+
+    fn execute_query_fetch_sql_rows<'e>(
+        pool: &'e Pool<Sqlite>,
+        query: Query<'e, Sqlite, <sqlx::Sqlite as sqlx::Database>::Arguments<'e>>,
+    ) -> std::pin::Pin<
+        Box<dyn Stream<Item = Result<<Sqlite as sqlx::Database>::Row, sqlx::Error>> + Send + 'e>,
+    > {
         query.fetch(pool)
     }
 
@@ -205,16 +215,7 @@ fn translate_column(column_type: ColumnType) -> String {
             let mut tmp = String::from("INTEGER");
             // Convert true to 1 and false to 0
             if let Some(d) = default_value {
-                tmp.push_str(
-                    format!(" DEFAULT {}", {
-                        if d {
-                            1
-                        } else {
-                            0
-                        }
-                    })
-                    .as_str(),
-                );
+                tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
             }
             tmp
         }

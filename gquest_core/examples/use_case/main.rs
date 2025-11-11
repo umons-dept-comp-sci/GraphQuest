@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::data_loader::GengProcess,
+    data_handler::invariant_execs::ExecutableSorter,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     utils::config_file::ConfigFile,
 };
@@ -25,16 +25,24 @@ async fn main() {
         .await
         .expect("Database to be okay");
 
-    println!("table names :{:?}", db.get_all_table_names().await);
+    // db.print_all_tables().await;
 
-    let _config =
-        ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    // println!("table names :{:?}", db.get_all_table_names().await);
 
-    let geng = GengProcess::call_geng(8, &"".to_string(), (None, None)).expect("correct call");
+    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    db.add_to_dataset(geng.get_reader(), 10000)
-        .await
-        .expect("correct");
+    let sorter: ExecutableSorter = config.executables.clone().try_into().expect("Good sorter");
+
+    let man = sorter.group_execs().expect("good manager");
+    println!("{man}");
+
+    let to_exec = man.get_groups_ref()[0][0].clone();
+
+    db.compute_executable(&to_exec, 100).await.expect("no errors");
+
+    // db.add_to_dataset(geng.get_reader(), 10000)
+    //     .await
+    //     .expect("correct");
 
     // db.get_all_table_names().await.expect("good");
 

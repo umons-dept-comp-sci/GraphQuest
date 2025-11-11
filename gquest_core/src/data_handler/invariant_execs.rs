@@ -4,7 +4,7 @@ use regex::Regex;
 use std::{
     collections::HashMap,
     env,
-    fmt::Display,
+    fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
@@ -20,10 +20,14 @@ pub enum InvariantExecutionError {
     FailedExecution(String),
     #[error("Failed to write to the stdin of the executable \"{1}\", reason \"{0}\"")]
     FailedWriteStdin(io::Error, String),
-    #[error("The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" ")]
+    #[error(
+        "The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" "
+    )]
     EarlyExit(String, String, String),
     #[error("The executable \"{0}\" returned \"{1}\" values instead of \"{2}\"")]
     UnexpectedOutput(String, usize, usize),
+    #[error("Tried to input \"{1}\" values instead of \"{2}\" to executable \"{0}\"")]
+    UnexpectedInput(String, usize, usize),
 }
 
 #[derive(Debug, Error)]
@@ -34,7 +38,9 @@ pub enum InvariantError {
     NotExecutable(PathBuf),
     #[error("Encountered an IoError : \"{0}\"")]
     IoError(#[from] io::Error),
-    #[error("The given name \"{0}\" is not a valid invariant name. An invariant name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$")]
+    #[error(
+        "The given name \"{0}\" is not a valid invariant name. An invariant name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$"
+    )]
     InvalidName(String),
     #[error(
         "The given invariant \"{0}\" is not present, yet it is a dependency of the executable \"{1}\""
@@ -120,10 +126,10 @@ impl InvariantsExecutable {
         let path = Self::get_path(exec_path)?;
         for name in names {
             Self::check_invariant_name_validity(name)?;
-            if let Some(dependencies) = dependencies {
-                if dependencies.contains(name) {
-                    return Err(InvariantError::DependsOnSelf(name.to_string()));
-                }
+            if let Some(dependencies) = dependencies
+                && dependencies.contains(name)
+            {
+                return Err(InvariantError::DependsOnSelf(name.to_string()));
             }
         }
         Ok(path)
@@ -176,10 +182,11 @@ impl InvariantsExecutable {
         batch_size: usize,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut() -> Option<Result<String, E>>,
-        F: AsyncFnMut(Vec<String>),
+        T: AsyncFnMut() -> Option<Result<Vec<String>, E>>,
+        F: AsyncFnMut(Vec<String>) -> Result<(), E>,
+        E: Debug,
     {
-        debug!("Start executable : {}", self.exec_path.display());
+        debug!("Start executable : {}", self.exec_path.as_os_str().display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -206,7 +213,17 @@ impl InvariantsExecutable {
                 self.check_child_state(&mut call_res, &mut stderr)?;
 
                 // Push this value to content
-                debug!("Wrote to child stdin: {val}");
+                if let Some(dep) = &self.dependencies
+                    && dep.len() + 1 != val.len()
+                {
+                    return Err(InvariantExecutionError::UnexpectedInput(
+                        self.exec_path.display().to_string(),
+                        val.len(),
+                        dep.len() + 1,
+                    ));
+                }
+                let val = val.join(" ");
+                debug!("Wrote to child stdin: {val:?}");
                 self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
                 waiting_in_stdin += 1;
 
@@ -245,7 +262,7 @@ impl InvariantsExecutable {
         Ok(())
     }
 
-    async fn flush_wait_output<T>(
+    async fn flush_wait_output<T, E>(
         &self,
         child: &mut Child,
         sent_in_stdin: usize,
@@ -254,7 +271,8 @@ impl InvariantsExecutable {
         stderr: &mut ChildStderr,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut(Vec<String>),
+        T: AsyncFnMut(Vec<String>) -> Result<(), E>,
+        E: Debug,
     {
         debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
 
@@ -276,7 +294,7 @@ impl InvariantsExecutable {
                         self.invariant_names.len() + 1,
                     ));
                 }
-                output_function(vals).await;
+                output_function(vals).await.expect("oh no"); // FIXME Find a way to return this error up
             }
 
             received += 1;
@@ -442,7 +460,7 @@ impl ExecutableSorter {
 
     /// Consumes the sorter and turns it into an [`ExecutableManager`]
     /// # Errors
-    /// See the [`ExecutableSorter::sort`] method. 
+    /// See the [`ExecutableSorter::sort`] method.
     pub fn group_execs(self) -> Result<ExecutableManager, InvariantError> {
         let sorted_execs = self.sort()?;
 

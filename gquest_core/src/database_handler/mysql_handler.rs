@@ -1,4 +1,4 @@
-use sqlx::{mysql::MySqlDatabaseError, FromRow, MySql, Pool};
+use sqlx::{FromRow, MySql, Pool, mysql::MySqlDatabaseError};
 
 use crate::database_handler::{ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError};
 
@@ -30,6 +30,20 @@ impl DbQuerySystem<MySql> for MySql {
         Ok(query.fetch_all(pool).await?)
     }
 
+    async fn execute_query_fetch_one<V>(
+        pool: &Pool<MySql>,
+        mut query_builder: sqlx::QueryBuilder<'_, MySql>,
+    ) -> Result<V, GraphDbRuntimeError>
+    where
+        V: for<'r> FromRow<'r, <MySql as sqlx::Database>::Row>
+            + std::marker::Send
+            + std::marker::Unpin,
+    {
+        let query = query_builder.build_query_as();
+
+        Ok(query.fetch_one(pool).await?)
+    }
+
     fn execute_query_fetch<'e, V>(
         pool: &'e Pool<MySql>,
         query_builder: &'e mut sqlx::QueryBuilder<'_, MySql>,
@@ -42,6 +56,19 @@ impl DbQuerySystem<MySql> for MySql {
     {
         let query = query_builder.build_query_as();
 
+        query.fetch(pool)
+    }
+
+    fn execute_query_fetch_sql_rows<'e>(
+        pool: &'e Pool<MySql>,
+        query: sqlx::query::Query<'e, MySql, <MySql as sqlx::Database>::Arguments<'e>>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<<MySql as sqlx::Database>::Row, sqlx::Error>>
+                + Send
+                + 'e,
+        >,
+    > {
         query.fetch(pool)
     }
 
@@ -103,20 +130,6 @@ impl DbQuerySystem<MySql> for MySql {
 
     fn get_is_table_present(_table_name: impl ToString) -> String {
         todo!()
-    }
-
-    async fn execute_query_fetch_one<V>(
-        pool: &Pool<MySql>,
-        mut query_builder: sqlx::QueryBuilder<'_, MySql>,
-    ) -> Result<V, GraphDbRuntimeError>
-    where
-        V: for<'r> FromRow<'r, <MySql as sqlx::Database>::Row>
-            + std::marker::Send
-            + std::marker::Unpin,
-    {
-        let query = query_builder.build_query_as();
-
-        Ok(query.fetch_one(pool).await?)
     }
 }
 
