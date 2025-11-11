@@ -186,7 +186,10 @@ impl InvariantsExecutable {
         F: AsyncFnMut(Vec<String>) -> Result<(), E>,
         E: Debug,
     {
-        debug!("Start executable : {}", self.exec_path.as_os_str().display());
+        debug!(
+            "Start executable : {}",
+            self.exec_path.as_os_str().display()
+        );
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -208,7 +211,13 @@ impl InvariantsExecutable {
         {
             let mut stdin = call_res.stdin.take().expect("stdin to be open");
             // For every value to send
-            while let Some(Ok(val)) = input_function().await {
+            while let Some(val) = input_function().await {
+                if let Err(e) = val {
+                    // println!("{:?}");
+                    return Err(InvariantExecutionError::FailedExecution(format!("{e:?}")));
+                }
+                let val = val.unwrap();
+
                 // Check if the child closed or not during the execution
                 self.check_child_state(&mut call_res, &mut stderr)?;
 

@@ -216,7 +216,7 @@ where
         .await
     }
 
-    async fn _add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
+    async fn add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
             inv,
             PK_NAME,
@@ -360,6 +360,9 @@ where
                     .expect("is some")
                     .push_line(Self::read_row_values(&row));
             }
+            if let Some(table) = table_query {
+                println!("{table}");
+            }
         }
 
         Ok(())
@@ -402,29 +405,33 @@ where
             _ => res?,
         }
 
-        let push_to_db = async |vec: Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
+        let push_to_db = async |signatures: &Vec<String>,
+                                values: &Vec<String>,
+                                batch_size|
+               -> Result<(), GraphDbRuntimeError> {
             // Get insert query
             let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
-            let safe_query = Self::create_safe_query(query_str, &vec)?;
+            let safe_query = Self::create_safe_query(query_str, signatures, values)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
             Ok(())
         };
 
+        let mut signature_batch = vec![];
         let mut data_batch = vec![];
 
         for canonical_form in reader.lines().map_while(Result::ok) {
             let value = get_nb_vertices(&canonical_form);
-            data_batch.push(canonical_form);
+            signature_batch.push(canonical_form);
             data_batch.push(value.to_string());
 
-            if data_batch.len() / 2 >= batch_size {
-                push_to_db(data_batch, batch_size).await?;
-                data_batch = vec![];
+            if data_batch.len() >= batch_size {
+                push_to_db(&signature_batch, &data_batch, batch_size).await?;
+                data_batch.clear();
+                signature_batch.clear();
             }
         }
         if !data_batch.is_empty() {
-            let data_left = data_batch.len() / 2;
-            push_to_db(data_batch, data_left).await?;
+            push_to_db(&signature_batch, &data_batch, data_batch.len()).await?;
         }
 
         Ok(())
@@ -433,33 +440,55 @@ where
     async fn add_to_inv_table(
         &mut self,
         inv_name: impl ToString,
+        signatures: &[impl ToString],
         values: &[impl ToString],
     ) -> Result<(), GraphDbRuntimeError> {
         let inv_name = inv_name.to_string();
-        let query_str = DB::get_insert_into_query(&inv_name, 2, inv_name.len());
-        let safe_query = Self::create_safe_query(query_str, values)?;
+
+        // TODO: Combine signatures and values into one vector
+        let query_str = DB::get_insert_into_query(&inv_name, 2, signatures.len());
+
+        let safe_query = Self::create_safe_query(query_str, signatures, values)?;
         DB::execute_query_no_return(&self.pool, safe_query).await
     }
 
     fn create_safe_query(
         query_str: String,
-        arguments: &[impl ToString],
+        signatures: &[impl ToString],
+        values: &[impl ToString],
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
-        let mut arguments = arguments.iter();
+        let mut signatures = signatures.iter();
+        let mut values = values.iter();
+
+        let mut added_signature = false;
 
         for c in query_str.chars() {
             if c == '?' {
-                match arguments.next() {
-                    Some(arg) => {
-                        builder.push_bind::<String>(arg.to_string());
+                if added_signature {
+                    match values.next() {
+                        Some(value) => {
+                            builder.push_bind::<String>(value.to_string());
+                        }
+                        None => {
+                            return Err(GraphDbRuntimeError::QueryCreationError(
+                                builder.into_sql().to_string(),
+                            ));
+                        }
                     }
-                    None => {
-                        return Err(GraphDbRuntimeError::QueryCreationError(
-                            builder.into_sql().to_string(),
-                        ));
+                } else {
+                    match signatures.next() {
+                        Some(sign) => {
+                            builder.push_bind::<String>(sign.to_string());
+                        }
+                        None => {
+                            return Err(GraphDbRuntimeError::QueryCreationError(
+                                builder.into_sql().to_string(),
+                            ));
+                        }
                     }
                 }
+                added_signature = !added_signature;
             } else {
                 builder.push(c);
             }
@@ -494,13 +523,15 @@ where
                 // Get dependencies
                 DB::get_join_table_query(dep.clone(), PK_NAME)
             } else {
-                DB::get_all_rows_from_table_column(DATASET_VALUE_NAME, PK_NAME)
+                DB::get_all_rows_from_table_column(CANONICAL_TABLE_NAME, PK_NAME)
             }
         };
 
         // Set the capacity of the vector to save time (since we know their sizes)
+        let mut signatures = Vec::with_capacity(batch_size);
         let mut batch_to_store = Vec::with_capacity(executable.invariant_names.len());
-        (0..batch_to_store.len()).for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
+        (0..executable.invariant_names.len())
+            .for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
         let mut count = 0;
 
         let mut db_clone = self.clone();
@@ -509,12 +540,20 @@ where
         executable
             .execute_invariant(
                 &mut async || -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
-                    let res = fetch_handle.next().await?.ok()?;
-                    Some(Ok(Self::read_row_values(&res)))
+                    let res: Result<<DB as Database>::Row, sqlx::Error> =
+                        fetch_handle.next().await?;
+
+                    match res {
+                        Ok(row) => Some(Ok(Self::read_row_values(&row))),
+                        Err(e) => Some(Err(e.into())),
+                    }
                 },
                 &mut async |values| {
+                    let mut values = values.into_iter();
+                    signatures.push(values.next().expect("a signature as the first value"));
+
                     // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
-                    for (i, inv_values) in values.into_iter().enumerate() {
+                    for (i, inv_values) in values.enumerate() {
                         // Push into the related storing vector
                         batch_to_store
                             .get_mut(i)
@@ -524,7 +563,9 @@ where
                     count += 1;
 
                     if count >= batch_size {
-                        db_clone.push_batch(&mut batch_to_store, executable).await?;
+                        db_clone
+                            .push_batch(&mut signatures, &mut batch_to_store, executable)
+                            .await?;
                         count = 0;
                     }
                     Ok(())
@@ -534,23 +575,32 @@ where
             .await?;
 
         if !batch_to_store.is_empty() {
-            db_clone.push_batch(&mut batch_to_store, executable).await?;
+            db_clone
+                .push_batch(&mut signatures, &mut batch_to_store, executable)
+                .await?;
         }
         Ok(())
     }
 
     async fn push_batch(
         &mut self,
+        signatures: &mut Vec<String>,
         batch_to_store: &mut [Vec<String>],
         executable: &InvariantsExecutable,
     ) -> Result<(), GraphDbRuntimeError> {
         for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
+            // Check if table was created before
+            if !self.is_table_added(&executable.invariant_names[i]).await? {
+                self.add_invariant_table(executable.invariant_names[i].clone())
+                    .await?
+            }
             // Push data to related invariant table
-            self.add_to_inv_table(&executable.invariant_names[i], inv_values)
+            self.add_to_inv_table(&executable.invariant_names[i], signatures, inv_values)
                 .await?;
 
             inv_values.clear(); // no affects on capacity
         }
+        signatures.clear();
         Ok(())
     }
 }

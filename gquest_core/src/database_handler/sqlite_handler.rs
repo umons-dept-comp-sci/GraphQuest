@@ -1,5 +1,7 @@
 use sqlx::{
-    FromRow, Pool, query::Query, sqlite::{Sqlite, SqliteError}
+    FromRow, Pool,
+    query::Query,
+    sqlite::{Sqlite, SqliteError},
 };
 
 use tokio_stream::Stream;
@@ -153,8 +155,8 @@ impl DbQuerySystem<Sqlite> for Sqlite {
     ) -> String {
         format!(
             "SELECT {} FROM {}",
+            column_name.to_string(),
             table_name.to_string(),
-            column_name.to_string()
         )
     }
 

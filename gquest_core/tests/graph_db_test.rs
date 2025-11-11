@@ -1,8 +1,8 @@
 use gquest_core::{
     data_handler::data_loader::GengProcess,
-    database_handler::{GraphDbStartupError, SqliteGraphDB, CANONICAL_TABLE_NAME},
+    database_handler::{CANONICAL_TABLE_NAME, GraphDbStartupError, SqliteGraphDB},
 };
-use sqlx::{migrate::MigrateDatabase, Sqlite};
+use sqlx::{Sqlite, migrate::MigrateDatabase};
 use std::{io::Read, process::ChildStdout};
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
@@ -55,7 +55,6 @@ async fn print_all_db_table_test() {
 
 #[tokio::test]
 async fn add_to_dataset_test() {
-    remove_all_created_df().await;
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
         .unwrap();
@@ -75,7 +74,6 @@ async fn add_to_dataset_test() {
 
 #[tokio::test]
 async fn is_table_added_test() {
-    remove_all_created_df().await;
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
         .unwrap();
@@ -86,10 +84,11 @@ async fn is_table_added_test() {
         .await
         .expect("no issues");
 
-    assert!(test
-        .is_table_added(CANONICAL_TABLE_NAME)
-        .await
-        .expect("no issues"));
+    assert!(
+        test.is_table_added(CANONICAL_TABLE_NAME)
+            .await
+            .expect("no issues")
+    );
 
     assert!(!test.is_table_added("Fake table").await.expect("no issues"));
 }
