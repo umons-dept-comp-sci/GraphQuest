@@ -3,23 +3,23 @@ use thiserror::Error;
 
 use crate::{
     data_handler::invariant_execs::{ExecutableSorter, InvariantError, InvariantsExecutable},
-    database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError},
+    database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError},
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
 
 #[derive(Debug, Error)]
 pub enum WorkplaceError {
-    #[error("Encountered an error from the database : \"{0}\"")]
-    GraphDatabaseError(#[from] GraphDbRuntimeError),
+    #[error("Encountered an error from the database during initialisation : \"{0}\"")]
+    GraphDbStartupError(#[from] GraphDbStartupError),
+    #[error("Encountered an error from the database during an execution : \"{0}\"")]
+    GraphDbRuntimeError(#[from] GraphDbRuntimeError),
     #[error("Encountered an error from an invariant executable : \"{0}\"")]
     InvariantError(#[from] InvariantError),
 }
 
 pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
-    _name: Option<String>,
     pub db: GraphDatabase<DB>,
-    execs: Vec<InvariantsExecutable>,
-    _nb_threads: usize,
+    config: ConfigFile,
 }
 
 impl<DB: Database + DbQuerySystem<DB>> Workplace<DB>
@@ -38,16 +38,16 @@ where
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
-    pub fn new(db: GraphDatabase<DB>, configs: ConfigFile) -> Self {
-        Self {
-            _name: None,
-            db,
-            execs: configs.executables,
-            _nb_threads: 1,
-        }
+    pub fn new(db: GraphDatabase<DB>, config: ConfigFile) -> Self {
+        Self { db, config }
     }
-    pub async fn init_workplace(_config: Option<ConfigFile>) -> Result<Self, WorkplaceError> {
-        todo!()
+    pub async fn init_workplace(
+        uri: impl ToString,
+        config: ConfigFile,
+    ) -> Result<Self, WorkplaceError> {
+        let db = GraphDatabase::connect_create_graph_database(uri, None).await?;
+
+        Ok(Self::new(db, config))
     }
 
     /// Connects to the workspace using the given url
@@ -65,19 +65,15 @@ where
         todo!()
     }
 
-    /// Adds multiple executable to the workplace
-    pub async fn add_executables(&mut self, mut executables: Vec<InvariantsExecutable>) {
-        self.execs.append(&mut executables);
-    }
-
     /// Properly closes the worspace
     pub async fn close_workspace(self) {
         self.db.close_connection().await;
     }
 
+    /// Executes all stored invariants
     pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
         // Sort all executables
-        let sorter: ExecutableSorter = self.execs.clone().try_into()?;
+        let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
         // Group them
         let man = sorter.group_execs()?;
 

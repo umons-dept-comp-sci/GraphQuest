@@ -56,16 +56,17 @@ where
     /// * [`GraphDbStartupError::DatabaseAlreadyCreated`] if the database was already created
     /// * [`GraphDbStartupError::DatabaseError`] if an unknown error was uncountered when trying to create it
     pub async fn create_graph_database(
-        db_url: &str,
+        db_url: impl ToString,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
+        let db_url = db_url.to_string();
         // Install sqlite, postgre and mysql drivers
         // sqlx::any::install_default_drivers();
 
         // Creates the database if it didn't already exists
-        if !DB::database_exists(db_url).await.unwrap_or(false) {
+        if !DB::database_exists(&db_url).await.unwrap_or(false) {
             debug!("Creating database {}", db_url);
-            match DB::create_database(db_url).await {
+            match DB::create_database(&db_url).await {
                 Ok(_) => {
                     debug!("Success creating the database {}", db_url);
                 }
@@ -90,13 +91,16 @@ where
     ///
     /// * [`GraphDbStartupError`] if an unknown error was uncountered when trying to create/connect to it
     pub async fn connect_create_graph_database(
-        db_url: &str,
+        db_url: impl ToString,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
         // Install sqlite, postgre and mysql drivers
         // sqlx::any::install_default_drivers();
 
-        if !DB::database_exists(db_url).await.unwrap_or(false) {
+        if !DB::database_exists(&db_url.to_string())
+            .await
+            .unwrap_or(false)
+        {
             // Creates the database if it didn't already exists
             Self::create_graph_database(db_url, connection_options).await
         } else {
@@ -113,13 +117,13 @@ where
     /// Returns a:
     /// * [`GraphDbStartupError`] if something went wrong during the connection.
     pub async fn connect_graph_database(
-        db_url: &str,
+        db_url: impl ToString,
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
         let pool = {
             let res = match connection_options {
                 Some(opt) => Self::connect_with_options(db_url, opt).await,
-                None => sqlx::Pool::connect(db_url).await,
+                None => sqlx::Pool::connect(&db_url.to_string()).await,
             };
             match res {
                 Ok(p) => p,
@@ -145,7 +149,7 @@ where
 
     /// Applies the given options to the pool *before* opening it.
     async fn connect_with_options(
-        url: &str,
+        url: impl ToString,
         log_levels: SqlxLogLevels,
     ) -> Result<Pool<DB>, sqlx::Error> {
         let mut connect_opt = PoolOptions::new();
@@ -160,7 +164,7 @@ where
                 .acquire_slow_level(level.0)
                 .acquire_slow_threshold(level.1);
         }
-        connect_opt.connect(url).await
+        connect_opt.connect(&url.to_string()).await
     }
 }
 

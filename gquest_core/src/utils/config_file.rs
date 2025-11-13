@@ -14,6 +14,8 @@ pub enum ConfigFileError {
     JsonError(#[from] serde_json::Error),
     #[error("Could not create one of the given invariant : `{0}`")]
     InvariantError(#[from] InvariantError),
+    #[error("At least one invariant should be provided in the file")]
+    NoInvariantError,
 }
 
 /// Private struct simply used to not directly create an executable.
@@ -33,21 +35,24 @@ struct ExecutableJson {
 /// Private struct simply used to not directly create a config file.
 #[derive(Serialize, Deserialize)]
 struct ConfigJsonFile {
-    /// The optional uri of the workplace
-    uri: Option<String>,
-
     /// The number of data being sent between the executables and the databases
     batch_size: Option<usize>,
-
+    /// The maximum number of threads to use to use when computing invariants
+    nb_threads: Option<usize>,
     /// The list of executables that should be executed by the program.
     executables: Vec<ExecutableJson>,
 }
 
 #[derive(Debug)]
-/// Contains data that will affect how the program should be ran.
+/// Contains the necessary data to initialise a workplace.
+/// Important to mention that at least one invariant will be present and checked for any instantiation errors.
 pub struct ConfigFile {
+    /// The number of data being sent between the executables and the databases
+    batch_size: usize,
+    /// The maximum number of threads to use when computing invariants
+    nb_threads: usize,
     /// The list of executables that should be executed by the program.
-    pub executables: Vec<InvariantsExecutable>,
+    executables: Vec<InvariantsExecutable>,
 }
 
 impl ConfigFile {
@@ -71,12 +76,31 @@ impl ConfigFile {
         from_json_data(config_json)
     }
 
+    /// Converts a json value to a [`ConfigFile`].
+    /// # Errors
+    /// * [`ConfigFileError::FileError`] : if something went wrong when trying to open the given file.
+    /// * [`ConfigFileError::JsonError`] : if the file content could not be turned into a [`ConfigFile`].
+    ///     * In this case check if the fields name and content are aligned with the struct fields.
     pub fn read_json_value(value: Value) -> Result<Self, ConfigFileError> {
         from_json_data(serde_json::from_value(value)?)
+    }
+
+    pub fn get_execs_ref(&self) -> &Vec<InvariantsExecutable> {
+        &self.executables
+    }
+
+    pub fn get_batch_size(&self) -> usize {
+        self.batch_size
+    }
+    pub fn get_nb_threads(&self) -> usize {
+        self.nb_threads
     }
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
+    if config_json.executables.is_empty() {
+        return Err(ConfigFileError::NoInvariantError);
+    }
     let mut executables = vec![];
 
     for exec in config_json.executables {
@@ -87,5 +111,9 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
         }
     }
 
-    Ok(ConfigFile { executables })
+    Ok(ConfigFile {
+        executables,
+        nb_threads: config_json.nb_threads.unwrap_or(1),
+        batch_size: config_json.batch_size.unwrap_or(1000),
+    })
 }
