@@ -2,7 +2,7 @@ use sqlx::{Database, FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 
 use crate::{
-    data_handler::invariant_execs::{ExecutableSorter, InvariantError, InvariantsExecutable},
+    data_handler::invariant_execs::{ExecutableSorter, InvariantError},
     database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError},
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };

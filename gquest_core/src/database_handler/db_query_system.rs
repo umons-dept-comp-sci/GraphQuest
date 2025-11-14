@@ -81,6 +81,7 @@ where
         value_column_type: ColumnType,
     ) -> String;
 
+    /// Returns the query that can be used to get all value from a table with the given name from the dataset
     fn get_all_from_table(table_name: impl ToString) -> String;
 
     /// Returns the query that can be used to delete a table with the given name from the dataset

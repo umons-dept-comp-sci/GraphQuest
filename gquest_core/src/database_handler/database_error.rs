@@ -17,6 +17,10 @@ pub enum GraphDbStartupError {
 #[derive(Debug, Error)]
 /// Represents databases error that can happen while the database is already connected.
 pub enum GraphDbRuntimeError {
+    #[error(
+        "Tried to execute the following invariant when the dataset was not initialised: \"{0}\""
+    )]
+    DatasetNotInitialisedError(InvariantsExecutable),
     #[error("The given table name does not exist \"{table_name}\"")]
     TableNotFoundError { table_name: String },
     #[error("A table was already created: \"{0}\"")]

@@ -28,6 +28,12 @@ pub enum InvariantExecutionError {
     UnexpectedOutput(String, usize, usize),
     #[error("Tried to input \"{1}\" values instead of \"{2}\" to executable \"{0}\"")]
     UnexpectedInput(String, usize, usize),
+    #[error("The output function returned an error during the execution : \"{0}\"")]
+    // Drops some information about the error
+    FailedOutput(String),
+    #[error("The input function returned an error during the execution : \"{0}\"")]
+    // Drops some information about the error
+    FailedInput(String),
 }
 
 #[derive(Debug, Error)]
@@ -213,8 +219,7 @@ impl InvariantsExecutable {
             // For every value to send
             while let Some(val) = input_function().await {
                 if let Err(e) = val {
-                    // println!("{:?}");
-                    return Err(InvariantExecutionError::FailedExecution(format!("{e:?}")));
+                    return Err(InvariantExecutionError::FailedInput(format!("{e:?}")));
                 }
                 let val = val.unwrap();
 
@@ -303,7 +308,9 @@ impl InvariantsExecutable {
                         self.invariant_names.len() + 1,
                     ));
                 }
-                output_function(vals).await.expect("oh no"); // FIXME Find a way to return this error up
+                if let Err(e) = output_function(vals).await {
+                    return Err(InvariantExecutionError::FailedOutput(format!("{e:?}")));
+                }
             }
 
             received += 1;

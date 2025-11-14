@@ -1,6 +1,8 @@
 use gquest_core::{
-    data_handler::data_loader::GengProcess,
-    database_handler::{CANONICAL_TABLE_NAME, GraphDbStartupError, SqliteGraphDB},
+    data_handler::{data_loader::GengProcess, invariant_execs::InvariantsExecutable},
+    database_handler::{
+        CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqliteGraphDB,
+    },
 };
 use sqlx::{Sqlite, migrate::MigrateDatabase};
 use std::{io::Read, process::ChildStdout};
@@ -8,6 +10,8 @@ use std::{io::Read, process::ChildStdout};
 const MEMORY_DB_URL: &str = "sqlite::memory:";
 const PHYSICAL_DB_URL: &str = "sqlite:test.db";
 
+const EXEC_VERTICES: &str = "tests/modules/vertices.py";
+const GENG_VERTICE_COUNT: u32 = 5;
 const BAD_DB_URL: &str = "sqlite::bad_url";
 
 #[tokio::test]
@@ -95,7 +99,6 @@ async fn is_table_added_test() {
 
 #[tokio::test]
 async fn get_size_of_table_test() {
-    remove_all_created_df().await;
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
         .unwrap();
@@ -112,6 +115,49 @@ async fn get_size_of_table_test() {
             .expect("no issues")
     );
 }
+#[tokio::test]
+async fn compute_executable_test() {
+    let mut db_test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .expect("no issues with db init");
+
+    // Get invariant :
+    let identity =
+        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+
+    // This should fail since no dataset were initialised at first
+    assert!(matches!(
+        db_test.compute_executable(&identity, 100).await,
+        Err(GraphDbRuntimeError::DatasetNotInitialisedError(_))
+    ));
+
+    // Create dataset
+    let (expected, geng_reader) = get_geng_values();
+
+    db_test
+        .add_to_dataset(geng_reader, 1000)
+        .await
+        .expect("no issues");
+
+    // Then execute without any troubles
+    db_test
+        .compute_executable(&identity, 100)
+        .await
+        .expect("No errors");
+
+    // Check db content
+    assert!(db_test.is_table_added("ident").await.expect("no errors"));
+    assert_eq!(
+        expected.len(),
+        db_test.get_size_of_table("ident").await.expect("no errors")
+    );
+    // Fetch all values and compare them to expected
+
+    let values = db_test.read_all_table("ident").await.expect("No issues");
+    for (_, value) in values {
+        assert_eq!(value, GENG_VERTICE_COUNT as i16)
+    }
+}
 
 async fn remove_all_created_df() {
     // Install sqlite, postgre and mysql drivers
@@ -124,7 +170,8 @@ async fn remove_all_created_df() {
 }
 
 fn get_geng_values() -> (Vec<String>, std::io::BufReader<ChildStdout>) {
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(GENG_VERTICE_COUNT, &"".to_string(), (None, None))
+        .expect("correct call");
     let mut res: String = String::default();
     geng.get_reader().read_to_string(&mut res).expect("correct");
     let expected_res: Vec<String> = res
@@ -132,7 +179,8 @@ fn get_geng_values() -> (Vec<String>, std::io::BufReader<ChildStdout>) {
         .map(|f| f.to_string())
         .collect();
 
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(GENG_VERTICE_COUNT, &"".to_string(), (None, None))
+        .expect("correct call");
     let reader: std::io::BufReader<ChildStdout> = geng.get_reader();
 
     (expected_res, reader)

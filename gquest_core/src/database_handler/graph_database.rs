@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 
 use crate::data_handler::invariant_execs::InvariantsExecutable;
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
-use crate::utils::table_handler::QueryTable;
+use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 
 /// Used to change the logging settings of a sqlx connection.
 /// This is because by default, all debug options will be shown and will fill the logger really quickly.
@@ -317,7 +317,17 @@ where
     /// # Warning
     /// Only use this method when using small database because everything will be stored and returned.
     pub async fn read_all_dataset(&self) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
-        let query_str = DB::get_all_from_table(CANONICAL_TABLE_NAME);
+        self.read_all_table(CANONICAL_TABLE_NAME).await
+    }
+    /// Reads and returns all values contained inside the given table.
+    ///
+    /// # Warning
+    /// Only use this method when using small database because everything will be stored and returned.
+    pub async fn read_all_table(
+        &self,
+        table_name: impl ToString,
+    ) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
+        let query_str = DB::get_all_from_table(table_name);
 
         let builder = QueryBuilder::new(query_str);
 
@@ -353,7 +363,7 @@ where
                     }
                     table_query = Some(QueryTable::new(
                         headers,
-                        crate::utils::table_handler::QueryTableOptions::Partial {
+                        QueryTableOptions::Partial {
                             first_rows_count: 10,
                             last_rows_count: 10,
                         },
@@ -501,12 +511,19 @@ where
         Ok(builder)
     }
 
-    /// Computes an executable and store its results in a table
+    /// Computes an executable and store its results in one or more tables
     pub async fn compute_executable(
         &mut self,
         executable: &InvariantsExecutable,
         batch_size: usize,
     ) -> Result<(), GraphDbRuntimeError> {
+        // Check if the dataset was at least initialised first
+        if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
+            return Err(GraphDbRuntimeError::DatasetNotInitialisedError(
+                executable.clone(),
+            ));
+        }
+
         // Check if we can compute this invariant
         // by checking that every dependency was added before
         if let Some(deps) = &executable.dependencies {
