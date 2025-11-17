@@ -18,7 +18,6 @@ async fn main() {
 
     let log_levels = Some(SqlxLogLevels {
         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
-        log_statement_level: Some(LevelFilter::Off),
     });
 
     // Create (or connects) to the given database url.
@@ -53,6 +52,7 @@ async fn main() {
 /// Starts the log environment
 pub fn startup_log() {
     env_logger::builder()
+        .filter(Some("sqlx::query"), LevelFilter::Warn)
         .filter_level(log::LevelFilter::Debug)
         .format_target(true)
         .format_timestamp(None)

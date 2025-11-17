@@ -15,7 +15,6 @@ use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 /// This is because by default, all debug options will be shown and will fill the logger really quickly.
 /// It is really recommended to set them to at least [`log::LevelFilter::Info`].
 pub struct SqlxLogLevels {
-    pub log_statement_level: Option<log::LevelFilter>,
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
@@ -154,11 +153,6 @@ where
     ) -> Result<Pool<DB>, sqlx::Error> {
         let mut connect_opt = PoolOptions::new();
 
-        if let Some(_level) = log_levels.log_statement_level {
-            // connect_opt = connect_opt..(level).log_statements(level);
-            // todo!("FIX THIS !")
-            // TODO: AHHH
-        }
         if let Some(level) = log_levels.log_slow_statement_level {
             connect_opt = connect_opt
                 .acquire_slow_level(level.0)
@@ -186,35 +180,6 @@ where
             DATASET_VALUE_NAME,
             ColumnType::Integer {
                 default_value: None,
-            },
-        )
-        .await
-    }
-
-    /// Adds a metadata table to the database that will be used to not recompute the [`FULL_TABLE_NAME`] table.
-    ///
-    /// ## Exemple of table
-    /// ```text
-    /// Metadata -> | table_name  | stopped_at |
-    ///             |-------------|------------|
-    ///             | InitDataset | 1500       |
-    ///             | Euler       | 753        |
-    ///             |            ...           |
-    /// ```
-    /// ## Exceptions
-    /// Returns:
-    /// * [`GraphDbRuntimeError`] if something went wrong with the query
-    async fn _add_meta_data_table(&mut self) -> Result<(), GraphDbRuntimeError> {
-        self.add_table(
-            METADATA_TABLE_NAME,
-            METADATA_PK_NAME,
-            ColumnType::String {
-                max_size: Some(TABLE_NAME_MAX_SIZE),
-                default_value: None,
-            },
-            METADATA_VALUE_NAME,
-            ColumnType::Integer {
-                default_value: Some(0),
             },
         )
         .await
