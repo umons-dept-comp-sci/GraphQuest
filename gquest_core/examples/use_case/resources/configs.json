@@ -1,4 +1,5 @@
 {
+  "batch_size": 50,
   "executables": [
     {
       "path": "P_Gn.py",

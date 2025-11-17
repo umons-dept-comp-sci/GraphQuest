@@ -1,4 +1,4 @@
-#! ./resources/env/bin/python3
+#! /home/axel/GitProject/GraphQuest/gquest_core/examples/use_case/resources/env/bin/python3
 """Compute the chromatic polynomial of a graph evaluated at n.
 
 Reference:

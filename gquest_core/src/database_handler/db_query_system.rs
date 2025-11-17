@@ -111,11 +111,10 @@ where
     /// * `start_index` : The index of the table to start fetching the data at
     ///     * If the given value is `none`, the fetching will start a 0
     /// * `limit` : The limit on the number of value to fetch
-    ///     * If the given value is `none`, the fetching will be stop at the end of the table
     fn get_select_batch_from(
         from_table: String,
         start_index: Option<usize>,
-        limit: Option<usize>,
+        limit: usize,
     ) -> String;
 
     /// Checks if the given table is present inside a database.

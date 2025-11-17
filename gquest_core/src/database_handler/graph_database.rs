@@ -537,6 +537,22 @@ where
             }
         }
 
+        // Check where the previous computations were left at (if any) in order to not recompute values for no reasons.
+        let mut start_value = None;
+        let total_nb_inv = self.get_size_of_table(CANONICAL_TABLE_NAME).await?;
+        // Get the first value to compute
+        for inv_name in &executable.invariant_names {
+            if self.is_table_added(inv_name).await? {
+                let val = self.get_size_of_table(inv_name).await?;
+                start_value = Some(start_value.unwrap_or(total_nb_inv).min(val));
+            }
+        }
+
+        if start_value.is_some_and(|start| start >= total_nb_inv) {
+            debug!("No need to compute anything here");
+            return Ok(());
+        }
+
         // Get join dependency query
         let join_query = {
             if let Some(dep) = &executable.dependencies
@@ -549,6 +565,8 @@ where
             }
         };
 
+        let limit_offset_query = DB::get_select_batch_from(join_query, start_value, total_nb_inv);
+
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures = Vec::with_capacity(batch_size);
         let mut batch_to_store = Vec::with_capacity(executable.invariant_names.len());
@@ -558,7 +576,7 @@ where
 
         let mut db_clone = self.clone();
         let mut fetch_handle =
-            DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&join_query));
+            DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&limit_offset_query));
         executable
             .execute_invariant(
                 &mut async || -> Option<Result<Vec<String>, GraphDbRuntimeError>> {

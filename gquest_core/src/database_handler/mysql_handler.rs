@@ -123,7 +123,7 @@ impl DbQuerySystem<MySql> for MySql {
     fn get_select_batch_from(
         _from_table: String,
         _start_index: Option<usize>,
-        _limit: Option<usize>,
+        _limit: usize,
     ) -> String {
         todo!()
     }

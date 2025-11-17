@@ -1,10 +1,7 @@
-use std::{time::Duration, vec};
+use std::time::Duration;
 
 use gquest_core::{
-    data_handler::{
-        data_loader::GengProcess,
-        invariant_execs::{ExecutableSorter, InvariantsExecutable},
-    },
+    data_handler::data_loader::GengProcess,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     utils::config_file::ConfigFile,
     workplace::Workplace,
@@ -29,7 +26,7 @@ async fn main() {
         .await
         .expect("Database to be okay");
     let geng = GengProcess::call_geng(7, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 10000)
+    db.add_to_dataset(geng.get_reader(), 10)
         .await
         .expect("correct");
 

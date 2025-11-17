@@ -167,18 +167,15 @@ impl DbQuerySystem<Sqlite> for Sqlite {
     fn get_select_batch_from(
         from_table: String,
         start_index: Option<usize>,
-        limit: Option<usize>,
+        limit: usize,
     ) -> String {
-        let start = start_index.unwrap_or(0);
-
         let mut res = format!("SELECT * FROM ({from_table})");
 
-        if let Some(length) = limit {
-            res.push_str(&format!(" LIMIT {length}"));
+        res.push_str(&format!(" LIMIT {limit}"));
+
+        if let Some(start) = start_index {
+            res.push_str(&format!(" OFFSET {start}"));
         }
-
-        res.push_str(&format!(" OFFSET {start}"));
-
         res
     }
 

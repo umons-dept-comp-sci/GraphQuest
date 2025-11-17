@@ -1,4 +1,4 @@
-#! ./resources/env/bin/python3
+#! /home/axel/GitProject/GraphQuest/gquest_core/examples/use_case/resources/env/bin/python3
 """Check if a given graph is isomorphic to B_{m,n} where m is the size and n the
 order.
 
@@ -26,4 +26,4 @@ if __name__ == "__main__":
         n, m = G.number_of_nodes(), G.number_of_edges()
         if (n, m) not in memory:
             memory[(n, m)] = create_Bnm(n, km, rm)
-        print(sig, nx.is_isomorphic(G, memory[(n, m)]), flush=True)
+        print(sig, int(nx.is_isomorphic(G, memory[(n, m)])), flush=True)
