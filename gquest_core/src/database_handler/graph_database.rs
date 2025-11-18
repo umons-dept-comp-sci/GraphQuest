@@ -24,7 +24,7 @@ pub struct SqlxLogLevels {
 /// Can be cloned cheaply (since it will just clone the associated [`Pool`]).
 pub struct GraphDatabase<DB>
 where
-    DB: Database + DbQuerySystem<DB>,
+    DB: Database + DbQuerySystem<DB> + Send,
 {
     // _url: String,
     pool: Pool<DB>,
@@ -227,15 +227,21 @@ where
 // TODO: Remove useless import
 impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
 where
-    usize: sqlx::ColumnIndex<DB::Row>,
+    DB: Send,
+    DB: MigrateDatabase,
+    // Allow column indexing using usize
+    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
+    // Allow decoding/encoding
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
-    String: sqlx::Type<DB>,
-    i16: sqlx::Decode<'static, DB>,
-    i16: sqlx::Type<DB>,
-    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     for<'a> i64: sqlx::Decode<'a, DB>,
+    i16: sqlx::Decode<'static, DB>,
+    // Type of values
+    String: sqlx::Type<DB>,
+    i16: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
+    // Return values
+    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,

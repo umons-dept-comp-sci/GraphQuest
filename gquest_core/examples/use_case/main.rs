@@ -24,7 +24,7 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(7, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
     db.add_to_dataset(geng.get_reader(), 10)
         .await
         .expect("correct");
