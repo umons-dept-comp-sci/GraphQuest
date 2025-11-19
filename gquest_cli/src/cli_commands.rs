@@ -3,7 +3,6 @@ use clap_verbosity_flag::{Verbosity, WarnLevel};
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
 
-
 #[derive(Parser)]
 #[command(
     author("Axel Foucart"),
@@ -19,13 +18,6 @@ pub struct CliArg {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
-    /// Initialise a project/database to work with
-    Init {
-        #[command(subcommand)]
-        input_method: DatasetChoice,
-        #[command(flatten)]
-        path: DatabasePath,
-    },
     /// Add graphs to an already existing project  
     Add {
         #[command(subcommand)]
@@ -101,22 +93,13 @@ pub enum DatasetChoice {
         #[command(flatten)]
         args: GengArgs,
     },
-    /// Imports graph signature from a file or the standard input
-    Import {
-        #[command(flatten)]
-        args: ImportArgs,
+    /// Imports graph signatures from a file
+    File {
+        /// The path to were the dataset to add is stored
+        path: String,
     },
-}
-
-#[derive(Debug, clap::Args, Clone)]
-#[group(required = false, multiple = false)] // This will stop the user from adding multiple arguments, meaning we do not have to check
-pub struct ImportArgs {
-    /// The file were the dataset to add is stored
-    #[clap(short, long)]
-    pub file: Option<String>,
-    /// Read data from pipe (default)
-    #[clap(short, long, action=ArgAction::SetTrue, default_value="true")]
-    pub read_pipe: bool,
+    /// Imports graph signatures from a pipe
+    Pipe,
 }
 
 #[derive(Args, Debug, Clone)]
