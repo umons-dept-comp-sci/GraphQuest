@@ -9,6 +9,7 @@ use tokio_stream::StreamExt;
 
 use crate::data_handler::invariant_execs::InvariantsExecutable;
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 
 /// Used to change the logging settings of a sqlx connection.
@@ -379,10 +380,12 @@ where
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
     /// Will not crash if a signature was already added previously.
+    /// If provided, the observer will be notified of every data pushed to the dataset and will tick after reading each signature.
     pub async fn add_to_dataset(
         &mut self,
         reader: impl BufRead,
         batch_size: usize,
+        mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
         // Add dataset table if not already created
         let res = self.add_canonical_table().await;
@@ -412,12 +415,23 @@ where
 
             if data_batch.len() >= batch_size {
                 push_to_db(&signature_batch, &data_batch, batch_size).await?;
+                if let Some(obs) = &mut optional_obs {
+                    obs.notify_data_pushed(batch_size.try_into().expect("val to be u64"));
+                }
                 data_batch.clear();
                 signature_batch.clear();
+            }
+
+            if let Some(obs) = &mut optional_obs {
+                obs.notify_tick();
             }
         }
         if !data_batch.is_empty() {
             push_to_db(&signature_batch, &data_batch, data_batch.len()).await?;
+
+            if let Some(obs) = &mut optional_obs {
+                obs.notify_data_pushed(data_batch.len().try_into().expect("val to be u64"));
+            }
         }
 
         Ok(())
@@ -482,11 +496,14 @@ where
         Ok(builder)
     }
 
-    /// Computes an executable and store its results in one or more tables
+    /// Computes an executable and store its results in one or more tables.
+    ///
+    /// If provided, the given observer will be ticked for every data received and notified of the data pushed
     pub async fn compute_executable(
         &mut self,
         executable: &InvariantsExecutable,
         batch_size: usize,
+        mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
         // Check if the dataset was at least initialised first
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
@@ -571,12 +588,21 @@ where
                             .expect("correct index")
                             .push(inv_values);
                     }
+
+                    // Notify obs something happened
+                    if let Some(obs) = &mut optional_obs {
+                        obs.notify_tick();
+                    }
+
                     count += 1;
 
                     if count >= batch_size {
                         db_clone
                             .push_batch(&mut signatures, &mut batch_to_store, executable)
                             .await?;
+                        if let Some(obs) = &mut optional_obs {
+                            obs.notify_data_pushed(batch_size as u64);
+                        }
                         count = 0;
                     }
                     Ok(())
@@ -586,9 +612,15 @@ where
             .await?;
 
         if !batch_to_store.is_empty() {
+            let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
+
             db_clone
                 .push_batch(&mut signatures, &mut batch_to_store, executable)
                 .await?;
+
+            if let Some(obs) = &mut optional_obs {
+                obs.notify_data_pushed(batch_len as u64);
+            }
         }
         Ok(())
     }

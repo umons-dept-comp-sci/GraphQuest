@@ -3,6 +3,7 @@ use gquest_core::{
     database_handler::{
         CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqliteGraphDB,
     },
+    utils::subject::Observer,
 };
 use sqlx::{Sqlite, migrate::MigrateDatabase};
 use std::{io::Read, process::ChildStdout};
@@ -13,6 +14,22 @@ const PHYSICAL_DB_URL: &str = "sqlite:test.db";
 const EXEC_VERTICES: &str = "tests/modules/vertices.py";
 const GENG_VERTICE_COUNT: u32 = 5;
 const BAD_DB_URL: &str = "sqlite::bad_url";
+
+// Simple observer that tracks how many times it was called and the given progression
+#[derive(Debug)]
+struct CustomObs {
+    pub total_ticks: u64,
+    pub progression: u64,
+}
+
+impl Observer for CustomObs {
+    fn notify_tick(&mut self) {
+        self.total_ticks += 1;
+    }
+    fn notify_data_pushed(&mut self, delta: u64) {
+        self.progression += delta;
+    }
+}
 
 #[tokio::test]
 async fn connect_db_test_success() {
@@ -64,7 +81,7 @@ async fn add_to_dataset_test() {
         .unwrap();
     let (expected, geng_reader) = get_geng_values();
 
-    test.add_to_dataset(geng_reader, 1000)
+    test.add_to_dataset(geng_reader, 1000, None)
         .await
         .expect("no issues");
 
@@ -77,6 +94,26 @@ async fn add_to_dataset_test() {
 }
 
 #[tokio::test]
+async fn add_to_dataset_obs_test() {
+    let mut obs = CustomObs {
+        progression: 0,
+        total_ticks: 0,
+    };
+
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
+    let (expected, geng_reader) = get_geng_values();
+
+    test.add_to_dataset(geng_reader, 1000, Some(&mut obs))
+        .await
+        .expect("no issues");
+
+    assert_eq!(obs.progression, expected.len() as u64);
+    assert_eq!(obs.total_ticks, expected.len() as u64);
+}
+
+#[tokio::test]
 async fn is_table_added_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
@@ -84,7 +121,7 @@ async fn is_table_added_test() {
 
     let (_, geng_reader) = get_geng_values();
 
-    test.add_to_dataset(geng_reader, 1000)
+    test.add_to_dataset(geng_reader, 1000, None)
         .await
         .expect("no issues");
 
@@ -104,7 +141,7 @@ async fn get_size_of_table_test() {
         .unwrap();
     let (expected, geng_reader) = get_geng_values();
 
-    test.add_to_dataset(geng_reader, 1000)
+    test.add_to_dataset(geng_reader, 1000, None)
         .await
         .expect("no issues");
 
@@ -127,7 +164,7 @@ async fn compute_executable_test() {
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
-        db_test.compute_executable(&identity, 100).await,
+        db_test.compute_executable(&identity, 100, None).await,
         Err(GraphDbRuntimeError::DatasetNotInitialisedError(_))
     ));
 
@@ -135,13 +172,13 @@ async fn compute_executable_test() {
     let (expected, geng_reader) = get_geng_values();
 
     db_test
-        .add_to_dataset(geng_reader, 1000)
+        .add_to_dataset(geng_reader, 1000, None)
         .await
         .expect("no issues");
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, 100)
+        .compute_executable(&identity, 100, None)
         .await
         .expect("No errors");
 
@@ -157,6 +194,40 @@ async fn compute_executable_test() {
     for (_, value) in values {
         assert_eq!(value, GENG_VERTICE_COUNT as i16)
     }
+}
+
+#[tokio::test]
+async fn compute_executable_obs_test() {
+    let mut db_test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .expect("no issues with db init");
+
+    // Get invariant :
+    let identity =
+        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+
+    // Create dataset
+    let (expected, geng_reader) = get_geng_values();
+
+    // Observer
+    let mut obs = CustomObs {
+        progression: 0,
+        total_ticks: 0,
+    };
+
+    db_test
+        .add_to_dataset(geng_reader, 1000, None)
+        .await
+        .expect("no issues");
+
+    // Then execute without any troubles
+    db_test
+        .compute_executable(&identity, 100, Some(&mut obs))
+        .await
+        .expect("No errors");
+
+    assert_eq!(obs.total_ticks, expected.len() as u64);
+    assert_eq!(obs.progression, expected.len() as u64);
 }
 
 async fn remove_all_created_df() {

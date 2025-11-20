@@ -25,7 +25,7 @@ async fn main() {
         .await
         .expect("Database to be okay");
     let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 10)
+    db.add_to_dataset(geng.get_reader(), 10, None)
         .await
         .expect("correct");
 
