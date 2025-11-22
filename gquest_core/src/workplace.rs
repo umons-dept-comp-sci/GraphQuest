@@ -79,12 +79,13 @@ where
 
         // Execute them by groups
         for group in man.get_groups() {
-            for inv in group {
-                self.db
-                    .compute_executable(&inv, self.config.get_batch_size(), None)
-                    .await
-                    .expect("no errors");
-            }
+            // for inv in group {
+            //     self.db
+            //         .compute_executable(&inv, self.config.get_batch_size(), None)
+            //         .await
+            //         .expect("no errors");
+            // }
+            self.db.compute_execs_async(group).await;
         }
         Ok(())
     }

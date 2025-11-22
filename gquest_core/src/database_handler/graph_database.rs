@@ -329,11 +329,7 @@ where
 
         if *self.count >= self.batch_size {
             self.db
-                .push_batch(
-                    self.signatures,
-                    self.batch_to_store,
-                    &self.invariant_exec,
-                )
+                .push_batch(self.signatures, self.batch_to_store, &self.invariant_exec)
                 .await?;
             // if let Some(obs) = &mut self.optional_obs {
             //     obs.notify_data_pushed(self.batch_size as u64);
@@ -620,12 +616,21 @@ where
     }
 
     pub async fn compute_execs_async(&mut self, executables: Vec<InvariantsExecutable>) {
+        let mut handles = vec![];
         for exec in executables {
             let ex = exec.clone();
             let mut db_clone = self.clone();
-            tokio::spawn(async move {
-                let _ = db_clone.compute_executable(&ex, 100, None).await;
-            });
+            handles.push(tokio::spawn(async move {
+                println!("Start thread !");
+                db_clone
+                    .compute_executable(&ex, 100, None)
+                    .await
+                    .expect("no errors");
+            }));
+        }
+        for handle in handles {
+            handle.await.expect("no errors when joining thread");
+            println!("thread finished");
         }
     }
     /// Computes an executable and store its results in one or more tables.
