@@ -60,8 +60,7 @@ where
     where
         V: for<'r> FromRow<'r, <DB as sqlx::Database>::Row> + Send + Unpin + 'e;
 
-
-    /// Executes a query and returns a stream of sql Rows. 
+    /// Executes a query and returns a stream of sql Rows.
     /// Use this method when there is no information about the value returned by the query (i.e. number or content of columns not known at compile time)
     /// Useful to iterate over many values returned by a query without the risk of storing too many.
     fn execute_query_fetch_sql_rows<'e>(

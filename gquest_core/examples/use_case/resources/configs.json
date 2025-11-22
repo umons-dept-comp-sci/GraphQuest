@@ -2,12 +2,6 @@
   "batch_size": 100,
   "executables": [
     {
-      "path": "P_Gn.py",
-      "names": [
-        "P_Gn"
-      ]
-    },
-    {
       "path": "m_km_rm.py",
       "names": [
         "m",

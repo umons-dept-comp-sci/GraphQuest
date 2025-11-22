@@ -8,8 +8,10 @@ use std::{
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
+    sync::Arc,
 };
 use thiserror::Error;
+use tokio::sync::Mutex;
 use topo_sort::TopoSort;
 
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
@@ -74,6 +76,17 @@ pub struct InvariantsExecutable {
     /// The vector of dependencies requiered to compute this invariant.
     /// A dependency cannot be present in the invariant names field.
     pub dependencies: Option<Vec<String>>,
+}
+
+pub trait AsyncInvariantInput<E> {
+    fn call(&mut self) -> impl std::future::Future<Output = Option<Result<Vec<String>, E>>> + Send;
+}
+
+pub trait AsyncInvariantOutput<E> {
+    fn call(
+        &mut self,
+        values: Vec<String>,
+    ) -> impl std::future::Future<Output = Result<(), E>> + Send;
 }
 
 impl InvariantsExecutable {
@@ -178,18 +191,25 @@ impl InvariantsExecutable {
         Ok(())
     }
 
+    pub async fn exec_inv<T, E>(&self, mut input_function: T)
+    where
+        T: AsyncInvariantInput<E>,
+    {
+        while let Some(v) = input_function.call().await {}
+    }
+
     /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
     /// # Errrors
     /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
     pub async fn execute_invariant<T, F, E>(
         &self,
-        input_function: &mut T,
-        output_function: &mut F,
+        mut input_function: T,
+        mut output_function: F,
         batch_size: usize,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut() -> Option<Result<Vec<String>, E>>,
-        F: AsyncFnMut(Vec<String>) -> Result<(), E>,
+        T: AsyncInvariantInput<E>,
+        F: AsyncInvariantOutput<E>,
         E: Debug,
     {
         debug!(
@@ -217,7 +237,7 @@ impl InvariantsExecutable {
         {
             let mut stdin = call_res.stdin.take().expect("stdin to be open");
             // For every value to send
-            while let Some(val) = input_function().await {
+            while let Some(val) = input_function.call().await {
                 if let Err(e) = val {
                     return Err(InvariantExecutionError::FailedInput(format!("{e:?}")));
                 }
@@ -247,7 +267,7 @@ impl InvariantsExecutable {
                     self.flush_wait_output(
                         &mut call_res,
                         waiting_in_stdin,
-                        output_function,
+                        &mut output_function,
                         &mut stdout,
                         &mut stderr,
                     )
@@ -262,7 +282,7 @@ impl InvariantsExecutable {
             self.flush_wait_output(
                 &mut call_res,
                 waiting_in_stdin,
-                output_function,
+                &mut output_function,
                 &mut stdout,
                 &mut stderr,
             )
@@ -285,7 +305,7 @@ impl InvariantsExecutable {
         stderr: &mut ChildStderr,
     ) -> Result<(), InvariantExecutionError>
     where
-        T: AsyncFnMut(Vec<String>) -> Result<(), E>,
+        T: AsyncInvariantOutput<E>,
         E: Debug,
     {
         debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
@@ -308,7 +328,7 @@ impl InvariantsExecutable {
                         self.invariant_names.len() + 1,
                     ));
                 }
-                if let Err(e) = output_function(vals).await {
+                if let Err(e) = output_function.call(vals).await {
                     return Err(InvariantExecutionError::FailedOutput(format!("{e:?}")));
                 }
             }
@@ -653,3 +673,105 @@ impl Display for ExecutableManager {
         write!(f, "{res}")
     }
 }
+
+/*
+
+/// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
+/// # Errrors
+/// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
+pub async fn execute_invariant<T, F, E>(
+    &self,
+    input_function: T,
+    output_function: F,
+    batch_size: usize,
+) -> Result<(), InvariantExecutionError>
+where
+    T: AsyncFn() -> Option<Result<Vec<String>, E>>,
+    F: AsyncFn(Vec<String>) -> Result<(), E>,
+    E: Debug,
+{
+    debug!(
+        "Start executable : {}",
+        self.exec_path.as_os_str().display()
+    );
+    let mut call_res = match Command::new(self.exec_path.as_os_str())
+        .stdout(Stdio::piped())
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(res) => res,
+        Err(e) => return Err(InvariantExecutionError::FailedExecution(e.to_string())),
+    };
+
+    let mut stderr = call_res.stderr.take().expect("stdout to be open");
+    let mut stdout = call_res.stdout.take().expect("stdout to be open");
+
+    let mut waiting_in_stdin = 0;
+
+    // This block forces to close the opened stdin before
+    // waiting for the child process to exit.
+    // Otherwise a deadlock might appear because the child didn't flush in time.
+    {
+        let mut stdin = call_res.stdin.take().expect("stdin to be open");
+        // For every value to send
+        while let Some(val) = input_function().await {
+            if let Err(e) = val {
+                return Err(InvariantExecutionError::FailedInput(format!("{e:?}")));
+            }
+            let val = val.unwrap();
+
+            // Check if the child closed or not during the execution
+            self.check_child_state(&mut call_res, &mut stderr)?;
+
+            // Push this value to content
+            if let Some(dep) = &self.dependencies
+                && dep.len() + 1 != val.len()
+            {
+                return Err(InvariantExecutionError::UnexpectedInput(
+                    self.exec_path.display().to_string(),
+                    val.len(),
+                    dep.len() + 1,
+                ));
+            }
+            let val = val.join(" ");
+            debug!("Wrote to child stdin: {val:?}");
+            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+            waiting_in_stdin += 1;
+
+            // Send value to buffer
+            if waiting_in_stdin >= batch_size {
+                self.exec_stdin_io_call(&mut || stdin.flush())?;
+                self.flush_wait_output(
+                    &mut call_res,
+                    waiting_in_stdin,
+                    &output_function,
+                    &mut stdout,
+                    &mut stderr,
+                )
+                .await?;
+                waiting_in_stdin = 0;
+            }
+        }
+        self.exec_stdin_io_call(&mut || stdin.flush())?;
+    }
+    // If there are still data to send
+    if waiting_in_stdin > 0 {
+        self.flush_wait_output(
+            &mut call_res,
+            waiting_in_stdin,
+            &output_function,
+            &mut stdout,
+            &mut stderr,
+        )
+        .await?;
+    }
+    debug!("Finished child execution : {}", self.exec_path.display());
+
+    // Check if the child closed or not during the execution
+    self.check_child_state(&mut call_res, &mut stderr)?;
+
+    Ok(())
+}
+
+*/
