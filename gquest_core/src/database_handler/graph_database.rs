@@ -569,7 +569,7 @@ where
             .execute_invariant(
                 &mut async || -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
                     let res: Result<<DB as Database>::Row, sqlx::Error> =
-                        fetch_handle.next().await?;
+                        fetch_res_handle.lock().await.next().await?;
 
                     match res {
                         Ok(row) => Some(Ok(Self::read_row_values(&row))),

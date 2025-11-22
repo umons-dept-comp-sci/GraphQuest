@@ -1,5 +1,6 @@
 use std::cmp::min;
 
+use gquest_core::utils::subject::Observer;
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// The progressbar type to display on the terminal, it will also affect how the progress bar reacts to notifications/updates
@@ -26,6 +27,24 @@ pub struct GquestProgressBar {
     pb: ProgressBar,
 }
 
+impl Observer for GquestProgressBar {
+    fn notify_tick(&mut self) {
+        // self.pb.tick(); // Can cause a Bottleneck
+    }
+
+    fn notify_data_pushed(&mut self, delta: u64) {
+        if let Some(length) = self.pb.length() {
+            let new = min(self.pb.position() + delta, length);
+            self.pb.set_position(new);
+
+            if length <= self.pb.position() {
+                self.pb.finish();
+            }
+        }
+        self.pb.tick();
+    }
+}
+
 impl GquestProgressBar {
     pub fn new(pb_type: ProgressBarType, message: Option<impl ToString>) -> Self {
         let pb = match &pb_type {
@@ -46,18 +65,5 @@ impl GquestProgressBar {
 
     pub fn force_finish(&self) {
         self.pb.finish();
-    }
-
-    // Updates the progress bar and ticks the value (finishes the progress bar if it reached the end)
-    pub fn progress(&mut self, delta: u64) {
-        if let Some(length) = self.pb.length() {
-            let new = min(self.pb.position() + delta, length);
-            self.pb.set_position(new);
-
-            if length <= self.pb.position() {
-                self.pb.finish();
-            }
-        }
-        self.pb.tick();
     }
 }
