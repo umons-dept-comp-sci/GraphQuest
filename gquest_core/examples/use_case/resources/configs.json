@@ -25,16 +25,6 @@
         "km",
         "rm"
       ]
-    },
-    {
-      "path": "is_Bmn_cooler.py",
-      "names": [
-        "is_Bmn_but_cooler"
-      ],
-      "dep": [
-        "km",
-        "rm"
-      ]
     }
   ]
 }
