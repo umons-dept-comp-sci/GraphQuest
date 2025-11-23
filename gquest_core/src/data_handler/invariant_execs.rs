@@ -2,16 +2,15 @@ use is_executable::IsExecutable;
 use log::{debug, error};
 use regex::Regex;
 use std::{
+    cmp::min,
     collections::HashMap,
     env,
     fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
-    sync::Arc,
 };
 use thiserror::Error;
-use tokio::sync::Mutex;
 use topo_sort::TopoSort;
 
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
@@ -78,11 +77,15 @@ pub struct InvariantsExecutable {
     pub dependencies: Option<Vec<String>>,
 }
 
+/// Trait used to provide a stream of data to provided to an invariant
 pub trait AsyncInvariantInput<E> {
+    /// Returns the next values to feed to the invariant. None if everything was already given.
     fn call(&mut self) -> impl std::future::Future<Output = Option<Result<Vec<String>, E>>> + Send;
 }
 
+/// Trait used to save the data returned from the invariants.
 pub trait AsyncInvariantOutput<E> {
+    /// Provides the invariant returned values.
     fn call(
         &mut self,
         values: Vec<String>,
@@ -189,13 +192,6 @@ impl InvariantsExecutable {
             return Err(InvariantError::InvalidName(name.to_string()));
         }
         Ok(())
-    }
-
-    pub async fn exec_inv<T, E>(&self, mut input_function: T)
-    where
-        T: AsyncInvariantInput<E>,
-    {
-        while let Some(v) = input_function.call().await {}
     }
 
     /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
@@ -527,6 +523,99 @@ impl ExecutableSorter {
         }
         Ok(res.group_processes())
     }
+
+    pub fn to_iter(self) -> Result<ExecutableIterator, InvariantError> {
+        let sorted_execs = self.sort()?;
+
+        let mut res = ExecDepStore::default();
+        let mut name_index_hash: HashMap<String, usize> = HashMap::new();
+
+        for (index, exec) in sorted_execs.into_iter().enumerate() {
+            for name in &exec.invariant_names {
+                name_index_hash.insert(name.clone(), index); // insert into hashmap for an easy access to his index
+            }
+
+            // Add dependencies
+            if let Some(dependencies) = &exec.dependencies {
+                for dep_name in dependencies {
+                    // By definition of a topological sort,
+                    // these dependencies are from previous executables
+                    // and therefore are in the name hashmap
+                    res.dep_indexes[*name_index_hash.get(dep_name).expect("should be present")]
+                        .push(index)
+                }
+                res.dep_left.push(dependencies.len());
+            } else {
+                res.dep_left.push(0);
+            }
+
+            res.executables.push(Some(exec));
+            res.dep_indexes.push(vec![]);
+        }
+        Ok(ExecutableIterator::new(res))
+    }
+}
+
+#[derive(Debug)]
+pub struct ExecutableIterator {
+    store: ExecDepStore,
+    can_now_exec: Vec<InvariantsExecutable>,
+    being_computed: HashMap<PathBuf, usize>,
+    left_to_exec: usize,
+}
+
+impl ExecutableIterator {
+    fn new(store: ExecDepStore) -> Self {
+        let mut res = Self {
+            left_to_exec: store.executables.len(),
+            can_now_exec: vec![],
+            being_computed: HashMap::new(),
+            store,
+        };
+        res.update_can_now_exec();
+        res
+    }
+
+    pub fn has_next(&self) -> bool {
+        !self.can_now_exec.is_empty()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.left_to_exec == 0
+    }
+
+    pub fn update_dependencies(&mut self, inv_exec: &InvariantsExecutable) {
+        // Find the given invariant (if it is even present)
+        if let Some(index) = self.being_computed.remove(&inv_exec.exec_path) {
+            for dep_index in &self.store.dep_indexes[index] {
+                // Prevents any overflow crashes
+                if self.store.dep_left[*dep_index] > 0 {
+                    self.store.dep_left[*dep_index] -= 1;
+                }
+            }
+            self.update_can_now_exec();
+        }
+    }
+
+    fn update_can_now_exec(&mut self) {
+        // Get all processes that can now be executed
+        for i in (0..self.store.executables.len()).rev() {
+            if self.store.dep_left[i] == 0 && self.store.executables[i].is_some() {
+                let can_exec = self.store.executables[i].take().expect("present");
+                self.being_computed.insert(can_exec.exec_path.clone(), i);
+                self.can_now_exec.push(can_exec);
+            }
+        }
+    }
+
+    pub fn next_invariant(&mut self) -> Option<InvariantsExecutable> {
+        // If an invariant is waiting
+        if !self.can_now_exec.is_empty() {
+            self.left_to_exec -= 1;
+            return Some(self.can_now_exec.pop().expect("not empty"));
+        }
+        None
+    }
 }
 
 impl TryFrom<Vec<InvariantsExecutable>> for ExecutableSorter {
@@ -557,7 +646,7 @@ impl TryFrom<Vec<&InvariantsExecutable>> for ExecutableSorter {
 
 #[derive(Debug, Default)]
 /// Used to facilitate the creation of a [`ExecutableManager`] instance.
-/// Is not meant to be used for another purpuse.
+/// It is not meant to be used publically.
 struct ExecDepStore {
     /// The invariants sorted using a topological sort
     executables: Vec<Option<InvariantsExecutable>>,
@@ -673,105 +762,3 @@ impl Display for ExecutableManager {
         write!(f, "{res}")
     }
 }
-
-/*
-
-/// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
-/// # Errrors
-/// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
-pub async fn execute_invariant<T, F, E>(
-    &self,
-    input_function: T,
-    output_function: F,
-    batch_size: usize,
-) -> Result<(), InvariantExecutionError>
-where
-    T: AsyncFn() -> Option<Result<Vec<String>, E>>,
-    F: AsyncFn(Vec<String>) -> Result<(), E>,
-    E: Debug,
-{
-    debug!(
-        "Start executable : {}",
-        self.exec_path.as_os_str().display()
-    );
-    let mut call_res = match Command::new(self.exec_path.as_os_str())
-        .stdout(Stdio::piped())
-        .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(res) => res,
-        Err(e) => return Err(InvariantExecutionError::FailedExecution(e.to_string())),
-    };
-
-    let mut stderr = call_res.stderr.take().expect("stdout to be open");
-    let mut stdout = call_res.stdout.take().expect("stdout to be open");
-
-    let mut waiting_in_stdin = 0;
-
-    // This block forces to close the opened stdin before
-    // waiting for the child process to exit.
-    // Otherwise a deadlock might appear because the child didn't flush in time.
-    {
-        let mut stdin = call_res.stdin.take().expect("stdin to be open");
-        // For every value to send
-        while let Some(val) = input_function().await {
-            if let Err(e) = val {
-                return Err(InvariantExecutionError::FailedInput(format!("{e:?}")));
-            }
-            let val = val.unwrap();
-
-            // Check if the child closed or not during the execution
-            self.check_child_state(&mut call_res, &mut stderr)?;
-
-            // Push this value to content
-            if let Some(dep) = &self.dependencies
-                && dep.len() + 1 != val.len()
-            {
-                return Err(InvariantExecutionError::UnexpectedInput(
-                    self.exec_path.display().to_string(),
-                    val.len(),
-                    dep.len() + 1,
-                ));
-            }
-            let val = val.join(" ");
-            debug!("Wrote to child stdin: {val:?}");
-            self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
-            waiting_in_stdin += 1;
-
-            // Send value to buffer
-            if waiting_in_stdin >= batch_size {
-                self.exec_stdin_io_call(&mut || stdin.flush())?;
-                self.flush_wait_output(
-                    &mut call_res,
-                    waiting_in_stdin,
-                    &output_function,
-                    &mut stdout,
-                    &mut stderr,
-                )
-                .await?;
-                waiting_in_stdin = 0;
-            }
-        }
-        self.exec_stdin_io_call(&mut || stdin.flush())?;
-    }
-    // If there are still data to send
-    if waiting_in_stdin > 0 {
-        self.flush_wait_output(
-            &mut call_res,
-            waiting_in_stdin,
-            &output_function,
-            &mut stdout,
-            &mut stderr,
-        )
-        .await?;
-    }
-    debug!("Finished child execution : {}", self.exec_path.display());
-
-    // Check if the child closed or not during the execution
-    self.check_child_state(&mut call_res, &mut stderr)?;
-
-    Ok(())
-}
-
-*/

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::data_loader::GengProcess,
+    data_handler::{data_loader::GengProcess, invariant_execs::ExecutableSorter},
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     utils::config_file::ConfigFile,
     workplace::Workplace,
@@ -25,11 +25,13 @@ async fn main() {
         .await
         .expect("Database to be okay");
     let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 10, None)
+    db.add_to_dataset(geng.get_reader(), 1000, None)
         .await
         .expect("correct");
 
     let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    
+
     let mut wp = Workplace::new(db, config);
     wp.execute_all_executables().await.expect("no errors");
 

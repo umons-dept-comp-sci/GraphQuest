@@ -1,16 +1,11 @@
 use std::io::BufRead;
-use std::process::Output;
-use std::sync::Arc;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
 use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
-use tokio::sync::Mutex;
-// use sqlx::{Column, Row};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::data_loader::{read_file, read_pipe_signatures};
 use crate::data_handler::invariant_execs::{
     AsyncInvariantInput, AsyncInvariantOutput, InvariantsExecutable,
 };
@@ -233,12 +228,8 @@ where
 
 struct InputFn<'e, DB: Database + DbQuerySystem<DB>> {
     db: GraphDatabase<DB>,
-    fetch: Arc<
-        Mutex<
-            std::pin::Pin<
-                Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send + 'e>,
-            >,
-        >,
+    fetch: std::pin::Pin<
+        Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send + 'e>,
     >,
 }
 
@@ -265,8 +256,7 @@ where
     (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self) -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
-        let res: Result<<DB as Database>::Row, sqlx::Error> =
-            self.fetch.lock().await.next().await?;
+        let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
 
         match res {
             Ok(row) => Some(Ok(self.db.read_row_val(&row))),
@@ -708,7 +698,7 @@ where
 
             let input = InputFn::<'_, DB> {
                 db: self.clone(),
-                fetch: Mutex::new(fetch_handle).into(),
+                fetch: fetch_handle,
             };
 
             let output = OutputFn {
@@ -730,7 +720,7 @@ where
         if !batch_to_store.is_empty() {
             let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
 
-            self.push_batch(&mut signatures, &mut batch_to_store, &executable)
+            self.push_batch(&mut signatures, &mut batch_to_store, executable)
                 .await?;
 
             if let Some(obs) = &mut optional_obs {

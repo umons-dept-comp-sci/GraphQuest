@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{stdin, BufRead, BufReader},
+    io::{BufRead, BufReader, stdin},
     process::{Child, ChildStdout, Command, Stdio},
 };
 
@@ -48,7 +48,9 @@ impl GengProcess {
             (Some(min), Some(max)) => {
                 // min to max
                 if max < min {
-                    return Err(MethodError::GengCreation(format!("The maximum number({max}) of edges cannot be smaller than the given minimum({min})")));
+                    return Err(MethodError::GengCreation(format!(
+                        "The maximum number({max}) of edges cannot be smaller than the given minimum({min})"
+                    )));
                 }
                 args.push(format!("{min}:{max}"));
             }
