@@ -1,11 +1,11 @@
-use std::{sync::Arc, vec};
+use std::sync::Arc;
 
 use sqlx::{Database, FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 use tokio::{sync::Mutex, task::JoinSet};
 
 use crate::{
-    data_handler::invariant_execs::{ExecutableSorter, InvariantError},
+    data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError},
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
@@ -74,13 +74,30 @@ where
     }
 
     /// Executes all stored invariants
-    /// FIXME: Current problem: What if behind one dependency, 10 execs are now compatible ? Then we can't create more threads currently :(
     pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
         // Sort all executables
         let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
 
-        let sorted = sorter.to_iter().expect("ok");
+        let mut sorted = sorter.to_iter().expect("ok");
 
+        if self.config.get_nb_threads() > 1 {
+            self.execute_all_executables_multithread(sorted).await
+        } else {
+            while let Some(next_inv) = sorted.next_invariant() {
+                self.db
+                    .compute_executable(&next_inv, self.config.get_batch_size(), None)
+                    .await?;
+
+                sorted.update_dependencies(&next_inv);
+            }
+            Ok(())
+        }
+    }
+
+    async fn execute_all_executables_multithread(
+        &mut self,
+        sorted: ExecutableIterator,
+    ) -> Result<(), WorkplaceError> {
         let iter = Arc::new(Mutex::new(sorted));
 
         let mut handles = JoinSet::new();
@@ -104,7 +121,7 @@ where
                 });
             }
             // Wait for any of them to finish
-            let _res = handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
+            handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
         }
         let _res = handles.join_all().await;
 

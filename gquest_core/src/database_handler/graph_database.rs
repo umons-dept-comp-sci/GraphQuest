@@ -604,25 +604,7 @@ where
         }
         Ok(builder)
     }
-
-    pub async fn compute_execs_async(&mut self, executables: Vec<InvariantsExecutable>) {
-        let mut handles = vec![];
-        for exec in executables {
-            let ex = exec.clone();
-            let mut db_clone = self.clone();
-            handles.push(tokio::spawn(async move {
-                println!("Start thread !");
-                db_clone
-                    .compute_executable(&ex, 100, None)
-                    .await
-                    .expect("no errors");
-            }));
-        }
-        for handle in handles {
-            handle.await.expect("no errors when joining thread");
-            println!("thread finished");
-        }
-    }
+    
     /// Computes an executable and store its results in one or more tables.
     ///
     /// If provided, the given observer will be ticked for every data received and notified of the data pushed

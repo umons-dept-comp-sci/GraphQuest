@@ -2,7 +2,6 @@ use is_executable::IsExecutable;
 use log::{debug, error};
 use regex::Regex;
 use std::{
-    cmp::min,
     collections::HashMap,
     env,
     fmt::{Debug, Display},
