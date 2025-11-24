@@ -1,8 +1,8 @@
+use indexmap::IndexMap;
 use is_executable::IsExecutable;
 use log::{debug, error};
 use regex::Regex;
 use std::{
-    collections::HashMap,
     env,
     fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
@@ -397,9 +397,9 @@ impl InvariantsExecutable {
 #[derive(Default)]
 pub struct ExecutableSorter {
     /// `Invariant name` -> `Linked Executable path`
-    name_path_hashmap: HashMap<String, PathBuf>,
+    name_path_hashmap: IndexMap<String, PathBuf>,
     /// `Executable path` -> `Executables`
-    path_exec_hashmap: HashMap<PathBuf, InvariantsExecutable>,
+    path_exec_hashmap: IndexMap<PathBuf, InvariantsExecutable>,
 }
 
 impl ExecutableSorter {
@@ -481,7 +481,7 @@ impl ExecutableSorter {
         for path in ordered_paths {
             res.push(
                 self.path_exec_hashmap
-                    .remove(&path)
+                    .swap_remove(&path)
                     .expect("present in hashmap"),
             );
         }
@@ -489,45 +489,14 @@ impl ExecutableSorter {
         Ok(res)
     }
 
-    /// Consumes the sorter and turns it into an [`ExecutableManager`]
+    /// Consumes the sorter and turns it into an [`ExecutableIterator`]
     /// # Errors
     /// See the [`ExecutableSorter::sort`] method.
-    pub fn group_execs(self) -> Result<ExecutableManager, InvariantError> {
-        let sorted_execs = self.sort()?;
-
-        let mut res = ExecDepStore::default();
-        let mut name_index_hash: HashMap<String, usize> = HashMap::new();
-
-        for (index, exec) in sorted_execs.into_iter().enumerate() {
-            for name in &exec.invariant_names {
-                name_index_hash.insert(name.clone(), index); // insert into hashmap for an easy access to his index
-            }
-
-            // Add dependencies
-            if let Some(dependencies) = &exec.dependencies {
-                for dep_name in dependencies {
-                    // By definition of a topological sort,
-                    // these dependencies are from previous executables
-                    // and therefore are in the name hashmap
-                    res.dep_indexes[*name_index_hash.get(dep_name).expect("should be present")]
-                        .push(index)
-                }
-                res.dep_left.push(dependencies.len());
-            } else {
-                res.dep_left.push(0);
-            }
-
-            res.executables.push(Some(exec));
-            res.dep_indexes.push(vec![]);
-        }
-        Ok(res.group_processes())
-    }
-
     pub fn to_iter(self) -> Result<ExecutableIterator, InvariantError> {
         let sorted_execs = self.sort()?;
 
         let mut res = ExecDepStore::default();
-        let mut name_index_hash: HashMap<String, usize> = HashMap::new();
+        let mut name_index_hash: IndexMap<String, usize> = IndexMap::new();
 
         for (index, exec) in sorted_execs.into_iter().enumerate() {
             for name in &exec.invariant_names {
@@ -559,7 +528,7 @@ impl ExecutableSorter {
 pub struct ExecutableIterator {
     store: ExecDepStore,
     can_now_exec: Vec<InvariantsExecutable>,
-    being_computed: HashMap<PathBuf, usize>,
+    being_computed: IndexMap<PathBuf, usize>,
     left_to_exec: usize,
 }
 
@@ -568,7 +537,7 @@ impl ExecutableIterator {
         let mut res = Self {
             left_to_exec: store.executables.len(),
             can_now_exec: vec![],
-            being_computed: HashMap::new(),
+            being_computed: IndexMap::new(),
             store,
         };
         res.update_can_now_exec();
@@ -585,7 +554,7 @@ impl ExecutableIterator {
 
     pub fn update_dependencies(&mut self, inv_exec: &InvariantsExecutable) {
         // Find the given invariant (if it is even present)
-        if let Some(index) = self.being_computed.remove(&inv_exec.exec_path) {
+        if let Some(index) = self.being_computed.swap_remove(&inv_exec.exec_path) {
             for dep_index in &self.store.dep_indexes[index] {
                 // Prevents any overflow crashes
                 if self.store.dep_left[*dep_index] > 0 {
@@ -614,6 +583,19 @@ impl ExecutableIterator {
             return Some(self.can_now_exec.pop().expect("not empty"));
         }
         None
+    }
+}
+
+impl Iterator for ExecutableIterator {
+    type Item = InvariantsExecutable;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(inv) = self.next_invariant() {
+            self.update_dependencies(&inv);
+            Some(inv)
+        } else {
+            None
+        }
     }
 }
 
@@ -655,71 +637,6 @@ struct ExecDepStore {
     dep_indexes: Vec<Vec<usize>>,
 }
 
-impl ExecDepStore {
-    fn group_processes(mut self) -> ExecutableManager {
-        let mut manager: ExecutableManager = ExecutableManager::default();
-        let mut to_sort = self.executables.len();
-        // While not all execs are sorted
-        while to_sort > 0 {
-            let mut can_now_exec: Vec<InvariantsExecutable> = vec![];
-            let mut can_now_exec_ind: Vec<usize> = vec![];
-
-            // Get all processes that can now be executed
-            // this is what we refer to as a "group"
-            for i in (0..self.executables.len()).rev() {
-                if self.dep_left[i] == 0 && self.executables[i].is_some() {
-                    can_now_exec.push(self.executables[i].take().expect("present"));
-                    can_now_exec_ind.push(i);
-                    to_sort -= 1;
-                }
-            }
-
-            manager.groups.push(can_now_exec);
-
-            // Update dependencies
-            can_now_exec_ind.iter().for_each(|i| {
-                for dep_index in &self.dep_indexes[*i] {
-                    self.dep_left[*dep_index] -= 1;
-                }
-            });
-        }
-        manager
-    }
-}
-
-/// This structs holds a [`Vec<Vec<InvariantsExecutable>>`],
-/// * with the outer vector representing a topological sort
-/// * and the middle vector containing a vector of executable that could be executed simultaneously.
-///  
-/// # Explanation using an example
-/// Syntax :
-/// - `->` : *depends on*
-/// - `=>` : *then execute*
-///
-/// Let 5 processes `[A, B, C, D, E]`, with the following dependencies (for example B1 means a dependency from the executable B) :
-/// * `[A -> B1, C1; B -> /; C -> D1; D -> B1; E -> /]`
-///
-/// A topological order could be:
-/// * `E => B => A => D => C`.
-///
-/// But since they don't all depend on each others and sometimes have the same dependencies, we could execute multiple ones at the same time like
-/// **E** and **B**, **A** and **D**. So the order of execution could be
-/// * `[E, B] => [A, D] => [C]`
-#[derive(Debug, Clone, Default)]
-pub struct ExecutableManager {
-    groups: Vec<Vec<InvariantsExecutable>>,
-}
-
-impl ExecutableManager {
-    pub fn get_groups_ref(&self) -> &Vec<Vec<InvariantsExecutable>> {
-        &self.groups
-    }
-
-    pub fn get_groups(self) -> Vec<Vec<InvariantsExecutable>> {
-        self.groups
-    }
-}
-
 impl Display for InvariantsExecutable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut inv_list = "{".to_string();
@@ -732,32 +649,5 @@ impl Display for InvariantsExecutable {
         inv_list.pop();
         inv_list.push('}');
         write!(f, "{}", inv_list)
-    }
-}
-
-impl Display for ExecutableManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut res = "[".to_string();
-        let sep = " => ";
-        for group in &self.groups {
-            let mut group_str = "[".to_string();
-            for inv in group {
-                group_str.push_str(&inv.to_string());
-                group_str.push_str(", ");
-            }
-            group_str.pop();
-            group_str.pop();
-            group_str.push(']');
-            group_str.push_str(sep);
-
-            res.push_str(&group_str);
-        }
-        res.pop();
-        res.pop();
-        res.pop();
-        res.pop();
-        res.push(']');
-
-        write!(f, "{res}")
     }
 }

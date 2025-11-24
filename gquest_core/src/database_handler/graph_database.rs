@@ -265,17 +265,17 @@ where
     }
 }
 
-struct OutputFn<'b, DB: Database + DbQuerySystem<DB>> {
+struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
     db: GraphDatabase<DB>,
     signatures: &'b mut Vec<String>,
     batch_to_store: &'b mut Vec<Vec<String>>,
     count: &'b mut usize,
-    // optional_obs: &'b mut Option<& mut dyn Observer>,
+    optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
     batch_size: usize,
     invariant_exec: InvariantsExecutable,
 }
-impl<'b, DB: Database + DbQuerySystem<DB>> AsyncInvariantOutput<GraphDbRuntimeError>
-    for OutputFn<'b, DB>
+impl<'b, 'o, DB: Database + DbQuerySystem<DB>> AsyncInvariantOutput<GraphDbRuntimeError>
+    for OutputFn<'b, 'o, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -311,9 +311,9 @@ where
         }
 
         // Notify obs something happened
-        // if let Some(obs) = &mut self.optional_obs {
-        //     obs.notify_tick();
-        // }
+        if let Some(obs) = &mut self.optional_obs {
+            obs.notify_tick();
+        }
 
         *self.count += 1;
 
@@ -321,9 +321,9 @@ where
             self.db
                 .push_batch(self.signatures, self.batch_to_store, &self.invariant_exec)
                 .await?;
-            // if let Some(obs) = &mut self.optional_obs {
-            //     obs.notify_data_pushed(self.batch_size as u64);
-            // }
+            if let Some(obs) = &mut self.optional_obs {
+                obs.notify_data_pushed(self.batch_size as u64);
+            }
             *self.count = 0;
         }
         Ok(())
@@ -604,7 +604,7 @@ where
         }
         Ok(builder)
     }
-    
+
     /// Computes an executable and store its results in one or more tables.
     ///
     /// If provided, the given observer will be ticked for every data received and notified of the data pushed
@@ -690,7 +690,7 @@ where
                 count: &mut count,
                 batch_size,
                 invariant_exec: executable.clone(),
-                // optional_obs: &mut optional_obs,
+                optional_obs: &mut optional_obs,
             };
 
             // executable.exec_inv(input).await;

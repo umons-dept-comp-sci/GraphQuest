@@ -73,7 +73,8 @@ where
         self.db.close_connection().await;
     }
 
-    /// Executes all stored invariants
+    /// Executes all stored invariants using the given settings from the [`ConfigFile`].
+    /// ## Multithreading execution
     pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
         // Sort all executables
         let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
@@ -102,27 +103,27 @@ where
 
         let mut handles = JoinSet::new();
         while !iter.lock().await.is_finished() {
+            // Spawns as many threads as possible while respecting the maximum number of threads to use
             while let Some(next_inv) = iter.lock().await.next_invariant()
                 && handles.len() < self.config.get_nb_threads()
             {
                 let mut db_clone = self.db.clone();
                 let batch_size = self.config.get_batch_size();
                 let iter_clone = iter.clone();
-                // A thread will try to compute as much executable as possible without ending until
+                // A thread will compute the given invariant then end
                 handles.spawn(async move {
-                    // This loop is written like this to prevent any deadlock by always releasing the lock after aquiring the next exec
-
                     db_clone
                         .compute_executable(&next_inv, batch_size, None)
                         .await
                         .expect("no errors");
-                    // Signal that we finished with this dependency
+                    // Update the graph so that the main thread can compute new invariants
                     iter_clone.lock().await.update_dependencies(&next_inv);
                 });
             }
-            // Wait for any of them to finish
+            // Wait for any of them to finish then execute new ones
             handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
         }
+        // wait for all threads to finish 
         let _res = handles.join_all().await;
 
         Ok(())
