@@ -76,7 +76,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         "SELECT name FROM sqlite_master WHERE type='table';".to_string()
     }
 
-    fn get_create_table_query(
+    fn get_create_table_value_query(
         table_name: impl ToString,
         pk_column_name: impl ToString,
         pk_column_type: ColumnType,
@@ -90,6 +90,19 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             translate_column(pk_column_type),
             value_column_name.to_string(),
             translate_column(value_column_type)
+        )
+    }
+
+    fn get_create_table_query(
+        table_name: impl ToString,
+        pk_column_name: impl ToString,
+        pk_column_type: ColumnType,
+    ) -> String {
+        format!(
+            "CREATE TABLE {} ({} {} PRIMARY KEY NOT NULL)",
+            table_name.to_string(),
+            pk_column_name.to_string(),
+            translate_column(pk_column_type)
         )
     }
 

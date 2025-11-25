@@ -71,13 +71,20 @@ where
     /// Gets a query that returns all the table names from the database.
     fn get_all_tables_query() -> String;
 
-    /// Returns the query that can be used to create a table with a name and the column
-    fn get_create_table_query(
+    /// Returns the query that can be used to create a table with a name and the value column
+    fn get_create_table_value_query(
         table_name: impl ToString,
         pk_column_name: impl ToString,
         pk_column_type: ColumnType,
         value_column_name: impl ToString,
         value_column_type: ColumnType,
+    ) -> String;
+
+    /// Returns the query that can be used to create a table with a name but no secondary column
+    fn get_create_table_query(
+        table_name: impl ToString,
+        pk_column_name: impl ToString,
+        pk_column_type: ColumnType
     ) -> String;
 
     /// Returns the query that can be used to get all value from a table with the given name from the dataset

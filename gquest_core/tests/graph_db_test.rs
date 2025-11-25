@@ -88,7 +88,7 @@ async fn add_to_dataset_test() {
     let dataset_content = test.read_all_dataset().await.expect("correct results");
 
     assert_eq!(dataset_content.len(), expected.len());
-    for (signature, _) in dataset_content {
+    for signature in dataset_content {
         assert!(expected.contains(&signature))
     }
 }

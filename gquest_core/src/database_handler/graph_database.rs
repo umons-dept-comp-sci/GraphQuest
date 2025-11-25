@@ -2,7 +2,7 @@ use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::{Column, Row, TypeInfo};
+use sqlx::{Column, Executor, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
@@ -171,20 +171,24 @@ where
     DB: Database + DbQuerySystem<DB>,
 {
     /// Adds the canonical table to the database.
-    pub async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
-        self.add_table(
+    async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let query_str = DB::get_create_table_query(
             CANONICAL_TABLE_NAME,
             PK_NAME,
             ColumnType::String {
                 max_size: Some(SIGNATURE_MAX_SIZE),
                 default_value: None,
             },
-            DATASET_VALUE_NAME,
-            ColumnType::Integer {
-                default_value: None,
-            },
-        )
-        .await
+        );
+
+        let builder = QueryBuilder::<DB>::new(query_str);
+        DB::execute_query_no_return(&self.pool, builder).await
+    }
+
+    /// Adds the vertices table to the database.
+    async fn add_vertices_table(&mut self) -> Result<(), GraphDbRuntimeError> {
+        self.add_invariant_table(VERTICES_TABLE_NAME.to_string())
+            .await
     }
 
     async fn add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
@@ -211,7 +215,7 @@ where
         value_name: impl ToString,
         value_column_type: ColumnType,
     ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = DB::get_create_table_query(
+        let query_str = DB::get_create_table_value_query(
             table_name,
             pk_name,
             pk_column_type,
@@ -393,8 +397,14 @@ where
     ///
     /// # Warning
     /// Only use this method when using small database because everything will be stored and returned.
-    pub async fn read_all_dataset(&self) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
-        self.read_all_table(CANONICAL_TABLE_NAME).await
+    pub async fn read_all_dataset(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
+        let query_str = DB::get_all_from_table(CANONICAL_TABLE_NAME);
+
+        let builder = QueryBuilder::new(query_str);
+        // Execute query :
+        let results: Vec<(String,)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+
+        Ok(results.iter().map(|(sign,)| sign.to_string()).collect())
     }
     /// Reads and returns all values contained inside the given table.
     ///
@@ -502,13 +512,26 @@ where
             Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
             _ => res?,
         }
+        // Add vertices table if not already created
+        let res = self.add_vertices_table().await;
+        match &res {
+            Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
+            _ => res?,
+        }
 
         let push_to_db = async |signatures: &Vec<String>,
                                 values: &Vec<String>,
                                 batch_size|
                -> Result<(), GraphDbRuntimeError> {
-            // Get insert query
-            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+            // Insert to dataset query
+            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 1, batch_size);
+            let safe_query = Self::create_safe_signature_query(query_str, signatures)?;
+            DB::execute_query_no_return(&self.pool, safe_query).await?;
+
+            // println!()
+
+            // Insert to vertices table query
+            let query_str = DB::get_insert_into_query(VERTICES_TABLE_NAME, 2, batch_size);
             let safe_query = Self::create_safe_query(query_str, signatures, values)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
             Ok(())
@@ -598,6 +621,32 @@ where
                     }
                 }
                 added_signature = !added_signature;
+            } else {
+                builder.push(c);
+            }
+        }
+        Ok(builder)
+    }
+
+    fn create_safe_signature_query(
+        query_str: String,
+        signatures: &[impl ToString],
+    ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
+        let mut builder = QueryBuilder::<DB>::new("");
+        let mut signatures = signatures.iter();
+
+        for c in query_str.chars() {
+            if c == '?' {
+                match signatures.next() {
+                    Some(sign) => {
+                        builder.push_bind::<String>(sign.to_string());
+                    }
+                    None => {
+                        return Err(GraphDbRuntimeError::QueryCreationError(
+                            builder.into_sql().to_string(),
+                        ));
+                    }
+                }
             } else {
                 builder.push(c);
             }
