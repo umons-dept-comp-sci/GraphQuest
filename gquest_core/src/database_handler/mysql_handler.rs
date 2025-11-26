@@ -131,11 +131,11 @@ impl DbQuerySystem<MySql> for MySql {
     fn get_is_table_present(_table_name: impl ToString) -> String {
         todo!()
     }
-    
+
     fn get_create_table_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType
+        _table_name: impl ToString,
+        _pk_column_name: impl ToString,
+        _pk_column_type: ColumnType,
     ) -> String {
         todo!()
     }

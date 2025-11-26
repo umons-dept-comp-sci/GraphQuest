@@ -10,6 +10,7 @@ use log::*;
 
 const DB_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
+const CONFIG_PATH_ECCENTRIC: &str = "gquest_core/examples/use_case/resources/zhang_liu_zhou.json";
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -24,13 +25,12 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 1000, None)
+    let geng = GengProcess::call_geng(7, &"-c".to_string(), (None, None)).expect("correct call");
+    db.add_to_dataset(geng.get_reader(), 2500, None)
         .await
         .expect("correct");
-
-    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
     
+    let config = ConfigFile::read_json_file(&CONFIG_PATH_ECCENTRIC.to_string()).expect("File should correct");
 
     let mut wp = Workplace::new(db, config);
     wp.execute_all_executables().await.expect("no errors");

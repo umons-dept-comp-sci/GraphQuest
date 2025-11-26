@@ -2,7 +2,7 @@ use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::{Column, Executor, Row, TypeInfo};
+use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
@@ -359,13 +359,14 @@ where
     /// Returns all the table name stored inside the database
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
         let query_str = DB::get_all_tables_query();
-        let builder = QueryBuilder::<DB>::new(query_str);
-        let results: Vec<(String,)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+        let mut builder = QueryBuilder::<DB>::new(query_str);
+        let mut fetch_handle = DB::execute_query_fetch::<(String,)>(&self.pool, &mut builder);
 
-        Ok(results
-            .iter()
-            .map(|(val_str,)| val_str.to_string())
-            .collect())
+        let mut results: Vec<String> = vec![];
+        while let Some(res_value) = fetch_handle.next().await {
+            results.push(res_value?.0);
+        }
+        Ok(results)
     }
 
     /// Checks if the given table was added.=
