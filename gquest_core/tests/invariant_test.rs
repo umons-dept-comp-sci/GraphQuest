@@ -171,7 +171,7 @@ fn new_dep_missing_inv_order_test() {
 }
 
 #[test]
-fn new_exec_group_test_all_sep() {
+fn new_exec_iterator_test() {
     let (a, b, c) = get_a_b_c_exec();
 
     let order: ExecutableSorter = [a.clone(), b.clone(), c.clone()]
@@ -179,30 +179,13 @@ fn new_exec_group_test_all_sep() {
         .try_into()
         .expect("ok");
 
-    let man = order.group_execs().expect("no error");
+    let man = order.to_iter().expect("no error");
 
-    assert!(man.get_groups_ref()[0].contains(&c));
-    assert!(man.get_groups_ref()[1].contains(&b));
-    assert!(man.get_groups_ref()[2].contains(&a));
-}
+    let execs_sorted: Vec<InvariantsExecutable> = man.into_iter().collect();
 
-#[test]
-fn new_exec_group_test_same_dep() {
-    let a =
-        InvariantsExecutable::new(VALID_EXEC_A, vec!["a"], vec!["d", "c"]).expect("Correct inv");
-    let b = InvariantsExecutable::new(VALID_EXEC_B, vec!["b"], vec!["c"]).expect("Correct inv");
-    let c = InvariantsExecutable::new_no_dep(VALID_EXEC_C, vec!["c", "d"]).expect("Correct inv");
-
-    let order: ExecutableSorter = [a.clone(), c.clone(), b.clone()]
-        .to_vec()
-        .try_into()
-        .expect("ok");
-
-    let man = order.group_execs().expect("no error");
-
-    assert!(man.get_groups_ref()[0].contains(&c));
-    assert!(man.get_groups_ref()[1].contains(&b));
-    assert!(man.get_groups_ref()[1].contains(&a));
+    assert!(execs_sorted[0].eq(&c));
+    assert!(execs_sorted[1].eq(&b));
+    assert!(execs_sorted[2].eq(&a));
 }
 
 #[test]
@@ -216,11 +199,13 @@ fn new_exec_group_test_no_dep() {
         .try_into()
         .expect("ok");
 
-    let man = order.group_execs().expect("no error");
+    let man = order.to_iter().expect("no error");
 
-    assert!(man.get_groups_ref()[0].contains(&c));
-    assert!(man.get_groups_ref()[0].contains(&b));
-    assert!(man.get_groups_ref()[0].contains(&a));
+    let execs_sorted: Vec<InvariantsExecutable> = man.into_iter().collect();
+    assert_eq!(3, execs_sorted.len());
+    assert!(execs_sorted.contains(&c));
+    assert!(execs_sorted.contains(&b));
+    assert!(execs_sorted.contains(&a));
 }
 
 pub fn get_a_b_c_exec() -> (

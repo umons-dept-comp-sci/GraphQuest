@@ -38,3 +38,6 @@ Cargo.lock
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+
+*__pycache__/

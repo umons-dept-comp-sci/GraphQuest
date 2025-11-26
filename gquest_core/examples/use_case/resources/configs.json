@@ -1,5 +1,6 @@
 {
-  "batch_size": 100,
+  "batch_size": 1000,
+  "nb_threads": 10,
   "executables": [
     {
       "path": "P_Gn.py",

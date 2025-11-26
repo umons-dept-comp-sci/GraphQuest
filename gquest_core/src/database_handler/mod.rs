@@ -4,15 +4,10 @@ pub const BUFFER_VECTOR_MAX_SIZE: usize = 2000;
 pub const CANONICAL_TABLE_NAME: &str = "Dataset";
 /// The column name of the primary key of the dataset
 pub const PK_NAME: &str = "canon";
-/// The name of the second column of the dataset
-pub const DATASET_VALUE_NAME: &str = "vertices";
-/// The name of the the metadata table
-pub const METADATA_TABLE_NAME: &str = "Metadata";
-/// The name of the primary key of the metadata table
-pub const METADATA_PK_NAME: &str = "table_name";
-/// The name of the second column of the metadata table
-pub const METADATA_VALUE_NAME: &str = "stopped_at";
-/// The name of the column in an invariant table where the values are stored
+
+/// The name of the vertices table of the dataset
+pub const VERTICES_TABLE_NAME: &str = "vertices";
+
 pub const INVARIANT_COLUMN_NAME: &str = "value";
 /// The name of the table that has all the data
 pub const FULL_TABLE_NAME: &str = "AllInv";

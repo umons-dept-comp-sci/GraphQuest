@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use sqlx::{Database, FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
+use tokio::{sync::Mutex, task::JoinSet};
 
 use crate::{
-    data_handler::invariant_execs::{ExecutableSorter, InvariantError},
+    data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError},
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
@@ -70,22 +73,59 @@ where
         self.db.close_connection().await;
     }
 
-    /// Executes all stored invariants
+    /// Executes all stored invariants using the given settings from the [`ConfigFile`].
+    /// ## Multithreading execution
     pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
         // Sort all executables
         let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
-        // Group them
-        let man = sorter.group_execs()?;
 
-        // Execute them by groups
-        for group in man.get_groups() {
-            for inv in group {
+        let mut sorted = sorter.to_iter().expect("ok");
+
+        if self.config.get_nb_threads() > 1 {
+            self.execute_all_executables_multithread(sorted).await
+        } else {
+            while let Some(next_inv) = sorted.next_invariant() {
                 self.db
-                    .compute_executable(&inv, self.config.get_batch_size(), None)
-                    .await
-                    .expect("no errors");
+                    .compute_executable(&next_inv, self.config.get_batch_size(), None)
+                    .await?;
+
+                sorted.update_dependencies(&next_inv);
             }
+            Ok(())
         }
+    }
+
+    async fn execute_all_executables_multithread(
+        &mut self,
+        sorted: ExecutableIterator,
+    ) -> Result<(), WorkplaceError> {
+        let iter = Arc::new(Mutex::new(sorted));
+
+        let mut handles = JoinSet::new();
+        while !iter.lock().await.is_finished() {
+            // Spawns as many threads as possible while respecting the maximum number of threads to use
+            while let Some(next_inv) = iter.lock().await.next_invariant()
+                && handles.len() < self.config.get_nb_threads()
+            {
+                let mut db_clone = self.db.clone();
+                let batch_size = self.config.get_batch_size();
+                let iter_clone = iter.clone();
+                // A thread will compute the given invariant then end
+                handles.spawn(async move {
+                    db_clone
+                        .compute_executable(&next_inv, batch_size, None)
+                        .await
+                        .expect("no errors");
+                    // Update the graph so that the main thread can compute new invariants
+                    iter_clone.lock().await.update_dependencies(&next_inv);
+                });
+            }
+            // Wait for any of them to finish then execute new ones
+            handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
+        }
+        // wait for all threads to finish 
+        let _res = handles.join_all().await;
+
         Ok(())
     }
 

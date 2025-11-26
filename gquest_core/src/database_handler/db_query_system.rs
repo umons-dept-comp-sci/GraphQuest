@@ -60,8 +60,7 @@ where
     where
         V: for<'r> FromRow<'r, <DB as sqlx::Database>::Row> + Send + Unpin + 'e;
 
-
-    /// Executes a query and returns a stream of sql Rows. 
+    /// Executes a query and returns a stream of sql Rows.
     /// Use this method when there is no information about the value returned by the query (i.e. number or content of columns not known at compile time)
     /// Useful to iterate over many values returned by a query without the risk of storing too many.
     fn execute_query_fetch_sql_rows<'e>(
@@ -72,13 +71,20 @@ where
     /// Gets a query that returns all the table names from the database.
     fn get_all_tables_query() -> String;
 
-    /// Returns the query that can be used to create a table with a name and the column
-    fn get_create_table_query(
+    /// Returns the query that can be used to create a table with a name and the value column
+    fn get_create_table_value_query(
         table_name: impl ToString,
         pk_column_name: impl ToString,
         pk_column_type: ColumnType,
         value_column_name: impl ToString,
         value_column_type: ColumnType,
+    ) -> String;
+
+    /// Returns the query that can be used to create a table with a name but no secondary column
+    fn get_create_table_query(
+        table_name: impl ToString,
+        pk_column_name: impl ToString,
+        pk_column_type: ColumnType
     ) -> String;
 
     /// Returns the query that can be used to get all value from a table with the given name from the dataset

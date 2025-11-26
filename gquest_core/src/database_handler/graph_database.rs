@@ -4,10 +4,11 @@ use std::{fmt::Debug, time::Duration};
 use log::debug;
 use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
-// use sqlx::{Column, Row};
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::invariant_execs::InvariantsExecutable;
+use crate::data_handler::invariant_execs::{
+    AsyncInvariantInput, AsyncInvariantOutput, InvariantsExecutable,
+};
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
@@ -170,20 +171,24 @@ where
     DB: Database + DbQuerySystem<DB>,
 {
     /// Adds the canonical table to the database.
-    pub async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
-        self.add_table(
+    async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let query_str = DB::get_create_table_query(
             CANONICAL_TABLE_NAME,
             PK_NAME,
             ColumnType::String {
                 max_size: Some(SIGNATURE_MAX_SIZE),
                 default_value: None,
             },
-            DATASET_VALUE_NAME,
-            ColumnType::Integer {
-                default_value: None,
-            },
-        )
-        .await
+        );
+
+        let builder = QueryBuilder::<DB>::new(query_str);
+        DB::execute_query_no_return(&self.pool, builder).await
+    }
+
+    /// Adds the vertices table to the database.
+    async fn add_vertices_table(&mut self) -> Result<(), GraphDbRuntimeError> {
+        self.add_invariant_table(VERTICES_TABLE_NAME.to_string())
+            .await
     }
 
     async fn add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
@@ -210,7 +215,7 @@ where
         value_name: impl ToString,
         value_column_type: ColumnType,
     ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = DB::get_create_table_query(
+        let query_str = DB::get_create_table_value_query(
             table_name,
             pk_name,
             pk_column_type,
@@ -224,6 +229,110 @@ where
 }
 
 // ______________________ UTILS ______________________
+
+struct InputFn<'e, DB: Database + DbQuerySystem<DB>> {
+    db: GraphDatabase<DB>,
+    fetch: std::pin::Pin<
+        Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send + 'e>,
+    >,
+}
+
+impl<'e, DB: Database + DbQuerySystem<DB>> AsyncInvariantInput<GraphDbRuntimeError>
+    for InputFn<'e, DB>
+where
+    DB: Send,
+    DB: MigrateDatabase,
+    // Allow column indexing using usize
+    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
+    // Allow decoding/encoding
+    String: sqlx::Encode<'static, DB>,
+    for<'a> String: sqlx::Decode<'a, DB>,
+    for<'a> i64: sqlx::Decode<'a, DB>,
+    i16: sqlx::Decode<'static, DB>,
+    // Type of values
+    String: sqlx::Type<DB>,
+    i16: sqlx::Type<DB>,
+    i64: sqlx::Type<DB>,
+    // Return values
+    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+{
+    async fn call(&mut self) -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
+        let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
+
+        match res {
+            Ok(row) => Some(Ok(self.db.read_row_val(&row))),
+            Err(e) => Some(Err(e.into())),
+        }
+    }
+}
+
+struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
+    db: GraphDatabase<DB>,
+    signatures: &'b mut Vec<String>,
+    batch_to_store: &'b mut Vec<Vec<String>>,
+    count: &'b mut usize,
+    optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
+    batch_size: usize,
+    invariant_exec: InvariantsExecutable,
+}
+impl<'b, 'o, DB: Database + DbQuerySystem<DB>> AsyncInvariantOutput<GraphDbRuntimeError>
+    for OutputFn<'b, 'o, DB>
+where
+    DB: Send,
+    DB: MigrateDatabase,
+    // Allow column indexing using usize
+    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
+    // Allow decoding/encoding
+    String: sqlx::Encode<'static, DB>,
+    for<'a> String: sqlx::Decode<'a, DB>,
+    for<'a> i64: sqlx::Decode<'a, DB>,
+    i16: sqlx::Decode<'static, DB>,
+    // Type of values
+    String: sqlx::Type<DB>,
+    i16: sqlx::Type<DB>,
+    i64: sqlx::Type<DB>,
+    // Return values
+    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+{
+    async fn call(&mut self, values: Vec<String>) -> Result<(), GraphDbRuntimeError> {
+        let mut values = values.into_iter();
+        self.signatures
+            .push(values.next().expect("a signature as the first value"));
+
+        // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
+        for (i, inv_values) in values.enumerate() {
+            // Push into the related storing vector
+            self.batch_to_store
+                .get_mut(i)
+                .expect("correct index")
+                .push(inv_values);
+        }
+
+        // Notify obs something happened
+        if let Some(obs) = &mut self.optional_obs {
+            obs.notify_tick();
+        }
+
+        *self.count += 1;
+
+        if *self.count >= self.batch_size {
+            self.db
+                .push_batch(self.signatures, self.batch_to_store, &self.invariant_exec)
+                .await?;
+            if let Some(obs) = &mut self.optional_obs {
+                obs.notify_data_pushed(self.batch_size as u64);
+            }
+            *self.count = 0;
+        }
+        Ok(())
+    }
+}
 
 // TODO: Remove useless import
 impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
@@ -250,13 +359,14 @@ where
     /// Returns all the table name stored inside the database
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
         let query_str = DB::get_all_tables_query();
-        let builder = QueryBuilder::<DB>::new(query_str);
-        let results: Vec<(String,)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+        let mut builder = QueryBuilder::<DB>::new(query_str);
+        let mut fetch_handle = DB::execute_query_fetch::<(String,)>(&self.pool, &mut builder);
 
-        Ok(results
-            .iter()
-            .map(|(val_str,)| val_str.to_string())
-            .collect())
+        let mut results: Vec<String> = vec![];
+        while let Some(res_value) = fetch_handle.next().await {
+            results.push(res_value?.0);
+        }
+        Ok(results)
     }
 
     /// Checks if the given table was added.=
@@ -288,8 +398,14 @@ where
     ///
     /// # Warning
     /// Only use this method when using small database because everything will be stored and returned.
-    pub async fn read_all_dataset(&self) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
-        self.read_all_table(CANONICAL_TABLE_NAME).await
+    pub async fn read_all_dataset(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
+        let query_str = DB::get_all_from_table(CANONICAL_TABLE_NAME);
+
+        let builder = QueryBuilder::new(query_str);
+        // Execute query :
+        let results: Vec<(String,)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+
+        Ok(results.iter().map(|(sign,)| sign.to_string()).collect())
     }
     /// Reads and returns all values contained inside the given table.
     ///
@@ -355,6 +471,10 @@ where
         Ok(())
     }
 
+    pub fn read_row_val(&self, row: &DB::Row) -> Vec<String> {
+        Self::read_row_values(row)
+    }
+
     fn read_row_values(row: &DB::Row) -> Vec<String> {
         let mut row_vec: Vec<String> = vec![];
 
@@ -393,13 +513,26 @@ where
             Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
             _ => res?,
         }
+        // Add vertices table if not already created
+        let res = self.add_vertices_table().await;
+        match &res {
+            Ok(_) | Err(GraphDbRuntimeError::TableAlreadyCreatedError(_)) => {}
+            _ => res?,
+        }
 
         let push_to_db = async |signatures: &Vec<String>,
                                 values: &Vec<String>,
                                 batch_size|
                -> Result<(), GraphDbRuntimeError> {
-            // Get insert query
-            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 2, batch_size);
+            // Insert to dataset query
+            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 1, batch_size);
+            let safe_query = Self::create_safe_signature_query(query_str, signatures)?;
+            DB::execute_query_no_return(&self.pool, safe_query).await?;
+
+            // println!()
+
+            // Insert to vertices table query
+            let query_str = DB::get_insert_into_query(VERTICES_TABLE_NAME, 2, batch_size);
             let safe_query = Self::create_safe_query(query_str, signatures, values)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
             Ok(())
@@ -496,6 +629,32 @@ where
         Ok(builder)
     }
 
+    fn create_safe_signature_query(
+        query_str: String,
+        signatures: &[impl ToString],
+    ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
+        let mut builder = QueryBuilder::<DB>::new("");
+        let mut signatures = signatures.iter();
+
+        for c in query_str.chars() {
+            if c == '?' {
+                match signatures.next() {
+                    Some(sign) => {
+                        builder.push_bind::<String>(sign.to_string());
+                    }
+                    None => {
+                        return Err(GraphDbRuntimeError::QueryCreationError(
+                            builder.into_sql().to_string(),
+                        ));
+                    }
+                }
+            } else {
+                builder.push(c);
+            }
+        }
+        Ok(builder)
+    }
+
     /// Computes an executable and store its results in one or more tables.
     ///
     /// If provided, the given observer will be ticked for every data received and notified of the data pushed
@@ -553,69 +712,47 @@ where
             }
         };
 
-        let limit_offset_query = DB::get_select_batch_from(join_query, start_value, total_nb_inv);
-
         // Set the capacity of the vector to save time (since we know their sizes)
-        let mut signatures = Vec::with_capacity(batch_size);
-        let mut batch_to_store = Vec::with_capacity(executable.invariant_names.len());
+        let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
+        let mut batch_to_store: Vec<Vec<String>> =
+            Vec::with_capacity(executable.invariant_names.len());
         (0..executable.invariant_names.len())
             .for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
+
         let mut count = 0;
 
-        let mut db_clone = self.clone();
-        let mut fetch_handle =
-            DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&limit_offset_query));
-        executable
-            .execute_invariant(
-                &mut async || -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
-                    let res: Result<<DB as Database>::Row, sqlx::Error> =
-                        fetch_res_handle.lock().await.next().await?;
+        let limit_offset_query: String =
+            DB::get_select_batch_from(join_query, start_value, total_nb_inv);
+        {
+            let fetch_handle: std::pin::Pin<
+                Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send>,
+            > = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&limit_offset_query));
 
-                    match res {
-                        Ok(row) => Some(Ok(Self::read_row_values(&row))),
-                        Err(e) => Some(Err(e.into())),
-                    }
-                },
-                &mut async |values| {
-                    let mut values = values.into_iter();
-                    signatures.push(values.next().expect("a signature as the first value"));
+            let input = InputFn::<'_, DB> {
+                db: self.clone(),
+                fetch: fetch_handle,
+            };
 
-                    // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
-                    for (i, inv_values) in values.enumerate() {
-                        // Push into the related storing vector
-                        batch_to_store
-                            .get_mut(i)
-                            .expect("correct index")
-                            .push(inv_values);
-                    }
-
-                    // Notify obs something happened
-                    if let Some(obs) = &mut optional_obs {
-                        obs.notify_tick();
-                    }
-
-                    count += 1;
-
-                    if count >= batch_size {
-                        db_clone
-                            .push_batch(&mut signatures, &mut batch_to_store, executable)
-                            .await?;
-                        if let Some(obs) = &mut optional_obs {
-                            obs.notify_data_pushed(batch_size as u64);
-                        }
-                        count = 0;
-                    }
-                    Ok(())
-                },
+            let output = OutputFn {
+                db: self.clone(),
+                signatures: &mut signatures,
+                batch_to_store: &mut batch_to_store,
+                count: &mut count,
                 batch_size,
-            )
-            .await?;
+                invariant_exec: executable.clone(),
+                optional_obs: &mut optional_obs,
+            };
+
+            // executable.exec_inv(input).await;
+            executable
+                .execute_invariant(input, output, batch_size)
+                .await?;
+        }
 
         if !batch_to_store.is_empty() {
             let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
 
-            db_clone
-                .push_batch(&mut signatures, &mut batch_to_store, executable)
+            self.push_batch(&mut signatures, &mut batch_to_store, executable)
                 .await?;
 
             if let Some(obs) = &mut optional_obs {

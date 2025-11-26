@@ -1,8 +1,13 @@
-use std::io::{BufRead, Read};
+use std::{
+    io::{BufRead, BufReader, Lines, Read},
+    process::ChildStdout,
+};
 
 use gquest_core::data_handler::{
     data_loader::GengProcess,
-    invariant_execs::{InvariantExecutionError, InvariantsExecutable},
+    invariant_execs::{
+        AsyncInvariantInput, AsyncInvariantOutput, InvariantExecutionError, InvariantsExecutable,
+    },
 };
 
 const MAX_STDIN_SIZE: usize = 40;
@@ -11,6 +16,36 @@ pub const VALID_EXEC_IDENTITY: &str = "tests/modules/identity.py";
 pub const LATE_FLUSH_EXEC: &str = "tests/modules/late_flush.py";
 pub const CRASH_BEFORE_EXEC: &str = "tests/modules/crash_before.py";
 pub const CRASH_DURING_EXEC: &str = "tests/modules/crash_during.py";
+
+struct InputFn {
+    reader: Lines<BufReader<ChildStdout>>,
+}
+
+impl AsyncInvariantInput<()> for InputFn {
+    async fn call(&mut self) -> Option<Result<Vec<String>, ()>> {
+        let v = self.reader.next()?.ok()?;
+        Some(Ok([v].to_vec()))
+    }
+}
+
+struct OutputFn<'e> {
+    output_buffer: &'e mut Vec<String>,
+}
+
+impl<'e> AsyncInvariantOutput<()> for OutputFn<'e> {
+    async fn call(&mut self, values: Vec<String>) -> Result<(), ()> {
+        self.output_buffer.push(values[1].clone());
+        Ok(())
+    }
+}
+
+struct NoOutputFn {}
+
+impl AsyncInvariantOutput<()> for NoOutputFn {
+    async fn call(&mut self, _values: Vec<String>) -> Result<(), ()> {
+        Ok(())
+    }
+}
 
 #[tokio::test]
 async fn execute_correct_inv() {
@@ -26,24 +61,21 @@ async fn execute_correct_inv() {
     let expected_res: Vec<&str> = res.split_ascii_whitespace().collect();
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    let mut reader = geng.get_reader().lines();
-    let mut actual_res: Vec<String> = vec![];
+    let reader = geng.get_reader().lines();
+    let input = InputFn { reader };
+
+    let mut output_buffer = vec![];
+
+    let output = OutputFn {
+        output_buffer: &mut output_buffer,
+    };
+
     identity
-        .execute_invariant(
-            &mut async || -> Option<Result<Vec<String>, ()>> {
-                let v = reader.next()?.ok()?;
-                Some(Ok([v].to_vec()))
-            },
-            &mut async |s| {
-                actual_res.push(s[1].clone());
-                Ok(())
-            },
-            MAX_STDIN_SIZE,
-        )
+        .execute_invariant(input, output, MAX_STDIN_SIZE)
         .await
         .expect("ok");
 
-    assert_eq!(expected_res, actual_res);
+    assert_eq!(expected_res, output_buffer);
 }
 
 #[tokio::test]
@@ -57,20 +89,16 @@ async fn execute_late_inv() {
     let expected_res: Vec<&str> = res.split_ascii_whitespace().collect();
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    let mut reader = geng.get_reader().lines();
+    let reader = geng.get_reader().lines();
+    let input = InputFn { reader };
     let mut actual_res: Vec<String> = vec![];
+
+    let output = OutputFn {
+        output_buffer: &mut actual_res,
+    };
+
     identity
-        .execute_invariant(
-            &mut async || -> Option<Result<Vec<String>, ()>> {
-                let v = reader.next()?.ok()?;
-                Some(Ok([v].to_vec()))
-            },
-            &mut async |s| {
-                actual_res.push(s[1].clone());
-                Ok(())
-            },
-            MAX_STDIN_SIZE,
-        )
+        .execute_invariant(input, output, MAX_STDIN_SIZE)
         .await
         .expect("ok");
 
@@ -84,16 +112,10 @@ async fn execute_crash_before() {
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
-    let mut reader = geng.get_reader().lines();
+    let reader = geng.get_reader().lines();
+    let input = InputFn { reader };
     let error = identity
-        .execute_invariant(
-            &mut async || -> Option<Result<Vec<String>, ()>> {
-                let v = reader.next()?.ok()?;
-                Some(Ok([v].to_vec()))
-            },
-            &mut async |_| Ok(()),
-            MAX_STDIN_SIZE,
-        )
+        .execute_invariant(input, NoOutputFn {}, MAX_STDIN_SIZE)
         .await;
 
     assert!(matches!(
@@ -109,16 +131,10 @@ async fn execute_crash_during() {
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
-    let mut reader = geng.get_reader().lines();
+    let reader = geng.get_reader().lines();
+    let input = InputFn { reader };
     let error = identity
-        .execute_invariant(
-            &mut async || -> Option<Result<Vec<String>, ()>> {
-                let v = reader.next()?.ok()?;
-                Some(Ok([v].to_vec()))
-            },
-            &mut async |_| Ok(()),
-            MAX_STDIN_SIZE,
-        )
+        .execute_invariant(input, NoOutputFn {}, MAX_STDIN_SIZE)
         .await;
 
     assert!(matches!(
@@ -126,7 +142,6 @@ async fn execute_crash_during() {
         Err(InvariantExecutionError::EarlyExit(_, _, _))
     ))
 }
-
 
 // TODO: Tests -> unexpected input and outputs
 
