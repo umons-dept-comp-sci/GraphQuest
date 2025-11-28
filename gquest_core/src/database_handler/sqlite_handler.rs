@@ -223,6 +223,14 @@ fn translate_column(column_type: ColumnType) -> String {
             }
             tmp
         }
+        ColumnType::Float { default_value } => {
+            let mut tmp = String::from("REAL");
+
+            if let Some(d) = default_value {
+                tmp.push_str(format!(" DEFAULT {}", d).as_str());
+            }
+            tmp
+        }
         ColumnType::Boolean { default_value } => {
             let mut tmp = String::from("INTEGER");
             // Convert true to 1 and false to 0

@@ -200,7 +200,8 @@ where
                 default_value: None,
             },
             INVARIANT_COLUMN_NAME,
-            ColumnType::Integer {
+            // We store data as strings in order to accept anything
+            ColumnType::Float {
                 default_value: None,
             },
         )
@@ -248,16 +249,15 @@ where
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
-    i16: sqlx::Decode<'static, DB>,
+    for<'a> f64: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
-    i16: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
+    f64: sqlx::Type<DB>,
     // Return values
-    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self) -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
@@ -289,16 +289,15 @@ where
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
-    i16: sqlx::Decode<'static, DB>,
+    for<'a> f64: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
-    i16: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
+    f64: sqlx::Type<DB>,
     // Return values
-    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self, values: Vec<String>) -> Result<(), GraphDbRuntimeError> {
         let mut values = values.into_iter();
@@ -345,16 +344,15 @@ where
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
-    i16: sqlx::Decode<'static, DB>,
+    for<'a> f64: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
-    i16: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
+    f64: sqlx::Type<DB>,
     // Return values
-    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     /// Returns all the table name stored inside the database
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
@@ -376,7 +374,7 @@ where
     ) -> Result<bool, GraphDbRuntimeError> {
         let query_str = DB::get_is_table_present(table_name);
         let builder = QueryBuilder::<DB>::new(query_str);
-        let res: (i16,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
+        let res: (i64,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
 
         Ok(res.0 == 1)
     }
@@ -414,13 +412,13 @@ where
     pub async fn read_all_table(
         &self,
         table_name: impl ToString,
-    ) -> Result<Vec<(String, i16)>, GraphDbRuntimeError> {
+    ) -> Result<Vec<(String, f64)>, GraphDbRuntimeError> {
         let query_str = DB::get_all_from_table(table_name);
 
         let builder = QueryBuilder::new(query_str);
 
         // Execute query :
-        let results: Vec<(String, i16)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
+        let results: Vec<(String, f64)> = DB::execute_query_fetch_all(&self.pool, builder).await?;
 
         Ok(results)
     }
@@ -488,10 +486,16 @@ where
     fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
         let col = row.column(col_index);
         let col_type = col.type_info().name();
+        println!("{col_type}");
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
-        } else if col_type == "TEXT" {
+        } else if col_type == "REAL" {
+            let value = row.get::<f64, usize>(col_index);
+            value.to_string()    
+        } 
+        
+        else if col_type == "TEXT" {
             row.get::<String, usize>(col_index)
         } else {
             "No string value".to_string()

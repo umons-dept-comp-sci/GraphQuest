@@ -13,6 +13,9 @@ pub enum ColumnType {
     Integer {
         default_value: Option<usize>,
     },
+    Float {
+        default_value: Option<usize>,
+    },
     Boolean {
         default_value: Option<bool>,
     },

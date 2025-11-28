@@ -27,19 +27,23 @@ pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
 
 impl<DB: Database + DbQuerySystem<DB>> Workplace<DB>
 where
+    DB: Send,
     DB: MigrateDatabase,
-    usize: sqlx::ColumnIndex<DB::Row>,
+    // Allow column indexing using usize
+    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
+    // Allow decoding/encoding
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
-    String: sqlx::Type<DB>,
-    i16: sqlx::Decode<'static, DB>,
-    i16: sqlx::Type<DB>,
-    (i16,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     for<'a> i64: sqlx::Decode<'a, DB>,
+    for<'a> f64: sqlx::Decode<'a, DB>,
+    // Type of values
+    String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
+    f64: sqlx::Type<DB>,
+    // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, i16): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     pub fn new(db: GraphDatabase<DB>, config: ConfigFile) -> Self {
         Self { db, config }
@@ -107,6 +111,7 @@ where
             while let Some(next_inv) = iter.lock().await.next_invariant()
                 && handles.len() < self.config.get_nb_threads()
             {
+                println!("spawning new thread for : {}", next_inv);
                 let mut db_clone = self.db.clone();
                 let batch_size = self.config.get_batch_size();
                 let iter_clone = iter.clone();

@@ -5,11 +5,8 @@ import networkx as nx
 from math import floor, sqrt
 
 if __name__ == "__main__":
-    for sig in map(str.strip, sys.stdin):
+    for sig, ag, r in map(str.split, map(str.strip, sys.stdin)):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
-        m = G.number_of_edges()
-        n = G.number_of_nodes()
-
-        d_nm = floor((2* n + 1 - sqrt(17 + 8 * (m - n))) /2 )
+        ag, r = float(ag), float(r)
                 
-        print(sig, d_nm, m, flush=True)
+        print(sig, int(ag <= (2* r**2) - r), flush=True)

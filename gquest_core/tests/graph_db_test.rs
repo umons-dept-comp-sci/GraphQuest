@@ -192,7 +192,7 @@ async fn compute_executable_test() {
 
     let values = db_test.read_all_table("ident").await.expect("No issues");
     for (_, value) in values {
-        assert_eq!(value, GENG_VERTICE_COUNT as i16)
+        assert_eq!(value, GENG_VERTICE_COUNT as f64)
     }
 }
 
