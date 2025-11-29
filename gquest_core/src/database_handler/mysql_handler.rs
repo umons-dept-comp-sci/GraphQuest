@@ -139,6 +139,10 @@ impl DbQuerySystem<MySql> for MySql {
     ) -> String {
         todo!()
     }
+    
+    fn build_select_query(query: &super::SqlSelectQuery) -> String {
+        todo!()
+    }
 }
 
 impl From<MySqlDatabaseError> for GraphDbRuntimeError {

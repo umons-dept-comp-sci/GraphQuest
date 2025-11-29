@@ -6,7 +6,9 @@ use sqlx::{
 
 use tokio_stream::Stream;
 
-use crate::database_handler::{ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError};
+use crate::database_handler::{
+    ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError, SqlSelectQuery, SqlTable,
+};
 
 /// An alias for [`GraphDatabase`] specialized for Sqlite
 pub type SqliteGraphDB = GraphDatabase<Sqlite>;
@@ -104,6 +106,63 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             pk_column_name.to_string(),
             translate_column(pk_column_type)
         )
+    }
+
+    fn build_select_query(query: &SqlSelectQuery) -> String {
+        let mut res = "SELECT ".to_string();
+
+        // Add select clause
+        for column_i in 0..query.select.len() - 1 {
+            res.push_str(&format!("{}, ", query.select[column_i]));
+        }
+        res.push_str(&format!(
+            "{} FROM ",
+            query.select.last().expect("at least one val")
+        ));
+
+        // From clause
+        for (i, table) in query.from.iter().enumerate() {
+            res.push('(');
+            match &table.selected_table {
+                SqlTable::SqlQuery(sql_select_query) => {
+                    res.push_str(&Self::build_select_query(sql_select_query));
+                }
+                SqlTable::TableName(name) => res.push_str(name),
+            }
+            // Join query
+            if let Some((tables_to_join, using)) = &table.join_clause {
+                for table_name in tables_to_join {
+                    res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
+                }
+            }
+
+            res.push(')');
+
+            if let Some(alias) = &table.rename_as {
+                res.push_str(&format!(" as {alias}"));
+            }
+
+            if i != query.from.len() - 1 {
+                res.push_str(", ");
+            }
+        }
+
+        // Where clause
+        if let Some(where_clause) = &query.where_clause {
+            res.push_str(&format!(" WHERE {where_clause}"));
+        }
+
+        // Limit clause
+        if let Some((start, limit)) = &query.limit {
+            res.push_str(&format!(" LIMIT {limit}"));
+
+            if let Some(start) = start {
+                res.push_str(&format!(" OFFSET {start}"));
+            }
+        }
+
+        res.push(';');
+        res
     }
 
     fn get_all_from_table(table_name: impl ToString) -> String {

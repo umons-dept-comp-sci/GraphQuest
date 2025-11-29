@@ -492,10 +492,8 @@ where
             value.to_string()
         } else if col_type == "REAL" {
             let value = row.get::<f64, usize>(col_index);
-            value.to_string()    
-        } 
-        
-        else if col_type == "TEXT" {
+            value.to_string()
+        } else if col_type == "TEXT" {
             row.get::<String, usize>(col_index)
         } else {
             "No string value".to_string()
