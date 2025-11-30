@@ -3,8 +3,8 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        ArgType, ClassSelection, GraphConjecture, SqlComparison, SqlCondition, SqlSelectQuery,
-        SqliteGraphDB, SqlxLogLevels,
+        ArgType, ClassSelection, ExtremalGraphConjecture, SqlComparison, SqlCondition,
+        SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
     },
     utils::config_file::ConfigFile,
     workplace::Workplace,
@@ -30,16 +30,16 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 1000, None)
-        .await
-        .expect("correct");
+    let geng = GengProcess::call_geng(10, &"".to_string(), (None, None)).expect("correct call");
+    // db.add_to_dataset(geng.get_reader(), 1500, None)
+    //     .await
+    //     .expect("correct");
 
-    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string())
-        .expect("File should correct");
+    let config =
+        ConfigFile::read_json_file(&CONFIG_PATH_CONJ_1.to_string()).expect("File should correct");
 
     let mut wp = Workplace::new(db, config);
-    wp.execute_all_executables().await.expect("no errors");
+    // wp.execute_all_executables().await.expect("no errors");
 
     // let select: SqlSelectQuery = GraphConjecture {
     //     selection: ClassSelection::new(
@@ -60,15 +60,26 @@ async fn main() {
     // }
     // .into();
 
-    let select: SqlSelectQuery = GraphConjecture {
-        selection: ClassSelection::new(
-            gquest_core::database_handler::ClassType::Min,
-            "P_Gn",
-            vec!["vertices", "m"],
-        ),
+    // let select: SqlSelectQuery = GraphConjecture {
+    //     selection: ClassSelection::new(
+    //         gquest_core::database_handler::ClassType::Min,
+    //         "P_Gn",
+    //         vec!["vertices", "m"],
+    //     ),
+    //     additional_condition: None,
+    //     conjecture_to_disprove: SqlComparison::Equal(
+    //         ArgType::column_name("is_Bmn"),
+    //         ArgType::value("1"),
+    //     )
+    //     .into(),
+    // }
+    // .into();
+
+    let select: SqlSelectQuery = ExtremalGraphConjecture {
+        selection: None,
         additional_condition: None,
         conjecture_to_disprove: SqlComparison::Equal(
-            ArgType::column_name("is_Bmn"),
+            ArgType::column_name("conj1"),
             ArgType::value("1"),
         )
         .into(),
@@ -77,19 +88,7 @@ async fn main() {
 
     println!("{}", select.to_sql::<Sqlite>());
 
-    // let query = SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
-    //     "vertices",
-    //     vec!["ag".to_string(), "r".to_string()],
-    //     "canon",
-    //     Option::<String>::None,
-    // ))
-    // .set_limit_clause(None, 20)
-    // .set_where_clause(SqlCondition::or(
-    //     SqlComparison::equal("vertices.value", "0"),
-    //     SqlCondition::not(SqlComparison::equal("vertices.value", "9")),
-    // ));
-
-    wp.db.print_all_tables().await.expect("good");
+    // wp.db.print_all_tables().await.expect("good");
     wp.close_workspace().await;
     info!("Program ends");
 }

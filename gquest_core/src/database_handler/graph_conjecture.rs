@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use log::kv::value;
+
 use crate::database_handler::{
     ArgType, CANONICAL_TABLE_NAME, PK_NAME, SqlComparison, SqlCondition, SqlSelectQuery,
     SqlTableSelection,
@@ -9,8 +11,8 @@ pub trait ToSql {
     fn to_sql(&self) -> String;
 }
 
-pub struct GraphConjecture {
-    pub selection: ClassSelection,
+pub struct ExtremalGraphConjecture {
+    pub selection: Option<ClassSelection>,
     pub additional_condition: Option<SqlCondition>,
     pub conjecture_to_disprove: SqlCondition,
 }
@@ -52,29 +54,34 @@ fn get_all_invariants_cond(cond: &SqlCondition) -> HashSet<String> {
     res
 }
 
-impl From<GraphConjecture> for SqlSelectQuery {
-    fn from(value: GraphConjecture) -> Self {
+impl ExtremalGraphConjecture {
+    fn with_extremal_graphs(
+        selection: ClassSelection,
+        additional_condition: Option<SqlCondition>,
+        conjecture_to_disprove: SqlCondition,
+    ) -> SqlSelectQuery {
         let mut all_columns = HashSet::new();
 
         // Get all from conditions :
-        if let Some(add_cond) = &value.additional_condition {
+        if let Some(add_cond) = &additional_condition {
             all_columns.extend(get_all_invariants_cond(add_cond));
         }
-        all_columns.extend(get_all_invariants_cond(&value.conjecture_to_disprove));
+        all_columns.extend(get_all_invariants_cond(&conjecture_to_disprove));
 
         // Get all from selection :
         let mut selection_set = HashSet::new();
-        selection_set.insert(value.selection.invariant_to_max.clone());
-        selection_set.extend(value.selection.invariants_combination.clone());
+
+        selection_set.insert(selection.invariant_to_max.clone());
+        selection_set.extend(selection.invariants_combination.clone());
 
         all_columns.extend(selection_set.clone());
 
         let mut all_columns = Vec::from_iter(all_columns);
-
+        // FIXME: Replace all_inv and extremal by a constant !
         let all_eq_extremal_clause = SqlCondition::and_vec(
             SqlComparison::Equal(
-                ArgType::ColumnName(format!("all_inv.{}", value.selection.invariant_to_max)),
-                ArgType::ColumnName(format!("extremal.{}", value.selection.invariant_to_max)),
+                ArgType::ColumnName(format!("all_inv.{}", selection.invariant_to_max)),
+                ArgType::ColumnName(format!("extremal.{}", selection.invariant_to_max)),
             ),
             selection_set
                 .into_iter()
@@ -87,7 +94,7 @@ impl From<GraphConjecture> for SqlSelectQuery {
                 .collect(),
         );
 
-        let extremal: SqlTableSelection = value.selection.into();
+        let extremal: SqlTableSelection = selection.into();
 
         let all_inv: SqlTableSelection = SqlTableSelection {
             selected_table: SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
@@ -101,20 +108,78 @@ impl From<GraphConjecture> for SqlSelectQuery {
             rename_as: Some("all_inv".to_string()),
         };
 
-        Self {
+        SqlSelectQuery {
             select: vec!["all_inv.*".to_string()],
             from: vec![all_inv, extremal],
             where_clause: Some(SqlCondition::and_vec(all_eq_extremal_clause, {
-                let mut res = if let Some(add_cond) = value.additional_condition {
+                let mut res = if let Some(add_cond) = additional_condition {
                     vec![add_cond]
                 } else {
                     vec![]
                 };
-                res.push(SqlCondition::not(value.conjecture_to_disprove));
+                res.push(SqlCondition::not(conjecture_to_disprove));
                 res
             })),
             group_by: Vec::new(),
             limit: None,
+        }
+    }
+    fn without_extremal_graphs(
+        additional_condition: Option<SqlCondition>,
+        conjecture_to_disprove: SqlCondition,
+    ) -> SqlSelectQuery {
+        let mut all_columns = HashSet::new();
+
+        // Get all from conditions :
+        if let Some(add_cond) = &additional_condition {
+            all_columns.extend(get_all_invariants_cond(add_cond));
+        }
+        all_columns.extend(get_all_invariants_cond(&conjecture_to_disprove));
+
+        let mut all_columns = Vec::from_iter(all_columns);
+
+        let all_inv: SqlTableSelection = SqlTableSelection {
+            selected_table: SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+                all_columns[0].clone(),
+                all_columns.split_off(1),
+                PK_NAME,
+                None,
+            ))
+            .into(),
+            join_clause: None,
+            rename_as: None,
+        };
+        let main_cond = {
+            if let Some(clause) = additional_condition {
+                SqlCondition::and(clause, SqlCondition::not(conjecture_to_disprove))
+            } else {
+                SqlCondition::not(conjecture_to_disprove)
+            }
+        };
+
+        SqlSelectQuery {
+            select: vec!["*".to_string()],
+            from: vec![all_inv],
+            where_clause: Some(main_cond),
+            group_by: Vec::new(),
+            limit: None,
+        }
+    }
+}
+
+impl From<ExtremalGraphConjecture> for SqlSelectQuery {
+    fn from(value: ExtremalGraphConjecture) -> Self {
+        if value.selection.is_some() {
+            ExtremalGraphConjecture::with_extremal_graphs(
+                value.selection.expect("is some"),
+                value.additional_condition,
+                value.conjecture_to_disprove,
+            )
+        } else {
+            ExtremalGraphConjecture::without_extremal_graphs(
+                value.additional_condition,
+                value.conjecture_to_disprove,
+            )
         }
     }
 }
@@ -180,7 +245,6 @@ pub enum ClassType {
     Min,
     Max,
     Extremal,
-    None,
 }
 
 impl ToSql for ClassType {
@@ -189,7 +253,6 @@ impl ToSql for ClassType {
             ClassType::Min => "MIN",
             ClassType::Max => "MAX",
             ClassType::Extremal => todo!(),
-            ClassType::None => "",
         }
         .to_string()
     }
