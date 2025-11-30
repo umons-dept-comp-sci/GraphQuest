@@ -152,6 +152,17 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             res.push_str(&format!(" WHERE {where_clause}"));
         }
 
+        // Group by
+        if !query.group_by.is_empty() {
+            res.push_str(&format!(
+                " GROUP BY {}",
+                query.group_by.first().expect("not empty")
+            ));
+            for i in 1..query.group_by.len() {
+                res.push_str(&format!(", {}", query.group_by[i]));
+            }
+        }
+
         // Limit clause
         if let Some((start, limit)) = &query.limit {
             res.push_str(&format!(" LIMIT {limit}"));
@@ -161,12 +172,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             }
         }
 
-        res.push(';');
         res
-    }
-
-    fn get_all_from_table(table_name: impl ToString) -> String {
-        format!("select * from {};", table_name.to_string())
     }
 
     fn get_delete_table_query() -> String {
@@ -193,62 +199,6 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         query.push(';');
 
         query
-    }
-
-    fn get_join_table_query(
-        table_names: Vec<impl ToString>,
-        common_column_name: impl ToString,
-    ) -> String {
-        let mut table_name_iterator = table_names.into_iter();
-        let mut res = format!(
-            "SELECT * FROM ({})",
-            table_name_iterator
-                .next()
-                .expect("at least one val")
-                .to_string()
-        );
-        for table_name in table_name_iterator {
-            res.push_str(
-                format!(
-                    " INNER JOIN {} USING ({})",
-                    table_name.to_string(),
-                    common_column_name.to_string()
-                )
-                .as_str(),
-            );
-        }
-
-        res
-    }
-
-    fn get_all_rows_from_table_column(
-        table_name: impl ToString,
-        column_name: impl ToString,
-    ) -> String {
-        format!(
-            "SELECT {} FROM {}",
-            column_name.to_string(),
-            table_name.to_string(),
-        )
-    }
-
-    fn get_nb_rows_from_table(table_name: impl ToString) -> String {
-        format!("SELECT count(*) FROM {};", table_name.to_string())
-    }
-
-    fn get_select_batch_from(
-        from_table: String,
-        start_index: Option<usize>,
-        limit: usize,
-    ) -> String {
-        let mut res = format!("SELECT * FROM ({from_table})");
-
-        res.push_str(&format!(" LIMIT {limit}"));
-
-        if let Some(start) = start_index {
-            res.push_str(&format!(" OFFSET {start}"));
-        }
-        res
     }
 
     fn get_is_table_present(table_name: impl ToString) -> String {

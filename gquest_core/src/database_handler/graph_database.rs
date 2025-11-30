@@ -85,7 +85,7 @@ where
     }
 
     /// Creates the database that will be storing the project if no database exists with the given url.
-    /// Otherwise, simply connects to it
+    /// Otherwise, simply connects to it.
     /// Returns an in instance of a [`GraphDatabase`].
     ///
     /// ## Errors
@@ -193,13 +193,13 @@ where
 
     async fn add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
-            inv,
+            inv.to_string(),
             PK_NAME,
             ColumnType::String {
                 max_size: Some(TABLE_NAME_MAX_SIZE),
                 default_value: None,
             },
-            INVARIANT_COLUMN_NAME,
+            inv, // Makes the join queries easier
             // We store data as strings in order to accept anything
             ColumnType::Float {
                 default_value: None,
@@ -384,7 +384,9 @@ where
         &self,
         table_name: impl ToString,
     ) -> Result<usize, GraphDbRuntimeError> {
-        let query_str = DB::get_nb_rows_from_table(table_name);
+        let query_str =
+            SqlSelectQuery::select_count_all_from_table(table_name.to_string()).to_sql::<DB>();
+        // let query_str = DB::get_nb_rows_from_table(table_name);
 
         let res: (i64,) =
             DB::execute_query_fetch_one(&self.pool, QueryBuilder::<DB>::new(query_str)).await?;
@@ -397,7 +399,8 @@ where
     /// # Warning
     /// Only use this method when using small database because everything will be stored and returned.
     pub async fn read_all_dataset(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
-        let query_str = DB::get_all_from_table(CANONICAL_TABLE_NAME);
+        let query_str =
+            SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME.to_string()).to_sql::<DB>();
 
         let builder = QueryBuilder::new(query_str);
         // Execute query :
@@ -413,7 +416,8 @@ where
         &self,
         table_name: impl ToString,
     ) -> Result<Vec<(String, f64)>, GraphDbRuntimeError> {
-        let query_str = DB::get_all_from_table(table_name);
+        let query_str =
+            SqlSelectQuery::select_all_from_table(table_name.to_string()).to_sql::<DB>();
 
         let builder = QueryBuilder::new(query_str);
 
@@ -433,7 +437,7 @@ where
         }
         for table in tables {
             let mut table_query: Option<QueryTable> = None;
-            let query_str = DB::get_all_from_table(table);
+            let query_str = SqlSelectQuery::select_all_from_table(table).to_sql::<DB>();
 
             // Execute query :
             let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query_str));
@@ -486,7 +490,6 @@ where
     fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
         let col = row.column(col_index);
         let col_type = col.type_info().name();
-        println!("{col_type}");
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
@@ -703,16 +706,26 @@ where
         }
 
         // Get join dependency query
-        let join_query = {
+        let mut join_query = {
             if let Some(dep) = &executable.dependencies
                 && !dep.is_empty()
             {
+                let mut dep = dep.clone();
                 // Get dependencies
-                DB::get_join_table_query(dep.clone(), PK_NAME)
+                SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+                    dep[0].clone(),
+                    dep.split_off(1),
+                    PK_NAME,
+                    None,
+                ))
             } else {
-                DB::get_all_rows_from_table_column(CANONICAL_TABLE_NAME, PK_NAME)
+                SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
             }
         };
+
+        join_query = join_query.set_limit_clause(start_value, total_nb_inv);
+
+        let query_str = join_query.to_sql::<DB>();
 
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
@@ -723,12 +736,10 @@ where
 
         let mut count = 0;
 
-        let limit_offset_query: String =
-            DB::get_select_batch_from(join_query, start_value, total_nb_inv);
         {
             let fetch_handle: std::pin::Pin<
                 Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send>,
-            > = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&limit_offset_query));
+            > = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query_str));
 
             let input = InputFn::<'_, DB> {
                 db: self.clone(),

@@ -128,7 +128,7 @@ where
             // Wait for any of them to finish then execute new ones
             handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
         }
-        // wait for all threads to finish 
+        // wait for all threads to finish
         let _res = handles.join_all().await;
 
         Ok(())

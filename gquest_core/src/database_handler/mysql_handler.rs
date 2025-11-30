@@ -86,10 +86,6 @@ impl DbQuerySystem<MySql> for MySql {
         todo!()
     }
 
-    fn get_all_from_table(_table_name: impl ToString) -> String {
-        todo!()
-    }
-
     fn get_delete_table_query() -> String {
         todo!()
     }
@@ -98,32 +94,6 @@ impl DbQuerySystem<MySql> for MySql {
         _table_name: impl ToString,
         _nb_cols: usize,
         _nb_rows: usize,
-    ) -> String {
-        todo!()
-    }
-
-    fn get_join_table_query(
-        _table_names: Vec<impl ToString>,
-        _common_column_name: impl ToString,
-    ) -> String {
-        todo!()
-    }
-
-    fn get_all_rows_from_table_column(
-        _table_name: impl ToString,
-        _column_name: impl ToString,
-    ) -> String {
-        todo!()
-    }
-
-    fn get_nb_rows_from_table(_table_name: impl ToString) -> String {
-        todo!()
-    }
-
-    fn get_select_batch_from(
-        _from_table: String,
-        _start_index: Option<usize>,
-        _limit: usize,
     ) -> String {
         todo!()
     }
@@ -139,7 +109,7 @@ impl DbQuerySystem<MySql> for MySql {
     ) -> String {
         todo!()
     }
-    
+
     fn build_select_query(query: &super::SqlSelectQuery) -> String {
         todo!()
     }

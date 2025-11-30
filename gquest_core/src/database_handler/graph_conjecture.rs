@@ -1,30 +1,182 @@
+use std::collections::HashSet;
+
+use crate::database_handler::{
+    ArgType, CANONICAL_TABLE_NAME, PK_NAME, SqlComparison, SqlCondition, SqlSelectQuery,
+    SqlTableSelection,
+};
+
 pub trait ToSql {
     fn to_sql(&self) -> String;
 }
 
-struct GraphConjecture {
-    selection: ClassSelection,
-    // inv_conditions: Quer,
-    // should_meet: InvariantCondition,
+pub struct GraphConjecture {
+    pub selection: ClassSelection,
+    pub additional_condition: Option<SqlCondition>,
+    pub conjecture_to_disprove: SqlCondition,
 }
 
-impl ToSql for GraphConjecture {
-    fn to_sql(&self) -> String {
-        todo!()
+fn get_all_invariants_cond(cond: &SqlCondition) -> HashSet<String> {
+    let mut res: HashSet<String> = HashSet::new();
+    match cond {
+        SqlCondition::Operation(sql_comparison) => match sql_comparison {
+            SqlComparison::Greater(a, b)
+            | SqlComparison::GreaterEqual(a, b)
+            | SqlComparison::Less(a, b)
+            | SqlComparison::LessEqual(a, b)
+            | SqlComparison::Equal(a, b) => {
+                if let ArgType::ColumnName(name) = a {
+                    res.insert(name.to_string());
+                }
+                if let ArgType::ColumnName(name) = b {
+                    res.insert(name.to_string());
+                }
+            }
+        },
+        SqlCondition::And(sql_condition, sql_condition1)
+        | SqlCondition::Or(sql_condition, sql_condition1) => {
+            res.extend(get_all_invariants_cond(sql_condition));
+            res.extend(get_all_invariants_cond(sql_condition1));
+        }
+        SqlCondition::Not(sql_condition) => {
+            res.extend(get_all_invariants_cond(sql_condition));
+        }
+        SqlCondition::AndVec(sql_condition, sql_conditions)
+        | SqlCondition::OrVec(sql_condition, sql_conditions) => {
+            res.extend(get_all_invariants_cond(sql_condition));
+            for condition in sql_conditions {
+                res.extend(get_all_invariants_cond(condition));
+            }
+        }
+    };
+
+    res
+}
+
+impl From<GraphConjecture> for SqlSelectQuery {
+    fn from(value: GraphConjecture) -> Self {
+        let mut all_columns = HashSet::new();
+
+        // Get all from conditions :
+        if let Some(add_cond) = &value.additional_condition {
+            all_columns.extend(get_all_invariants_cond(add_cond));
+        }
+        all_columns.extend(get_all_invariants_cond(&value.conjecture_to_disprove));
+
+        // Get all from selection :
+        let mut selection_set = HashSet::new();
+        selection_set.insert(value.selection.invariant_to_max.clone());
+        selection_set.extend(value.selection.invariants_combination.clone());
+
+        all_columns.extend(selection_set.clone());
+
+        let mut all_columns = Vec::from_iter(all_columns);
+
+        let all_eq_extremal_clause = SqlCondition::and_vec(
+            SqlComparison::Equal(
+                ArgType::ColumnName(format!("all_inv.{}", value.selection.invariant_to_max)),
+                ArgType::ColumnName(format!("extremal.{}", value.selection.invariant_to_max)),
+            ),
+            selection_set
+                .into_iter()
+                .map(|column| {
+                    SqlComparison::Equal(
+                        ArgType::ColumnName(format!("all_inv.{column}")),
+                        ArgType::ColumnName(format!("extremal.{column}")),
+                    )
+                })
+                .collect(),
+        );
+
+        let extremal: SqlTableSelection = value.selection.into();
+
+        let all_inv: SqlTableSelection = SqlTableSelection {
+            selected_table: SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+                all_columns[0].clone(),
+                all_columns.split_off(1),
+                PK_NAME,
+                None,
+            ))
+            .into(),
+            join_clause: None,
+            rename_as: Some("all_inv".to_string()),
+        };
+
+        Self {
+            select: vec!["all_inv.*".to_string()],
+            from: vec![all_inv, extremal],
+            where_clause: Some(SqlCondition::and_vec(all_eq_extremal_clause, {
+                let mut res = if let Some(add_cond) = value.additional_condition {
+                    vec![add_cond]
+                } else {
+                    vec![]
+                };
+                res.push(SqlCondition::not(value.conjecture_to_disprove));
+                res
+            })),
+            group_by: Vec::new(),
+            limit: None,
+        }
     }
 }
 
-
 /// Example: max, "eci", vec!["n", "m"]
 /// Means: the maximum value of eci for every combination of n and m
-struct ClassSelection {
+pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
     invariants_combination: Vec<String>,
 }
 
+impl ClassSelection {
+    pub fn new(
+        class_type: ClassType,
+        extremal_inv: impl ToString,
+        invariant_combination: Vec<impl ToString>,
+    ) -> Self {
+        Self {
+            class_type,
+            invariant_to_max: extremal_inv.to_string(),
+            invariants_combination: Vec::from_iter(invariant_combination)
+                .iter()
+                .map(|f| f.to_string())
+                .collect(),
+        }
+    }
+}
 
-enum ClassType {
+impl From<ClassSelection> for SqlTableSelection {
+    fn from(value: ClassSelection) -> Self {
+        SqlTableSelection {
+            selected_table: {
+                let mut select = value.invariants_combination.clone();
+                select.push(format!(
+                    "{}({}) as {}",
+                    value.class_type.to_sql(),
+                    value.invariant_to_max,
+                    value.invariant_to_max
+                ));
+
+                SqlSelectQuery {
+                    select,
+                    from: vec![SqlTableSelection::new_join(
+                        value.invariant_to_max,
+                        value.invariants_combination.clone(),
+                        PK_NAME,
+                        None,
+                    )],
+                    where_clause: None,
+                    group_by: value.invariants_combination,
+                    limit: None,
+                }
+                .into()
+            },
+            join_clause: None,
+            rename_as: Some("extremal".to_string()),
+        }
+    }
+}
+
+pub enum ClassType {
     Min,
     Max,
     Extremal,
@@ -42,27 +194,6 @@ impl ToSql for ClassType {
         .to_string()
     }
 }
-
-// fn test() {
-//     let cond = InvariantCondition::or(
-//         InvariantOperation::greater_equal("d", "3"),
-//         InvariantCondition::and(
-//             InvariantOperation::greater("n", "4"),
-//             InvariantOperation::less("d", "1"),
-//         ),
-//     );
-//     let conjecture = InvariantCondition::not(InvariantOperation::equal("comp", "1"));
-
-//     let conjecture_query = GraphConjecture {
-//         selection: ClassSelection {
-//             class_type: ClassType::Max,
-//             invariant_to_max: "eci".to_string(),
-//             invariants_combination: vec!["n".to_string(), "m".to_string()],
-//         },
-//         inv_conditions: cond,
-//         should_meet: conjecture,
-//     };
-// }
 
 /*
 SELECT comp.canon FROM vertices, eci, comp, (SELECT vertices.value as vertices, MIN(eci.value) as eci FROM vertices, eci GROUP BY vertices.value) extremals where vertices.value = extremals.vertices and eci.value = extremals.eci and comp.value = 0;
@@ -173,3 +304,26 @@ SELECT allInv.* FROM
     AND conj1 = 0;
                     */
 
+/*
+SELECT all_inv.* FROM (SELECT * FROM eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) all_inv,
+                     (SELECT vertices, m, MIN(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) extremal
+            WHERE all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.vertices = extremal.vertices;
+
+SELECT vertices, m, MIN(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m
+
+
+
+
+SELECT all_inv.* FROM (SELECT * FROM eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon) INNER JOIN d_nm USING (CANON) INNER JOIN comp using (CANON)) all_inv,
+                     (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) extremal
+            WHERE all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.vertices = extremal.vertices and comp = 0;
+
+SELECT all_inv.* FROM (SELECT * FROM (comp INNER JOIN d_nm USING (canon) INNER JOIN eci USING (canon) INNER JOIN m USING (canon) INNER JOIN vertices USING (canon))) as all_inv,
+                     (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) as extremal
+            WHERE (d_nm >= 3) AND (NOT (comp = 1));
+
+// CORECT !!! !! ! !!
+GTlzz{|90.0|8.0|21.0|3.0|0.0
+GJ\||{|90.0|8.0|21.0|3.0|0.0
+FJ]|w|65.0|7.0|15.0|3.0|0.0
+*/

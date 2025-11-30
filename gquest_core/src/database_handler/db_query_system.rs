@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, write},
     pin::Pin,
 };
 
@@ -26,8 +26,12 @@ pub enum ColumnType {
 
 pub enum SqlCondition {
     Operation(SqlComparison),
-    And(Box<SqlCondition>, Box<SqlCondition>),
     Or(Box<SqlCondition>, Box<SqlCondition>),
+    And(Box<SqlCondition>, Box<SqlCondition>),
+    /// `x_0` and `x_1` and ... and `x_{n-1}`.
+    AndVec(Box<SqlCondition>, Vec<SqlCondition>),
+    /// `x_0` or `x_1` or ... or `x_{n-1}`.
+    OrVec(Box<SqlCondition>, Vec<SqlCondition>),
     Not(Box<SqlCondition>),
 }
 
@@ -41,51 +45,87 @@ impl SqlCondition {
     pub fn not(cond: impl Into<SqlCondition>) -> Self {
         Self::Not(Box::new(cond.into()))
     }
+    pub fn and_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
+        Self::AndVec(
+            Box::new(cond_1.into()),
+            conds.into_iter().map(|c| c.into()).collect(),
+        )
+    }
+    pub fn or_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
+        Self::OrVec(
+            Box::new(cond_1.into()),
+            conds.into_iter().map(|c| c.into()).collect(),
+        )
+    }
 }
 
 impl Display for SqlCondition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
+        write!(f, "{}", {
+            let concat = |cond1: &SqlCondition,
+                          operator: &str,
+                          sql_conditions: &Vec<SqlCondition>|
+             -> String {
+                let mut res = format!("{cond1}");
+
+                for condition in sql_conditions {
+                    res.push_str(&format!(" {operator} {condition}"));
+                }
+
+                res
+            };
+
             match self {
                 SqlCondition::Operation(sql_comparison) => sql_comparison.to_string(),
                 SqlCondition::And(a, b) => format!("({a}) AND ({b})"),
                 SqlCondition::Or(a, b) => format!("({a}) OR ({b})"),
                 SqlCondition::Not(a) => format!("NOT ({a})"),
+                SqlCondition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
+                SqlCondition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
             }
-        )
+        })
     }
 }
 
 pub enum SqlComparison {
     /// `a > b`
-    Greater(String, String),
+    Greater(ArgType, ArgType),
     /// `a >= b`
-    GreaterEqual(String, String),
+    GreaterEqual(ArgType, ArgType),
     /// `a < b`
-    Less(String, String),
+    Less(ArgType, ArgType),
     /// `a <= b`
-    LessEqual(String, String),
+    LessEqual(ArgType, ArgType),
     /// `a = b`
-    Equal(String, String),
+    Equal(ArgType, ArgType),
 }
 
-impl SqlComparison {
-    pub fn greater(a: impl ToString, b: impl ToString) -> Self {
-        Self::Greater(a.to_string(), b.to_string())
+/// Used to correctly identify arguments in a comparison,
+/// otherwise it would be hard to guess if they refer to a value or to a column.
+#[derive(Debug)]
+pub enum ArgType {
+    Value(String),
+    ColumnName(String),
+}
+
+impl ArgType {
+    pub fn value(value: impl ToString) -> Self {
+        ArgType::Value(value.to_string())
     }
-    pub fn greater_equal(a: impl ToString, b: impl ToString) -> Self {
-        Self::GreaterEqual(a.to_string(), b.to_string())
+    pub fn column_name(name: impl ToString) -> Self {
+        ArgType::ColumnName(name.to_string())
     }
-    pub fn less(a: impl ToString, b: impl ToString) -> Self {
-        Self::Less(a.to_string(), b.to_string())
-    }
-    pub fn less_equal(a: impl ToString, b: impl ToString) -> Self {
-        Self::LessEqual(a.to_string(), b.to_string())
-    }
-    pub fn equal(a: impl ToString, b: impl ToString) -> Self {
-        Self::Equal(a.to_string(), b.to_string())
+}
+
+impl Display for ArgType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ArgType::Value(v) | ArgType::ColumnName(v) => v,
+            }
+        )
     }
 }
 
@@ -131,7 +171,7 @@ impl SqlTableSelection {
         table: impl Into<SqlTable>,
         with_tables: Vec<String>,
         using: impl ToString,
-        rename_as: Option<impl ToString>,
+        rename_as: Option<String>,
     ) -> Self {
         let mut rename = None;
         if let Some(new_name) = rename_as {
@@ -142,6 +182,17 @@ impl SqlTableSelection {
             join_clause: Some((with_tables, using.to_string())),
             rename_as: rename,
         }
+    }
+}
+impl From<String> for SqlTableSelection {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for SqlTableSelection {
+    fn from(value: &str) -> Self {
+        Self::new(value)
     }
 }
 
@@ -191,6 +242,16 @@ impl SqlSelectQuery {
         }
     }
 
+    pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
+        Self {
+            select: vec!["COUNT(*)".to_string()],
+            from: vec![table.into()],
+            where_clause: None,
+            group_by: vec![],
+            limit: None,
+        }
+    }
+
     pub fn set_where_clause(mut self, where_clause: SqlCondition) -> Self {
         self.where_clause = Some(where_clause);
         self
@@ -204,6 +265,13 @@ impl SqlSelectQuery {
     pub fn set_group_by(mut self, groups: Vec<impl ToString>) -> Self {
         self.group_by = groups.iter().map(|f| f.to_string()).collect();
         self
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        DB::build_select_query(&self)
     }
 }
 
@@ -276,43 +344,13 @@ where
         pk_column_type: ColumnType,
     ) -> String;
 
-    fn build_select_query(query: &SqlSelectQuery) -> String;
-
-    /// Returns the query that can be used to get all value from a table with the given name from the dataset
-    fn get_all_from_table(table_name: impl ToString) -> String;
-
     /// Returns the query that can be used to delete a table with the given name from the dataset
     fn get_delete_table_query() -> String;
 
+    fn build_select_query(query: &SqlSelectQuery) -> String;
+
     /// Returns the query that can be used to insert all the given data into a table called `table_name`
     fn get_insert_into_query(table_name: impl ToString, nb_cols: usize, nb_rows: usize) -> String;
-
-    /// Get a query that can be used to join all the given tables using a common column.
-    ///
-    fn get_join_table_query(
-        table_names: Vec<impl ToString>,
-        common_column_name: impl ToString,
-    ) -> String;
-
-    /// Get a query that can be used to retrieve all rows from the given table and column
-    fn get_all_rows_from_table_column(
-        table_name: impl ToString,
-        column_name: impl ToString,
-    ) -> String;
-
-    /// Get a query that can be used to retrieve the number of rows from the given table
-    fn get_nb_rows_from_table(table_name: impl ToString) -> String;
-
-    /// Get a query that can be used to select a batch from a given table.
-    /// ## Args
-    /// * `start_index` : The index of the table to start fetching the data at
-    ///     * If the given value is `none`, the fetching will start a 0
-    /// * `limit` : The limit on the number of value to fetch
-    fn get_select_batch_from(
-        from_table: String,
-        start_index: Option<usize>,
-        limit: usize,
-    ) -> String;
 
     /// Checks if the given table is present inside a database.
     /// Returns 1 if the table is present, 0 otherwise.
