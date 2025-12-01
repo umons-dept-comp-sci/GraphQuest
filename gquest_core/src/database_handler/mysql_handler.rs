@@ -2,7 +2,7 @@ use sqlx::{FromRow, MySql, Pool, mysql::MySqlDatabaseError};
 
 use crate::database_handler::{ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError};
 
-/// An alias for [`GraphDatabase`] specialized for Sqlite
+/// An alias for [`GraphDatabase`] specialized for MySql
 pub type MySqlGraphDB = GraphDatabase<MySql>;
 
 impl DbQuerySystem<MySql> for MySql {
@@ -110,7 +110,7 @@ impl DbQuerySystem<MySql> for MySql {
         todo!()
     }
 
-    fn build_select_query(query: &super::SqlSelectQuery) -> String {
+    fn to_sql(_query: &super::SqlSelectQuery) -> String {
         todo!()
     }
 }

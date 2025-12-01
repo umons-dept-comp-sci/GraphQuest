@@ -108,7 +108,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         )
     }
 
-    fn build_select_query(query: &SqlSelectQuery) -> String {
+    fn to_sql(query: &SqlSelectQuery) -> String {
         let mut res = "SELECT ".to_string();
 
         // Add select clause
@@ -125,7 +125,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             res.push('(');
             match &table.selected_table {
                 SqlTable::SqlQuery(sql_select_query) => {
-                    res.push_str(&Self::build_select_query(sql_select_query));
+                    res.push_str(&Self::to_sql(sql_select_query));
                 }
                 SqlTable::TableName(name) => res.push_str(name),
             }

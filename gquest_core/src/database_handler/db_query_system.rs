@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display, write},
+    fmt::{Debug, Display},
     pin::Pin,
 };
 
@@ -24,33 +24,47 @@ pub enum ColumnType {
     },
 }
 
+/// Represents a condition that could appear in a where clause.
 pub enum SqlCondition {
+    /// A simple comparison
     Operation(SqlComparison),
+    /// `x` or `y`
     Or(Box<SqlCondition>, Box<SqlCondition>),
+    /// `x` and `y`
     And(Box<SqlCondition>, Box<SqlCondition>),
     /// `x_0` and `x_1` and ... and `x_{n-1}`.
     AndVec(Box<SqlCondition>, Vec<SqlCondition>),
     /// `x_0` or `x_1` or ... or `x_{n-1}`.
     OrVec(Box<SqlCondition>, Vec<SqlCondition>),
+    /// not `x`
     Not(Box<SqlCondition>),
 }
 
 impl SqlCondition {
+    /// Simplifies the creation of the [`SqlCondition::And`] enum.
     pub fn and(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
         Self::And(Box::new(cond_1.into()), Box::new(cond_2.into()))
     }
+
+    /// Simplifies the creation of the [`SqlCondition::Or`] enum.
     pub fn or(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
         Self::Or(Box::new(cond_1.into()), Box::new(cond_2.into()))
     }
+
+    /// Simplifies the creation of the [`SqlCondition::Not`] enum.
     pub fn not(cond: impl Into<SqlCondition>) -> Self {
         Self::Not(Box::new(cond.into()))
     }
+
+    /// Simplifies the creation of the [`SqlCondition::AndVec`] enum.
     pub fn and_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
         Self::AndVec(
             Box::new(cond_1.into()),
             conds.into_iter().map(|c| c.into()).collect(),
         )
     }
+
+    /// Simplifies the creation of the [`SqlCondition::OrVec`] enum.
     pub fn or_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
         Self::OrVec(
             Box::new(cond_1.into()),
@@ -87,6 +101,8 @@ impl Display for SqlCondition {
     }
 }
 
+/// Represents a comparison that can be used in an Sql where clause.
+/// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
 pub enum SqlComparison {
     /// `a > b`
     Greater(ArgType, ArgType),
@@ -151,14 +167,18 @@ impl From<SqlComparison> for SqlCondition {
     }
 }
 
+/// Represents a table in the From section of an Sql Query.
 pub struct SqlTableSelection {
+    /// The table to select
     pub selected_table: SqlTable,
-    /// Contains all the table to join to the selected table
+    /// Contains all the table to join to this selected table  and the column name to use for each.
     pub join_clause: Option<(Vec<String>, String)>,
+    /// What to rename the table in the From section of the query
     pub rename_as: Option<String>,
 }
 
 impl SqlTableSelection {
+    /// Selects a simple table without joining anything to it and does not rename it.
     pub fn new(table: impl Into<SqlTable>) -> Self {
         Self {
             selected_table: table.into(),
@@ -167,6 +187,7 @@ impl SqlTableSelection {
         }
     }
 
+    /// Selects a table and joins it with the given table name by using for each one the same common column name.
     pub fn new_join(
         table: impl Into<SqlTable>,
         with_tables: Vec<String>,
@@ -196,8 +217,11 @@ impl From<&str> for SqlTableSelection {
     }
 }
 
+/// Represents a table to select in Sql
 pub enum SqlTable {
+    /// The query used to get this temporary table
     SqlQuery(SqlSelectQuery),
+    /// The name of the table
     TableName(String),
 }
 impl From<SqlSelectQuery> for SqlTable {
@@ -210,13 +234,14 @@ impl From<String> for SqlTable {
         SqlTable::TableName(value)
     }
 }
-
 impl From<&str> for SqlTable {
     fn from(value: &str) -> Self {
         value.to_string().into()
     }
 }
 
+/// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
+/// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate into a valid sql query.
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
     pub select: Vec<String>,
@@ -232,6 +257,8 @@ pub struct SqlSelectQuery {
     pub limit: Option<(Option<usize>, usize)>,
 }
 impl SqlSelectQuery {
+    /// Simply selects every row from the given table.
+    /// In SQLite: `SELECT * FROM table`
     pub fn select_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
         Self {
             select: vec!["*".to_string()],
@@ -241,7 +268,8 @@ impl SqlSelectQuery {
             limit: None,
         }
     }
-
+    /// Gets the number of rows stored inside the given table.
+    /// In SQLite: `SELECT count(*) FROM table`
     pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
         Self {
             select: vec!["COUNT(*)".to_string()],
@@ -252,26 +280,31 @@ impl SqlSelectQuery {
         }
     }
 
+    /// Returns the *same* query but with the given **where** clause.
     pub fn set_where_clause(mut self, where_clause: SqlCondition) -> Self {
         self.where_clause = Some(where_clause);
         self
     }
 
+    /// Returns the *same* query but with the given **limit/offset** clause.
     pub fn set_limit_clause(mut self, start: Option<usize>, limit: usize) -> Self {
         self.limit = Some((start, limit));
         self
     }
 
+    /// Returns the *same* query but with the given **group by** clause.
     pub fn set_group_by(mut self, groups: Vec<impl ToString>) -> Self {
         self.group_by = groups.iter().map(|f| f.to_string()).collect();
         self
     }
 
+    /// Using the given database system, converts this query to a valid and executable sql query for the given system.
+    /// See [`DbQuerySystem::to_sql`] for more information.
     pub fn to_sql<DB>(&self) -> String
     where
         DB: Database + DbQuerySystem<DB>,
     {
-        DB::build_select_query(&self)
+        DB::to_sql(self)
     }
 }
 
@@ -347,7 +380,11 @@ where
     /// Returns the query that can be used to delete a table with the given name from the dataset
     fn get_delete_table_query() -> String;
 
-    fn build_select_query(query: &SqlSelectQuery) -> String;
+    /// Turns the given query to a valid Sql query that could be executed using this database system.
+    ///
+    /// When implementing this function, **beware** that the `;` character should not be added at the end of the query since it could lead to issues when
+    /// building queries recursively for example.
+    fn to_sql(query: &SqlSelectQuery) -> String;
 
     /// Returns the query that can be used to insert all the given data into a table called `table_name`
     fn get_insert_into_query(table_name: impl ToString, nb_cols: usize, nb_rows: usize) -> String;
