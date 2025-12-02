@@ -28,7 +28,6 @@ pub struct GraphDatabase<DB>
 where
     DB: Database + DbQuerySystem<DB> + Send,
 {
-    // _url: String,
     pool: Pool<DB>,
 }
 

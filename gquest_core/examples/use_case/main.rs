@@ -30,16 +30,16 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(10, &"".to_string(), (None, None)).expect("correct call");
-    // db.add_to_dataset(geng.get_reader(), 1500, None)
-    //     .await
-    //     .expect("correct");
+    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
+    db.add_to_dataset(geng.get_reader(), 1500, None)
+        .await
+        .expect("correct");
 
     let config =
         ConfigFile::read_json_file(&CONFIG_PATH_CONJ_1.to_string()).expect("File should correct");
 
     let mut wp = Workplace::new(db, config);
-    // wp.execute_all_executables().await.expect("no errors");
+    wp.execute_all_executables().await.expect("no errors");
 
     // let select: SqlSelectQuery = GraphConjecture {
     //     selection: ClassSelection::new(

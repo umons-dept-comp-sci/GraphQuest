@@ -9,8 +9,12 @@ pub const PK_NAME: &str = "canon";
 pub const VERTICES_TABLE_NAME: &str = "vertices";
 
 pub const INVARIANT_COLUMN_NAME: &str = "value";
+
 /// The name of the table that has all the data
-pub const FULL_TABLE_NAME: &str = "AllInv";
+pub const FULL_TABLE_NAME: &str = "all_inv";
+
+/// The name of the table that has all the extremal graph
+pub const EXTREMAL_TABLE_NAME: &str = "extremal";
 
 /// The maximum size of a signature to store in the dataset
 pub const SIGNATURE_MAX_SIZE: usize = 250;

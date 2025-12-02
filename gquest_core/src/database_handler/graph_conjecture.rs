@@ -1,16 +1,24 @@
 use std::collections::HashSet;
 
 use crate::database_handler::{
-    ArgType, PK_NAME, SqlComparison, SqlCondition, SqlSelectQuery, SqlTableSelection,
+    ArgType, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison, SqlCondition,
+    SqlSelectQuery, SqlTableSelection,
 };
 
 pub trait ToSql {
     fn to_sql(&self) -> String;
 }
 
+/// Represents a query that could be used to find counterexamples from a [`crate::database_handler::GraphDatabase`].
+///
+/// Can be turned into a [`SqlSelectQuery`] in order to be executeed by a database system.
 pub struct ExtremalGraphConjecture {
+    /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: Option<ClassSelection>,
+    /// The optional additional condition that can further restrict the graph to explore.
     pub additional_condition: Option<SqlCondition>,
+    /// The conjecture to disprove.
+    /// When building the query, this will be encapslulated as [`SqlCondition::Not`] in order to try to find a counter example.
     pub conjecture_to_disprove: SqlCondition,
 }
 
@@ -53,6 +61,26 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
 }
 
 impl ExtremalGraphConjecture {
+    /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
+    /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
+    /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
+    pub fn get_invariants_to_compute(&self) -> HashSet<String> {
+        let mut all_inv = HashSet::new();
+        if let Some(selection) = &self.selection {
+            all_inv.insert(selection.invariant_to_max.clone());
+            all_inv.extend(selection.invariants_combination.clone());
+        }
+        if let Some(additional_cond) = &self.additional_condition {
+            all_inv.extend(get_all_inv_column(additional_cond));
+        }
+
+        all_inv
+    }
+    /// Gets all the names of the invariants specified in the conjecture to disprove.
+    pub fn get_invariants_from_conjecture(&self) -> HashSet<String> {
+        get_all_inv_column(&self.conjecture_to_disprove)
+    }
+
     fn with_extremal_graphs(
         selection: ClassSelection,
         additional_condition: Option<SqlCondition>,
@@ -76,18 +104,21 @@ impl ExtremalGraphConjecture {
         all_columns.extend(selection_set.clone());
 
         let mut all_columns = Vec::from_iter(all_columns);
-        // FIXME: Replace all_inv and extremal by a constant !
+
         let all_eq_extremal_clause = SqlCondition::and_vec(
             SqlComparison::Equal(
-                ArgType::ColumnName(format!("all_inv.{}", selection.invariant_to_max)),
-                ArgType::ColumnName(format!("extremal.{}", selection.invariant_to_max)),
+                ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max)),
+                ArgType::ColumnName(format!(
+                    "{EXTREMAL_TABLE_NAME}.{}",
+                    selection.invariant_to_max
+                )),
             ),
             selection_set
                 .into_iter()
                 .map(|column| {
                     SqlComparison::Equal(
-                        ArgType::ColumnName(format!("all_inv.{column}")),
-                        ArgType::ColumnName(format!("extremal.{column}")),
+                        ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{column}")),
+                        ArgType::ColumnName(format!("{EXTREMAL_TABLE_NAME}.{column}")),
                     )
                 })
                 .collect(),
@@ -173,8 +204,9 @@ impl From<ExtremalGraphConjecture> for SqlSelectQuery {
     }
 }
 
-/// Example: max, "eci", vec!["n", "m"]
-/// Means: the maximum value of eci for every combination of n and m
+/// Example: max(`eci`; `n`, `m`)
+///
+/// Means: the maximum value of `eci` for every combination of `n` and `m`
 pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
@@ -233,7 +265,6 @@ impl From<ClassSelection> for SqlTableSelection {
 pub enum ClassType {
     Min,
     Max,
-    Extremal,
 }
 
 impl ToSql for ClassType {
@@ -241,7 +272,6 @@ impl ToSql for ClassType {
         match self {
             ClassType::Min => "MIN",
             ClassType::Max => "MAX",
-            ClassType::Extremal => todo!(),
         }
         .to_string()
     }

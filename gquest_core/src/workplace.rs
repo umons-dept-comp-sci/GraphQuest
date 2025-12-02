@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use sqlx::{Database, FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::Mutex,
+    task::{JoinError, JoinSet},
+};
 
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
@@ -18,6 +21,8 @@ pub enum WorkplaceError {
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
     #[error("Encountered an error from an invariant executable : \"{0}\"")]
     InvariantError(#[from] InvariantError),
+    #[error("One of the invariant thread did not end correctly: \"{0}\"")]
+    JoinError(#[from] JoinError),
 }
 
 pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
@@ -105,13 +110,12 @@ where
     ) -> Result<(), WorkplaceError> {
         let iter = Arc::new(Mutex::new(sorted));
 
-        let mut handles = JoinSet::new();
+        let mut handles: JoinSet<Result<(), GraphDbRuntimeError>> = JoinSet::new();
         while !iter.lock().await.is_finished() {
             // Spawns as many threads as possible while respecting the maximum number of threads to use
             while let Some(next_inv) = iter.lock().await.next_invariant()
                 && handles.len() < self.config.get_nb_threads()
             {
-                println!("spawning new thread for : {}", next_inv);
                 let mut db_clone = self.db.clone();
                 let batch_size = self.config.get_batch_size();
                 let iter_clone = iter.clone();
@@ -119,17 +123,19 @@ where
                 handles.spawn(async move {
                     db_clone
                         .compute_executable(&next_inv, batch_size, None)
-                        .await
-                        .expect("no errors");
+                        .await?;
                     // Update the graph so that the main thread can compute new invariants
                     iter_clone.lock().await.update_dependencies(&next_inv);
+                    Ok(())
                 });
             }
             // Wait for any of them to finish then execute new ones
-            handles.join_next().await.expect("no problem").expect("sds"); // TODO: Collect error :)
+            handles.join_next().await.expect("joinSet is not empty")??; // checks for JoinError then for the GraphRuntimeError
         }
-        // wait for all threads to finish
-        let _res = handles.join_all().await;
+        // wait for all threads to finish and checks for any errors
+        for handle in handles.join_all().await {
+            handle?
+        }
 
         Ok(())
     }
