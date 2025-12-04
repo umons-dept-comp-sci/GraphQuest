@@ -9,7 +9,9 @@ use tokio::{
 
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
-    database_handler::{DbQuerySystem, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError},
+    database_handler::{
+        DbQuerySystem, GraphConjecture, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError, SqlSelectQuery,
+    },
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
 
@@ -88,7 +90,7 @@ where
         // Sort all executables
         let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
 
-        let mut sorted = sorter.to_iter().expect("ok");
+        let mut sorted = sorter.to_iter()?;
 
         if self.config.get_nb_threads() > 1 {
             self.execute_all_executables_multithread(sorted).await
@@ -137,6 +139,22 @@ where
             handle?
         }
 
+        Ok(())
+    }
+
+    /// Tries to find a counter example to a conjecture using this workplace.
+    async fn find_counterexamples(&mut self, conjecture: GraphConjecture) -> Result<(), WorkplaceError> {
+        // Fully compute the necessary invariants (and their dependencies)
+        let inv_to_compute = conjecture.get_invariants_to_compute();
+
+        // Only compute the necessary invariants in order to disprove the conjecture
+        let conjecture_invariants = conjecture.get_invariants_from_conjecture();
+        
+
+        // Return SqlQuery
+        let query : SqlSelectQuery = conjecture.into();
+        
+        // TODO: return query table as result 
         Ok(())
     }
 

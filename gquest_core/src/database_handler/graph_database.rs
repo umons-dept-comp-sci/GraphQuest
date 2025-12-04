@@ -533,11 +533,9 @@ where
             let safe_query = Self::create_safe_signature_query(query_str, signatures)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
 
-            // println!()
-
             // Insert to vertices table query
             let query_str = DB::get_insert_into_query(VERTICES_TABLE_NAME, 2, batch_size);
-            let safe_query = Self::create_safe_query(query_str, signatures, values)?;
+            let safe_query = Self::create_safe_insert_query(query_str, signatures, values)?;
             DB::execute_query_no_return(&self.pool, safe_query).await?;
             Ok(())
         };
@@ -585,11 +583,11 @@ where
         // TODO: Combine signatures and values into one vector
         let query_str = DB::get_insert_into_query(&inv_name, 2, signatures.len());
 
-        let safe_query = Self::create_safe_query(query_str, signatures, values)?;
+        let safe_query = Self::create_safe_insert_query(query_str, signatures, values)?;
         DB::execute_query_no_return(&self.pool, safe_query).await
     }
 
-    fn create_safe_query(
+    fn create_safe_insert_query(
         query_str: String,
         signatures: &[impl ToString],
         values: &[impl ToString],
@@ -688,23 +686,7 @@ where
             }
         }
 
-        // Check where the previous computations were left at (if any) in order to not recompute values for no reasons.
-        let mut start_value = None;
-        let total_nb_inv = self.get_size_of_table(CANONICAL_TABLE_NAME).await?;
-        // Get the first value to compute
-        for inv_name in &executable.invariant_names {
-            if self.is_table_added(inv_name).await? {
-                let val = self.get_size_of_table(inv_name).await?;
-                start_value = Some(start_value.unwrap_or(total_nb_inv).min(val));
-            }
-        }
-
-        if start_value.is_some_and(|start| start >= total_nb_inv) {
-            debug!("No need to compute anything here");
-            return Ok(());
-        }
-
-        // Get join dependency query
+        /* Join dependencies if any */
         let mut join_query = {
             if let Some(dep) = &executable.dependencies
                 && !dep.is_empty()
@@ -715,17 +697,40 @@ where
                     dep[0].clone(),
                     dep.split_off(1),
                     PK_NAME,
-                    None,
+                    Some(CANONICAL_TABLE_NAME.to_string()),
                 ))
             } else {
                 SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
             }
         };
 
-        join_query = join_query.set_limit_clause(start_value, total_nb_inv);
-
+        /* if table already exists, add a condition so that only gets value not present in the invariant table will be returned */
+        // Remember that since all invariants are computed together from an executable we can simply check for one and it will apply to all.
+        {
+            let first_inv = executable
+                .invariant_names
+                .first()
+                .expect("at least one val");
+            if self.is_table_added(first_inv).await? {
+                join_query = join_query.set_where_clause(SqlCondition::not(SqlCondition::exists(
+                    SqlSelectQuery {
+                        select: vec![PK_NAME.to_string()],
+                        from: vec![first_inv.to_string().into()],
+                        group_by: vec![],
+                        where_clause: Some(
+                            SqlComparison::Equal(
+                                ArgType::ColumnName(format!("{first_inv}.{PK_NAME}")),
+                                ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                            )
+                            .into(),
+                        ),
+                        limit: None,
+                    },
+                )));
+            }
+        }
+        // build query
         let query_str = join_query.to_sql::<DB>();
-
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
         let mut batch_to_store: Vec<Vec<String>> =
@@ -760,8 +765,7 @@ where
                 .execute_invariant(input, output, batch_size)
                 .await?;
         }
-
-        if !batch_to_store.is_empty() {
+        if count != 0 {
             let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
 
             self.push_batch(&mut signatures, &mut batch_to_store, executable)

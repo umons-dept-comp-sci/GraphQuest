@@ -3,7 +3,7 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        ArgType, ClassSelection, ExtremalGraphConjecture, SqlComparison, SqlCondition,
+        ArgType, ClassSelection, GraphConjecture, SqlComparison, SqlCondition,
         SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
     },
     utils::config_file::ConfigFile,
@@ -30,13 +30,13 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
     db.add_to_dataset(geng.get_reader(), 1500, None)
         .await
         .expect("correct");
 
     let config =
-        ConfigFile::read_json_file(&CONFIG_PATH_CONJ_1.to_string()).expect("File should correct");
+        ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
     let mut wp = Workplace::new(db, config);
     wp.execute_all_executables().await.expect("no errors");
@@ -75,7 +75,7 @@ async fn main() {
     // }
     // .into();
 
-    let select: SqlSelectQuery = ExtremalGraphConjecture {
+    let select: SqlSelectQuery = GraphConjecture {
         selection: None,
         additional_condition: None,
         conjecture_to_disprove: SqlComparison::Equal(

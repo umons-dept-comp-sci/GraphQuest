@@ -252,7 +252,7 @@ impl InvariantsExecutable {
                     ));
                 }
                 let val = val.join(" ");
-                debug!("Wrote to child stdin: {val:?}");
+                debug!("Wrote to child stdin ({:?}): {val:?}", self.invariant_names);
                 self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
                 waiting_in_stdin += 1;
 
@@ -283,7 +283,11 @@ impl InvariantsExecutable {
             )
             .await?;
         }
-        debug!("Finished child execution : {}", self.exec_path.display());
+        debug!(
+            "Finished child execution ({:?}): {}",
+            self.invariant_names,
+            self.exec_path.display()
+        );
 
         // Check if the child closed or not during the execution
         self.check_child_state(&mut call_res, &mut stderr)?;
@@ -303,7 +307,10 @@ impl InvariantsExecutable {
         T: AsyncInvariantOutput<E>,
         E: Debug,
     {
-        debug!("Flusing stdin then waiting for {sent_in_stdin} responses");
+        debug!(
+            "Flusing stdin then waiting for {sent_in_stdin} responses ({:?})",
+            self.invariant_names
+        );
 
         // A buffer helps us to not read all lines at the time but as a flow of data.
         let child_output = BufReader::new(stdout);
@@ -311,7 +318,7 @@ impl InvariantsExecutable {
         let mut received = 0;
 
         for response in child_output.lines() {
-            debug!("Received : {response:?}");
+            debug!("Received ({:?}): {response:?}", self.invariant_names);
             // We are waiting for the exact number of data sent to be sent back to us.
             if let Ok(s) = response {
                 let vals: Vec<String> = s.split(' ').map(|v| v.to_string()).collect();
@@ -333,7 +340,7 @@ impl InvariantsExecutable {
                 break;
             }
         }
-        debug!("Finished waiting");
+        debug!("Finished waiting ({:?})", self.invariant_names);
         // If the stdout finished *before* receiving all the values sent
         // then it means the child probably crashed.
         if received != sent_in_stdin {

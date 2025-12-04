@@ -149,7 +149,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
 
         // Where clause
         if let Some(where_clause) = &query.where_clause {
-            res.push_str(&format!(" WHERE {where_clause}"));
+            res.push_str(&format!(" WHERE {}", where_clause.to_sql::<Self>()));
         }
 
         // Group by

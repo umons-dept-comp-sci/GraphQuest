@@ -12,7 +12,9 @@ pub trait ToSql {
 /// Represents a query that could be used to find counterexamples from a [`crate::database_handler::GraphDatabase`].
 ///
 /// Can be turned into a [`SqlSelectQuery`] in order to be executeed by a database system.
-pub struct ExtremalGraphConjecture {
+/// # Errors
+/// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now. 
+pub struct GraphConjecture {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: Option<ClassSelection>,
     /// The optional additional condition that can further restrict the graph to explore.
@@ -55,12 +57,17 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
                 res.extend(get_all_inv_column(condition));
             }
         }
+        SqlCondition::Exists(_sql_select_query) => {
+            todo!(
+                "Conjectures using sql selections are not yet supported since finding invariants is harder here."
+            )
+        }
     };
 
     res
 }
 
-impl ExtremalGraphConjecture {
+impl GraphConjecture {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
@@ -187,16 +194,16 @@ impl ExtremalGraphConjecture {
     }
 }
 
-impl From<ExtremalGraphConjecture> for SqlSelectQuery {
-    fn from(value: ExtremalGraphConjecture) -> Self {
+impl From<GraphConjecture> for SqlSelectQuery {
+    fn from(value: GraphConjecture) -> Self {
         if value.selection.is_some() {
-            ExtremalGraphConjecture::with_extremal_graphs(
+            GraphConjecture::with_extremal_graphs(
                 value.selection.expect("is some"),
                 value.additional_condition,
                 value.conjecture_to_disprove,
             )
         } else {
-            ExtremalGraphConjecture::without_extremal_graphs(
+            GraphConjecture::without_extremal_graphs(
                 value.additional_condition,
                 value.conjecture_to_disprove,
             )

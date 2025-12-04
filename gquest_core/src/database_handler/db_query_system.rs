@@ -25,6 +25,7 @@ pub enum ColumnType {
 }
 
 /// Represents a condition that could appear in a where clause.
+#[derive(Debug)]
 pub enum SqlCondition {
     /// A simple comparison
     Operation(SqlComparison),
@@ -38,6 +39,8 @@ pub enum SqlCondition {
     OrVec(Box<SqlCondition>, Vec<SqlCondition>),
     /// not `x`
     Not(Box<SqlCondition>),
+    /// exists `x`
+    Exists(Box<SqlSelectQuery>),
 }
 
 impl SqlCondition {
@@ -56,6 +59,11 @@ impl SqlCondition {
         Self::Not(Box::new(cond.into()))
     }
 
+    /// Simplifies the creation of the [`SqlCondition::Exists`] enum.
+    pub fn exists(query: impl Into<SqlSelectQuery>) -> Self {
+        Self::Exists(Box::new(query.into()))
+    }
+
     /// Simplifies the creation of the [`SqlCondition::AndVec`] enum.
     pub fn and_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
         Self::AndVec(
@@ -71,38 +79,39 @@ impl SqlCondition {
             conds.into_iter().map(|c| c.into()).collect(),
         )
     }
-}
 
-impl Display for SqlCondition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", {
-            let concat = |cond1: &SqlCondition,
-                          operator: &str,
-                          sql_conditions: &Vec<SqlCondition>|
-             -> String {
-                let mut res = format!("{cond1}");
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let concat =
+            |cond1: &SqlCondition, operator: &str, sql_conditions: &Vec<SqlCondition>| -> String {
+                let mut res = cond1.to_sql::<DB>().to_string();
 
                 for condition in sql_conditions {
-                    res.push_str(&format!(" {operator} {condition}"));
+                    res.push_str(&format!(" {operator} {}", condition.to_sql::<DB>()));
                 }
 
                 res
             };
 
-            match self {
-                SqlCondition::Operation(sql_comparison) => sql_comparison.to_string(),
-                SqlCondition::And(a, b) => format!("({a}) AND ({b})"),
-                SqlCondition::Or(a, b) => format!("({a}) OR ({b})"),
-                SqlCondition::Not(a) => format!("NOT ({a})"),
-                SqlCondition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
-                SqlCondition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
+        match self {
+            SqlCondition::Operation(sql_comparison) => sql_comparison.to_string(),
+            SqlCondition::And(a, b) => format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
+            SqlCondition::Or(a, b) => format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
+            SqlCondition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
+            SqlCondition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
+            SqlCondition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
+            SqlCondition::Exists(sql_select_query) => {
+                format!("EXISTS({})", DB::to_sql(sql_select_query))
             }
-        })
+        }
     }
 }
 
 /// Represents a comparison that can be used in an Sql where clause.
 /// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
+#[derive(Debug)]
 pub enum SqlComparison {
     /// `a > b`
     Greater(ArgType, ArgType),
@@ -168,6 +177,7 @@ impl From<SqlComparison> for SqlCondition {
 }
 
 /// Represents a table in the From section of an Sql Query.
+#[derive(Debug)]
 pub struct SqlTableSelection {
     /// The table to select
     pub selected_table: SqlTable,
@@ -218,6 +228,7 @@ impl From<&str> for SqlTableSelection {
 }
 
 /// Represents a table to select in Sql
+#[derive(Debug)]
 pub enum SqlTable {
     /// The query used to get this temporary table
     SqlQuery(SqlSelectQuery),
@@ -241,7 +252,8 @@ impl From<&str> for SqlTable {
 }
 
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
-/// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate into a valid sql query.
+/// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
+#[derive(Debug)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
     pub select: Vec<String>,
