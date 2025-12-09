@@ -260,7 +260,6 @@ where
 {
     async fn call(&mut self) -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
-
         match res {
             Ok(row) => Some(Ok(self.db.read_row_val(&row))),
             Err(e) => Some(Err(e.into())),
@@ -435,35 +434,16 @@ where
             return Ok(());
         }
         for table in tables {
-            let mut table_query: Option<QueryTable> = None;
-            let query_str = SqlSelectQuery::select_all_from_table(table).to_sql::<DB>();
+            let table_query = self
+                .fetch_all_row_query(
+                    &SqlSelectQuery::select_all_from_table(table),
+                    QueryTableOptions::Partial {
+                        first_rows_count: 10,
+                        last_rows_count: 10,
+                    },
+                )
+                .await?;
 
-            // Execute query :
-            let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query_str));
-
-            // Add each returned row to the table
-            while let Some(result_row) = results.next().await {
-                let row = result_row?;
-                // Fetch all header first
-                if table_query.is_none() {
-                    let mut headers = vec![];
-                    for col in row.columns() {
-                        headers.push(col.name().to_string());
-                    }
-                    table_query = Some(QueryTable::new(
-                        headers,
-                        QueryTableOptions::Partial {
-                            first_rows_count: 10,
-                            last_rows_count: 10,
-                        },
-                    ));
-                }
-                // Store each value from that row
-                table_query
-                    .as_mut()
-                    .expect("is some")
-                    .push_line(Self::read_row_values(&row));
-            }
             if let Some(table) = table_query {
                 println!("{table}");
             }
@@ -659,10 +639,14 @@ where
 
     /// Computes an executable and store its results in one or more tables.
     ///
-    /// If provided, the given observer will be ticked for every data received and notified of the data pushed
+    /// # Args :
+    /// * When provided, only signatures contained inside the result of this query will be inputed to the invariant, further restricting the input space.
+    ///     * The [`PK_NAME`] column must be present in this query, else an error might happen.
+    /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
     pub async fn compute_executable(
         &mut self,
         executable: &InvariantsExecutable,
+        add_query: Option<SqlSelectQuery>,
         batch_size: usize,
         mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
@@ -693,44 +677,67 @@ where
             {
                 let mut dep = dep.clone();
                 // Get dependencies
-                SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
-                    dep[0].clone(),
-                    dep.split_off(1),
-                    PK_NAME,
-                    Some(CANONICAL_TABLE_NAME.to_string()),
-                ))
+                SqlSelectQuery::select_column_from_table(
+                    format!("{CANONICAL_TABLE_NAME}.*"),
+                    SqlTableSelection {
+                        selected_table: SqlSelectQuery::select_all_from_table(
+                            SqlTableSelection::new_join(
+                                dep[0].clone(),
+                                dep.split_off(1),
+                                PK_NAME,
+                                None,
+                            ),
+                        )
+                        .into(),
+                        join_clause: None,
+                        rename_as: Some(CANONICAL_TABLE_NAME.to_string()),
+                    },
+                )
             } else {
-                SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
+                SqlSelectQuery::select_column_from_table(
+                    format!("{CANONICAL_TABLE_NAME}.*"),
+                    CANONICAL_TABLE_NAME,
+                )
             }
         };
+
+        // If given, uses that additional querry to further restrict the input
+        if let Some(select_query) = add_query {
+            let additional_table = SqlTableSelection {
+                selected_table: select_query.into(),
+                join_clause: None,
+                rename_as: Some("GivenTable".to_string()), // TODO: use const for GIVENTABLE
+            };
+            join_query.add_table(additional_table);
+            join_query.add_and(SqlComparison::Equal(
+                ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                ArgType::ColumnName(format!("GivenTable.{PK_NAME}")),
+            ));
+        }
 
         /* if table already exists, add a condition so that only gets value not present in the invariant table will be returned */
         // Remember that since all invariants are computed together from an executable we can simply check for one and it will apply to all.
         {
-            let first_inv = executable
-                .invariant_names
-                .first()
-                .expect("at least one val");
+            let first_inv = executable.invariant_names.last().expect("at least one val");
             if self.is_table_added(first_inv).await? {
-                join_query = join_query.set_where_clause(SqlCondition::not(SqlCondition::exists(
-                    SqlSelectQuery {
-                        select: vec![PK_NAME.to_string()],
-                        from: vec![first_inv.to_string().into()],
-                        group_by: vec![],
-                        where_clause: Some(
-                            SqlComparison::Equal(
-                                ArgType::ColumnName(format!("{first_inv}.{PK_NAME}")),
-                                ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-                            )
-                            .into(),
-                        ),
-                        limit: None,
-                    },
-                )));
+                join_query.add_and(SqlCondition::not(SqlCondition::exists(SqlSelectQuery {
+                    select: vec![PK_NAME.to_string()],
+                    from: vec![first_inv.to_string().into()],
+                    group_by: vec![],
+                    where_clause: Some(
+                        SqlComparison::Equal(
+                            ArgType::ColumnName(format!("{first_inv}.{PK_NAME}")),
+                            ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                        )
+                        .into(),
+                    ),
+                    limit: None,
+                })));
             }
         }
         // build query
         let query_str = join_query.to_sql::<DB>();
+
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
         let mut batch_to_store: Vec<Vec<String>> =
@@ -798,6 +805,36 @@ where
         }
         signatures.clear();
         Ok(())
+    }
+
+    /// Fetches and stores all rows from the given query inside a table as strings.
+    pub async fn fetch_all_row_query(
+        &self,
+        query: &SqlSelectQuery,
+        table_option: QueryTableOptions,
+    ) -> Result<Option<QueryTable>, GraphDbRuntimeError> {
+        let mut table = None;
+        let query = query.to_sql::<DB>();
+        // Execute query :
+        let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
+        // Add each returned row to the table
+        while let Some(result_row) = results.next().await {
+            let row = result_row?;
+            // Fetch all header first
+            if table.is_none() {
+                let mut headers = vec![];
+                for col in row.columns() {
+                    headers.push(col.name().to_string());
+                }
+                table = Some(QueryTable::new(headers, table_option.clone()));
+            }
+            // Store each value from that row
+            table
+                .as_mut()
+                .expect("is some")
+                .push_line(Self::read_row_values(&row));
+        }
+        Ok(table)
     }
 }
 

@@ -3,7 +3,7 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        ArgType, ClassSelection, GraphConjecture, SqlComparison, SqlCondition,
+        ArgType, ClassSelection, ExtremalCounterExampleQuery, SqlComparison, SqlCondition,
         SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
     },
     utils::config_file::ConfigFile,
@@ -11,6 +11,7 @@ use gquest_core::{
 };
 use log::*;
 use sqlx::Sqlite;
+use tabled::settings::TableOption;
 
 const DB_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
@@ -30,37 +31,51 @@ async fn main() {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
-    db.add_to_dataset(geng.get_reader(), 1500, None)
-        .await
-        .expect("correct");
+    for i in 1..10 {
+        println!("Doing class {i}");
+        let geng = GengProcess::call_geng(i, &"c".to_string(), (None, None)).expect("correct call");
+        db.add_to_dataset(geng.get_reader(), 1500, None)
+            .await
+            .expect("correct");
+    }
 
-    let config =
-        ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    let config = ConfigFile::read_json_file(&CONFIG_PATH_ECCENTRIC.to_string())
+        .expect("File should correct");
 
     let mut wp = Workplace::new(db, config);
-    wp.execute_all_executables().await.expect("no errors");
 
-    // let select: SqlSelectQuery = GraphConjecture {
-    //     selection: ClassSelection::new(
-    //         gquest_core::database_handler::ClassType::Max,
-    //         "eci",
-    //         vec!["vertices", "m"],
-    //     ),
-    //     additional_condition: SqlComparison::GreaterEqual(
-    //         ArgType::column_name("d_nm"),
-    //         ArgType::value("3"),
-    //     )
-    //     .into(),
+    let select = ExtremalCounterExampleQuery {
+        selection: ClassSelection::new(
+            gquest_core::database_handler::ClassType::Max,
+            "eci",
+            vec!["vertices", "m"],
+        ),
+        additional_condition: Some(SqlCondition::and(
+            SqlComparison::GreaterEqual(ArgType::column_name("d_nm"), ArgType::value("3")),
+            SqlComparison::GreaterEqual(ArgType::column_name("comp"), ArgType::value("0")),
+        )),
+        conjecture_to_disprove: SqlComparison::Equal(
+            ArgType::column_name("comp"),
+            ArgType::value("1"),
+        )
+        .into(),
+    };
+
+    // let select = CounterExampleQuery {
+    //     selection: Some(ClassSelection::new(
+    //         gquest_core::database_handler::ClassType::Min,
+    //         "ag",
+    //         vec!["r"],
+    //     )),
+    //     additional_condition: None,
     //     conjecture_to_disprove: SqlComparison::Equal(
-    //         ArgType::column_name("comp"),
+    //         ArgType::column_name("conj1"),
     //         ArgType::value("1"),
     //     )
     //     .into(),
-    // }
-    // .into();
+    // };
 
-    // let select: SqlSelectQuery = GraphConjecture {
+    // let select = ExtremalCounterExampleQuery {
     //     selection: ClassSelection::new(
     //         gquest_core::database_handler::ClassType::Min,
     //         "P_Gn",
@@ -72,23 +87,32 @@ async fn main() {
     //         ArgType::value("1"),
     //     )
     //     .into(),
-    // }
-    // .into();
+    // };
 
-    let select: SqlSelectQuery = GraphConjecture {
-        selection: None,
-        additional_condition: None,
-        conjecture_to_disprove: SqlComparison::Equal(
-            ArgType::column_name("conj1"),
-            ArgType::value("1"),
-        )
-        .into(),
+    let res = wp.find_counterexamples(select).await.expect("no error");
+    if let Some(count_example) = res {
+        println!("{count_example}");
+    } else {
+        println!("Did not find any counter examples :(");
     }
-    .into();
+    // wp.execute_all_executables().await.expect("sdd");
 
-    println!("{}", select.to_sql::<Sqlite>());
+    // wp.execute_all_executables().await.expect("no errors");
 
-    // wp.db.print_all_tables().await.expect("good");
+    // println!("{}", select.to_sql::<Sqlite>());
+
+    wp.db.print_all_tables().await.expect("good");
+    // println!(
+    //     "{}",
+    //     wp.db
+    //         .fetch_all_row_query(
+    //             &select,
+    //             gquest_core::utils::table_handler::QueryTableOptions::Full,
+    //         )
+    //         .await
+    //         .expect("no error")
+    //         .expect("a table")
+    // );
     wp.close_workspace().await;
     info!("Program ends");
 }
@@ -97,7 +121,7 @@ async fn main() {
 pub fn startup_log() {
     env_logger::builder()
         .filter(Some("sqlx::query"), LevelFilter::Warn)
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Off)
         .format_target(true)
         .format_timestamp(None)
         .init();

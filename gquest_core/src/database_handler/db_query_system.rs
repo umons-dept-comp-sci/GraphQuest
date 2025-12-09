@@ -25,7 +25,7 @@ pub enum ColumnType {
 }
 
 /// Represents a condition that could appear in a where clause.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SqlCondition {
     /// A simple comparison
     Operation(SqlComparison),
@@ -65,19 +65,31 @@ impl SqlCondition {
     }
 
     /// Simplifies the creation of the [`SqlCondition::AndVec`] enum.
+    ///
+    /// If `conds` is empty, then `cond_1` will simply be returned.
     pub fn and_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
-        Self::AndVec(
-            Box::new(cond_1.into()),
-            conds.into_iter().map(|c| c.into()).collect(),
-        )
+        if conds.is_empty() {
+            cond_1.into()
+        } else {
+            Self::AndVec(
+                Box::new(cond_1.into()),
+                conds.into_iter().map(|c| c.into()).collect(),
+            )
+        }
     }
 
     /// Simplifies the creation of the [`SqlCondition::OrVec`] enum.
+    ///
+    /// If `conds` is empty, then `cond_1` will simply be returned.
     pub fn or_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
-        Self::OrVec(
-            Box::new(cond_1.into()),
-            conds.into_iter().map(|c| c.into()).collect(),
-        )
+        if conds.is_empty() {
+            cond_1.into()
+        } else {
+            Self::OrVec(
+                Box::new(cond_1.into()),
+                conds.into_iter().map(|c| c.into()).collect(),
+            )
+        }
     }
 
     pub fn to_sql<DB>(&self) -> String
@@ -111,7 +123,7 @@ impl SqlCondition {
 
 /// Represents a comparison that can be used in an Sql where clause.
 /// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SqlComparison {
     /// `a > b`
     Greater(ArgType, ArgType),
@@ -127,7 +139,7 @@ pub enum SqlComparison {
 
 /// Used to correctly identify arguments in a comparison,
 /// otherwise it would be hard to guess if they refer to a value or to a column.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ArgType {
     Value(String),
     ColumnName(String),
@@ -177,7 +189,7 @@ impl From<SqlComparison> for SqlCondition {
 }
 
 /// Represents a table in the From section of an Sql Query.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqlTableSelection {
     /// The table to select
     pub selected_table: SqlTable,
@@ -228,7 +240,7 @@ impl From<&str> for SqlTableSelection {
 }
 
 /// Represents a table to select in Sql
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SqlTable {
     /// The query used to get this temporary table
     SqlQuery(SqlSelectQuery),
@@ -253,7 +265,7 @@ impl From<&str> for SqlTable {
 
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
     pub select: Vec<String>,
@@ -272,19 +284,14 @@ impl SqlSelectQuery {
     /// Simply selects every row from the given table.
     /// In SQLite: `SELECT * FROM table`
     pub fn select_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
-        Self {
-            select: vec!["*".to_string()],
-            from: vec![table.into()],
-            where_clause: None,
-            group_by: vec![],
-            limit: None,
-        }
+        Self::select_column_from_table("*", table)
     }
-    /// Gets the number of rows stored inside the given table.
-    /// In SQLite: `SELECT count(*) FROM table`
-    pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
+    pub fn select_column_from_table(
+        column_name: impl ToString,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
         Self {
-            select: vec!["COUNT(*)".to_string()],
+            select: vec![column_name.to_string()],
             from: vec![table.into()],
             where_clause: None,
             group_by: vec![],
@@ -292,10 +299,41 @@ impl SqlSelectQuery {
         }
     }
 
+    /// Gets the number of rows stored inside the given table.
+    /// In SQLite: `SELECT count(*) FROM table`
+    pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
+        Self::select_column_from_table("COUNT(*)", table)
+    }
+
     /// Returns the *same* query but with the given **where** clause.
-    pub fn set_where_clause(mut self, where_clause: SqlCondition) -> Self {
-        self.where_clause = Some(where_clause);
+    pub fn set_where_clause(mut self, where_clause: impl Into<SqlCondition>) -> Self {
+        self.where_clause = Some(where_clause.into());
         self
+    }
+
+    /// Encapsulates the previous conditions with an [`SqlCondition::And`] composed of the previous condition and the given one.
+    ///
+    /// And if no conditions were given before then it will be added directly.
+    pub fn add_and(&mut self, additional_cond: impl Into<SqlCondition>) {
+        if self.where_clause.is_some() {
+            self.where_clause = Some(SqlCondition::and(
+                self.where_clause.take().expect("is some"),
+                additional_cond,
+            ))
+        } else {
+            self.where_clause = Some(additional_cond.into());
+        }
+    }
+
+    /// Adds a table to the **from** clause of the query.
+    pub fn add_table(&mut self, table: impl Into<SqlTableSelection>) {
+        self.from.push(table.into());
+    }
+    /// Adds all table to the **from** clause of the query.
+    pub fn add_tables(&mut self, tables: Vec<impl Into<SqlTableSelection>>) {
+        for table in tables {
+            self.add_table(table);
+        }
     }
 
     /// Returns the *same* query but with the given **limit/offset** clause.

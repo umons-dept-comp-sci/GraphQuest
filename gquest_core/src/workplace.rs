@@ -10,7 +10,8 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        DbQuerySystem, GraphConjecture, GraphDatabase, GraphDbRuntimeError, GraphDbStartupError, SqlSelectQuery,
+        DbQuerySystem, ExtremalCounterExampleQuery, GraphDatabase, GraphDbRuntimeError,
+        GraphDbStartupError, SqlSelectQuery, VERTICES_TABLE_NAME,
     },
     utils::{config_file::ConfigFile, table_handler::QueryTable},
 };
@@ -85,19 +86,32 @@ where
     }
 
     /// Executes all stored invariants using the given settings from the [`ConfigFile`].
-    /// ## Multithreading execution
+    /// Does not impose any condition on the graph used for the computations.
     pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
-        // Sort all executables
-        let sorter: ExecutableSorter = self.config.get_execs_ref().clone().try_into()?;
+        self.execute_invariant_execs(self.config.get_execs_ref().clone().try_into()?, None)
+            .await
+    }
 
+    /// Executes the given executables stored inside the sorter using the given settings from the [`ConfigFile`].
+    pub async fn execute_invariant_execs(
+        &mut self,
+        sorter: ExecutableSorter,
+        add_condition: Option<SqlSelectQuery>,
+    ) -> Result<(), WorkplaceError> {
         let mut sorted = sorter.to_iter()?;
-
+        // If allowed, use multiple threads to compute the invariants
         if self.config.get_nb_threads() > 1 {
-            self.execute_all_executables_multithread(sorted).await
+            self.execute_all_executables_multithread(sorted, add_condition)
+                .await
         } else {
             while let Some(next_inv) = sorted.next_invariant() {
                 self.db
-                    .compute_executable(&next_inv, self.config.get_batch_size(), None)
+                    .compute_executable(
+                        &next_inv,
+                        add_condition.clone(),
+                        self.config.get_batch_size(),
+                        None,
+                    )
                     .await?;
 
                 sorted.update_dependencies(&next_inv);
@@ -109,6 +123,7 @@ where
     async fn execute_all_executables_multithread(
         &mut self,
         sorted: ExecutableIterator,
+        add_condition: Option<SqlSelectQuery>,
     ) -> Result<(), WorkplaceError> {
         let iter = Arc::new(Mutex::new(sorted));
 
@@ -120,11 +135,12 @@ where
             {
                 let mut db_clone = self.db.clone();
                 let batch_size = self.config.get_batch_size();
+                let add_condition_clone = add_condition.clone();
                 let iter_clone = iter.clone();
                 // A thread will compute the given invariant then end
                 handles.spawn(async move {
                     db_clone
-                        .compute_executable(&next_inv, batch_size, None)
+                        .compute_executable(&next_inv, add_condition_clone, batch_size, None)
                         .await?;
                     // Update the graph so that the main thread can compute new invariants
                     iter_clone.lock().await.update_dependencies(&next_inv);
@@ -143,19 +159,42 @@ where
     }
 
     /// Tries to find a counter example to a conjecture using this workplace.
-    async fn find_counterexamples(&mut self, conjecture: GraphConjecture) -> Result<(), WorkplaceError> {
+    pub async fn find_counterexamples(
+        &mut self,
+        conjecture: ExtremalCounterExampleQuery,
+    ) -> Result<Option<QueryTable>, WorkplaceError> {
         // Fully compute the necessary invariants (and their dependencies)
-        let inv_to_compute = conjecture.get_invariants_to_compute();
+        let mut inv_to_compute = conjecture.get_invariants_to_compute();
+        // This table is used but is not part of any executable
+        inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
+        if !inv_to_compute.is_empty() {
+            let invariant_necessary =
+                ExecutableSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
+            // Compute them
+            self.execute_invariant_execs(invariant_necessary, None)
+                .await?;
+        }
 
         // Only compute the necessary invariants in order to disprove the conjecture
-        let conjecture_invariants = conjecture.get_invariants_from_conjecture();
-        
+        let mut conjecture_invariants = conjecture.get_invariants_from_conjecture();
+        conjecture_invariants.remove(VERTICES_TABLE_NAME);
+        if !conjecture_invariants.is_empty() {
+            let invariant_necessary =
+                ExecutableSorter::new_from(self.config.get_execs_ref(), &conjecture_invariants)?;
+            // Get additional extremal condition :
 
-        // Return SqlQuery
-        let query : SqlSelectQuery = conjecture.into();
-        
-        // TODO: return query table as result 
-        Ok(())
+            let extremal_condition = conjecture.get_invariant_input_selection();
+            self.execute_invariant_execs(invariant_necessary, Some(extremal_condition))
+                .await?;
+        }
+
+        // Return counter example query result
+        let query: SqlSelectQuery = conjecture.into();
+
+        Ok(self
+            .db
+            .fetch_all_row_query(&query, crate::utils::table_handler::QueryTableOptions::Full)
+            .await?)
     }
 
     /// Gets a table that will summarize this workplace invariant computation progress.
@@ -175,3 +214,18 @@ where
         todo!()
     }
 }
+
+/*
+
+THis doesn't work : too slow :
+SELECT Dataset.*
+    FROM (Dataset),
+        (SELECT * FROM (eci INNER JOIN vertices USING (canon) INNER JOIN d_nm USING (canon) INNER JOIN m USING (canon))) as all_inv,
+        (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) as extremal
+    WHERE ((all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.eci = extremal.eci AND all_inv.vertices = extremal.vertices)
+            AND ((d_nm >= 3)))
+        AND Dataset.canon = all_inv.canon
+        AND (NOT (EXISTS(SELECT canon FROM (m) WHERE m.canon = Dataset.canon)));
+
+SELECT all_inv.* FROM (SELECT * FROM (eci INNER JOIN vertices USING (canon) INNER JOIN d_nm USING (canon) INNER JOIN m USING (canon))) as all_inv, (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) as extremal WHERE ((all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.eci = extremal.eci AND all_inv.vertices = extremal.vertices) AND ((d_nm >= 3))) AND (NOT (EXISTS(SELECT canon FROM (m) WHERE m.canon = all_inv.canon)));
+*/

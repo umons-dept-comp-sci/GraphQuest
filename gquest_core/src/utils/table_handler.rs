@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fmt::Display, vec};
 use tabled::{builder::Builder, settings::Style};
 
 /// Enum used to specify the options to use when creating a [QueryTable]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum QueryTableOptions {
     /// The [QueryTable] will store and display all values
     Full,

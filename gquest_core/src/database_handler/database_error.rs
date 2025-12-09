@@ -63,14 +63,11 @@ fn sqlx_error_to_db_error(val: sqlx::Error) -> GraphDbRuntimeError {
                 } else if e_str.contains("syntax") {
                     GraphDbRuntimeError::QueryError(val)
                 } else {
-                    val.into()
+                    GraphDbRuntimeError::UnknownError(val)
                 }
             }
             _ => unreachable!("This is not suppose to be reached"),
         },
-        _ => {
-            // error!("Sqlx error not handled : {}", val);
-            val.into()
-        }
+        _ => GraphDbRuntimeError::UnknownError(val),
     }
 }

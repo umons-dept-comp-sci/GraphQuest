@@ -3,6 +3,7 @@ use is_executable::IsExecutable;
 use log::{debug, error};
 use regex::Regex;
 use std::{
+    collections::{HashMap, HashSet},
     env,
     fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
@@ -42,6 +43,8 @@ pub enum InvariantError {
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
     NotExecutable(PathBuf),
+    #[error("The given invariant name \"{0}\" is not part of any of the given executables")]
+    UnknownInvariant(String),
     #[error("Encountered an IoError : \"{0}\"")]
     IoError(#[from] io::Error),
     #[error(
@@ -401,7 +404,7 @@ impl InvariantsExecutable {
 /// Such as by checking :
 /// * if an invariant was already added
 /// * if one of it's dependencies does not exists
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ExecutableSorter {
     /// `Invariant name` -> `Linked Executable path`
     name_path_hashmap: IndexMap<String, PathBuf>,
@@ -413,6 +416,62 @@ impl ExecutableSorter {
     /// Creates a new empty [`ExecutableSorter`]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Using the given invariant names, only adds the executables that computes them from the given array of executables.
+    /// # Errors
+    /// Returns an [`InvariantError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
+    pub fn new_from(
+        all_invariants: &[InvariantsExecutable],
+        inv_to_add: &HashSet<String>,
+    ) -> Result<Self, InvariantError> {
+        let mut res = Self::new();
+
+        // To ease the process, creates an hashmap : `name` -> `index of execs`
+        let mut name_index_map: HashMap<&String, usize> = HashMap::new();
+        for (i, execs) in all_invariants.iter().enumerate() {
+            for inv_name in &execs.invariant_names {
+                name_index_map.insert(inv_name, i);
+            }
+        }
+
+        // Adds all invariants
+        for inv_name in inv_to_add {
+            res.add_inv_from_name(all_invariants, &name_index_map, inv_name)?;
+        }
+
+        Ok(res)
+    }
+
+    /// Adds the given invariant executable using the given name.
+    fn add_inv_from_name(
+        &mut self,
+        all_invariants: &[InvariantsExecutable],
+        name_index_map: &HashMap<&String, usize>,
+        inv_to_add: &String,
+    ) -> Result<(), InvariantError> {
+        let Some(exec_index) = name_index_map.get(inv_to_add) else {
+            return Err(InvariantError::UnknownInvariant(inv_to_add.to_string()));
+        };
+
+        let exec = &all_invariants[*exec_index];
+
+        // Try to add invariant if not already added
+        if let Err(e) = self.add_inv_exec(exec.clone()) {
+            if let InvariantError::AlreadyAddedExecutable(_) = e {
+            } else {
+                return Err(e);
+            }
+        }
+
+        // Adds all dependencies (recursively)
+        if let Some(dependencies) = &exec.dependencies {
+            for dep in dependencies {
+                self.add_inv_from_name(all_invariants, name_index_map, dep)?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Adds an invariant executable to the sorter.
@@ -442,6 +501,17 @@ impl ExecutableSorter {
             self.add_inv_exec(inv)?;
         }
         Ok(())
+    }
+
+    /// Returns the number of executable present inside this sorter.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.path_exec_hashmap.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.path_exec_hashmap.is_empty()
     }
 
     /// Performs a topological sort with the stored [`InvariantsExecutable`]s

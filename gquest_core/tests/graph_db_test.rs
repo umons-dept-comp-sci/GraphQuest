@@ -1,7 +1,8 @@
 use gquest_core::{
     data_handler::{data_loader::GengProcess, invariant_execs::InvariantsExecutable},
     database_handler::{
-        CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqliteGraphDB,
+        CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqlSelectQuery,
+        SqliteGraphDB, VERTICES_TABLE_NAME,
     },
     utils::subject::Observer,
 };
@@ -20,6 +21,13 @@ const BAD_DB_URL: &str = "sqlite::bad_url";
 struct CustomObs {
     pub total_ticks: u64,
     pub progression: u64,
+}
+
+impl CustomObs {
+    fn reset(&mut self) {
+        self.total_ticks = 0;
+        self.progression = 0;
+    }
 }
 
 impl Observer for CustomObs {
@@ -152,6 +160,7 @@ async fn get_size_of_table_test() {
             .expect("no issues")
     );
 }
+
 #[tokio::test]
 async fn compute_executable_test() {
     let mut db_test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
@@ -164,7 +173,7 @@ async fn compute_executable_test() {
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
-        db_test.compute_executable(&identity, 100, None).await,
+        db_test.compute_executable(&identity, None, 100, None).await,
         Err(GraphDbRuntimeError::DatasetNotInitialisedError(_))
     ));
 
@@ -178,7 +187,7 @@ async fn compute_executable_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, 100, None)
+        .compute_executable(&identity, None, 100, None)
         .await
         .expect("No errors");
 
@@ -222,12 +231,111 @@ async fn compute_executable_obs_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, 100, Some(&mut obs))
+        .compute_executable(&identity, None, 100, Some(&mut obs))
         .await
         .expect("No errors");
 
     assert_eq!(obs.total_ticks, expected.len() as u64);
     assert_eq!(obs.progression, expected.len() as u64);
+}
+
+#[tokio::test]
+async fn compute_executable_with_selection_test() {
+    let expected_len = 5;
+
+    let mut db_test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .expect("no issues with db init");
+
+    // Get invariant :
+    let identity =
+        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+
+    // Create dataset
+    let geng_reader = get_geng_values().1;
+
+    db_test
+        .add_to_dataset(geng_reader, 1000, None)
+        .await
+        .expect("no issues");
+
+    // This query restricts the total amount of canonical
+    let query = SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
+        .set_limit_clause(None, expected_len);
+
+    // Then execute without any troubles
+    db_test
+        .compute_executable(&identity, Some(query), 100, None)
+        .await
+        .expect("No errors");
+
+    // Check db content
+    assert!(db_test.is_table_added("ident").await.expect("no errors"));
+    assert_eq!(
+        expected_len,
+        db_test.get_size_of_table("ident").await.expect("no errors")
+    );
+
+    /* Try a query with no PK column (no signature column) */
+
+    // This query has NO canonical signatures
+    let query = SqlSelectQuery::select_column_from_table(VERTICES_TABLE_NAME, VERTICES_TABLE_NAME)
+        .set_limit_clause(None, expected_len);
+
+    assert!(
+        (db_test
+            .compute_executable(&identity, Some(query), 100, None)
+            .await)
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn compute_executable_no_duplicate() {
+    let first_batch_size = 5;
+    // Observer
+    let mut obs = CustomObs {
+        progression: 0,
+        total_ticks: 0,
+    };
+    // This query restricts the total amount of data sent
+    let query = SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
+        .set_limit_clause(None, first_batch_size);
+
+    let mut db_test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .expect("no issues with db init");
+
+    // Get invariant :
+    let identity =
+        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+
+    // Create dataset
+    let (expected, geng_reader) = get_geng_values();
+
+    db_test
+        .add_to_dataset(geng_reader, 1000, None)
+        .await
+        .expect("no issues");
+
+    // Then execute without any troubles
+    db_test
+        .compute_executable(&identity, Some(query), 100, Some(&mut obs))
+        .await
+        .expect("No errors");
+
+    assert_eq!(first_batch_size, obs.progression as usize);
+    // Reset obs
+    obs.reset();
+
+    // Compute the rest, which SHOULD NOT include the five first computed values
+    db_test
+        .compute_executable(&identity, None, 100, Some(&mut obs))
+        .await
+        .expect("No errors");
+
+    assert_eq!(expected.len() - first_batch_size, obs.progression as usize);
+    
 }
 
 async fn remove_all_created_df() {

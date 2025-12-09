@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, vec};
 
 use crate::database_handler::{
     ArgType, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison, SqlCondition,
@@ -11,12 +11,12 @@ pub trait ToSql {
 
 /// Represents a query that could be used to find counterexamples from a [`crate::database_handler::GraphDatabase`].
 ///
-/// Can be turned into a [`SqlSelectQuery`] in order to be executeed by a database system.
+/// Can be turned into a [`SqlSelectQuery`] in order to be executed by a database system.
 /// # Errors
-/// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now. 
-pub struct GraphConjecture {
+/// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
+pub struct ExtremalCounterExampleQuery {
     /// The condition that the graph of the dataset have to respect for the conjecture.
-    pub selection: Option<ClassSelection>,
+    pub selection: ClassSelection,
     /// The optional additional condition that can further restrict the graph to explore.
     pub additional_condition: Option<SqlCondition>,
     /// The conjecture to disprove.
@@ -67,16 +67,15 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
     res
 }
 
-impl GraphConjecture {
+impl ExtremalCounterExampleQuery {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
     pub fn get_invariants_to_compute(&self) -> HashSet<String> {
         let mut all_inv = HashSet::new();
-        if let Some(selection) = &self.selection {
-            all_inv.insert(selection.invariant_to_max.clone());
-            all_inv.extend(selection.invariants_combination.clone());
-        }
+        all_inv.insert(self.selection.invariant_to_max.clone());
+        all_inv.extend(self.selection.invariants_combination.clone());
+
         if let Some(additional_cond) = &self.additional_condition {
             all_inv.extend(get_all_inv_column(additional_cond));
         }
@@ -88,10 +87,78 @@ impl GraphConjecture {
         get_all_inv_column(&self.conjecture_to_disprove)
     }
 
+    pub fn get_invariant_input_selection(&self) -> SqlSelectQuery {
+        // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
+        let mut all_columns = HashSet::new();
+
+        // Get all from conditions :
+        if let Some(add_cond) = &self.additional_condition {
+            all_columns.extend(get_all_inv_column(add_cond));
+        }
+
+        // Get all from selection :
+        let mut selection_set = HashSet::new();
+
+        selection_set.insert(self.selection.invariant_to_max.clone());
+        selection_set.extend(self.selection.invariants_combination.clone());
+
+        all_columns.extend(selection_set.clone());
+
+        let mut all_columns = Vec::from_iter(all_columns);
+
+        let all_eq_extremal_clause = SqlCondition::and_vec(
+            SqlComparison::Equal(
+                ArgType::ColumnName(format!(
+                    "{FULL_TABLE_NAME}.{}",
+                    self.selection.invariant_to_max
+                )),
+                ArgType::ColumnName(format!(
+                    "{EXTREMAL_TABLE_NAME}.{}",
+                    self.selection.invariant_to_max
+                )),
+            ),
+            selection_set
+                .into_iter()
+                .map(|column| {
+                    SqlComparison::Equal(
+                        ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{column}")),
+                        ArgType::ColumnName(format!("{EXTREMAL_TABLE_NAME}.{column}")),
+                    )
+                })
+                .collect(),
+        );
+
+        let extremal: SqlTableSelection = self.selection.clone().into();
+
+        let all_inv: SqlTableSelection = SqlTableSelection {
+            selected_table: SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+                all_columns[0].clone(),
+                all_columns.split_off(1),
+                PK_NAME,
+                None,
+            ))
+            .into(),
+            join_clause: None,
+            rename_as: Some(FULL_TABLE_NAME.to_string()),
+        };
+
+        let mut query = SqlSelectQuery {
+            select: vec![format!("{FULL_TABLE_NAME}.*")],
+            from: vec![all_inv, extremal],
+            where_clause: Some(all_eq_extremal_clause),
+            group_by: Vec::new(),
+            limit: None,
+        };
+        if let Some(add_cond) = &self.additional_condition {
+            query.add_and(add_cond.clone());
+        }
+        query
+    }
+
     fn with_extremal_graphs(
-        selection: ClassSelection,
-        additional_condition: Option<SqlCondition>,
-        conjecture_to_disprove: SqlCondition,
+        selection: &ClassSelection,
+        additional_condition: &Option<SqlCondition>,
+        conjecture_to_disprove: &SqlCondition,
     ) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
@@ -100,7 +167,7 @@ impl GraphConjecture {
         if let Some(add_cond) = &additional_condition {
             all_columns.extend(get_all_inv_column(add_cond));
         }
-        all_columns.extend(get_all_inv_column(&conjecture_to_disprove));
+        all_columns.extend(get_all_inv_column(conjecture_to_disprove));
 
         // Get all from selection :
         let mut selection_set = HashSet::new();
@@ -142,78 +209,41 @@ impl GraphConjecture {
             ))
             .into(),
             join_clause: None,
-            rename_as: Some("all_inv".to_string()),
+            rename_as: Some(FULL_TABLE_NAME.to_string()),
         };
 
-        SqlSelectQuery {
-            select: vec!["all_inv.*".to_string()],
+        let mut query = SqlSelectQuery {
+            select: vec![format!("{FULL_TABLE_NAME}.*")],
             from: vec![all_inv, extremal],
-            where_clause: Some(SqlCondition::and_vec(all_eq_extremal_clause, {
-                let mut res = if let Some(add_cond) = additional_condition {
-                    vec![add_cond]
-                } else {
-                    vec![]
-                };
-                res.push(SqlCondition::not(conjecture_to_disprove));
-                res
-            })),
+            where_clause: Some(all_eq_extremal_clause),
             group_by: Vec::new(),
             limit: None,
-        }
-    }
-    fn without_extremal_graphs(
-        additional_condition: Option<SqlCondition>,
-        conjecture_to_disprove: SqlCondition,
-    ) -> SqlSelectQuery {
-        // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
-        let mut all_columns = HashSet::new();
-
-        // Get all from conditions :
-        if let Some(add_cond) = &additional_condition {
-            all_columns.extend(get_all_inv_column(add_cond));
-        }
-        all_columns.extend(get_all_inv_column(&conjecture_to_disprove));
-
-        let mut all_columns = Vec::from_iter(all_columns);
-
-        let main_cond = {
-            if let Some(clause) = additional_condition {
-                SqlCondition::and(clause, SqlCondition::not(conjecture_to_disprove))
-            } else {
-                SqlCondition::not(conjecture_to_disprove)
-            }
         };
-
-        SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
-            all_columns[0].clone(),
-            all_columns.split_off(1),
-            PK_NAME,
-            None,
-        ))
-        .set_where_clause(main_cond)
+        if let Some(add_cond) = additional_condition {
+            query.add_and(add_cond.clone());
+        }
+        query
     }
 }
 
-impl From<GraphConjecture> for SqlSelectQuery {
-    fn from(value: GraphConjecture) -> Self {
-        if value.selection.is_some() {
-            GraphConjecture::with_extremal_graphs(
-                value.selection.expect("is some"),
-                value.additional_condition,
-                value.conjecture_to_disprove,
-            )
-        } else {
-            GraphConjecture::without_extremal_graphs(
-                value.additional_condition,
-                value.conjecture_to_disprove,
-            )
-        }
+impl From<ExtremalCounterExampleQuery> for SqlSelectQuery {
+    fn from(value: ExtremalCounterExampleQuery) -> Self {
+        let mut query = ExtremalCounterExampleQuery::with_extremal_graphs(
+            &value.selection,
+            &value.additional_condition,
+            &value.conjecture_to_disprove,
+        );
+
+        query.add_and(SqlCondition::not(value.conjecture_to_disprove));
+
+        query
     }
 }
 
 /// Example: max(`eci`; `n`, `m`)
 ///
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
+#[derive(Clone)]
 pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
@@ -239,6 +269,12 @@ impl ClassSelection {
 
 impl From<ClassSelection> for SqlTableSelection {
     fn from(value: ClassSelection) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<&ClassSelection> for SqlTableSelection {
+    fn from(value: &ClassSelection) -> Self {
         SqlTableSelection {
             selected_table: {
                 let mut select = value.invariants_combination.clone();
@@ -252,13 +288,13 @@ impl From<ClassSelection> for SqlTableSelection {
                 SqlSelectQuery {
                     select,
                     from: vec![SqlTableSelection::new_join(
-                        value.invariant_to_max,
+                        value.invariant_to_max.clone(),
                         value.invariants_combination.clone(),
                         PK_NAME,
                         None,
                     )],
                     where_clause: None,
-                    group_by: value.invariants_combination,
+                    group_by: value.invariants_combination.clone(),
                     limit: None,
                 }
                 .into()
@@ -269,6 +305,7 @@ impl From<ClassSelection> for SqlTableSelection {
     }
 }
 
+#[derive(Clone)]
 pub enum ClassType {
     Min,
     Max,
@@ -283,6 +320,38 @@ impl ToSql for ClassType {
         .to_string()
     }
 }
+
+/*
+
+fn without_extremal_graphs(
+    additional_condition: &Option<SqlCondition>,
+    conjecture_to_disprove: &SqlCondition,
+) -> SqlSelectQuery {
+    // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
+    let mut all_columns = HashSet::new();
+
+    // Get all from conditions :
+    if let Some(add_cond) = &additional_condition {
+        all_columns.extend(get_all_inv_column(add_cond));
+    }
+    all_columns.extend(get_all_inv_column(conjecture_to_disprove));
+
+    let mut all_columns = Vec::from_iter(all_columns);
+
+    let query = SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+        all_columns[0].clone(),
+        all_columns.split_off(1),
+        PK_NAME,
+        None,
+    ));
+
+    if let Some(add_cond) = additional_condition {
+        query.set_where_clause(add_cond.clone())
+    } else {
+        query
+    }
+}
+ */
 
 /*
 SELECT comp.canon FROM vertices, eci, comp, (SELECT vertices.value as vertices, MIN(eci.value) as eci FROM vertices, eci GROUP BY vertices.value) extremals where vertices.value = extremals.vertices and eci.value = extremals.eci and comp.value = 0;

@@ -1,5 +1,5 @@
 {
-  "batch_size": 5000,
+  "batch_size": 6000,
   "nb_threads": 10,
   "executables": [
     {
