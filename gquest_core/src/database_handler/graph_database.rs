@@ -706,12 +706,12 @@ where
             let additional_table = SqlTableSelection {
                 selected_table: select_query.into(),
                 join_clause: None,
-                rename_as: Some("GivenTable".to_string()), // TODO: use const for GIVENTABLE
+                rename_as: Some(TEMPORARY_TABLE_NAME.to_string()),
             };
             join_query.add_table(additional_table);
             join_query.add_and(SqlComparison::Equal(
                 ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-                ArgType::ColumnName(format!("GivenTable.{PK_NAME}")),
+                ArgType::ColumnName(format!("{TEMPORARY_TABLE_NAME}.{PK_NAME}")),
             ));
         }
 

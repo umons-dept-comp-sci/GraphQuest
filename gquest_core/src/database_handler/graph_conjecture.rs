@@ -1,8 +1,10 @@
 use std::{collections::HashSet, vec};
 
+use sqlx::Database;
+
 use crate::database_handler::{
-    ArgType, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison, SqlCondition,
-    SqlSelectQuery, SqlTableSelection,
+    ArgType, DbQuerySystem, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison,
+    SqlCondition, SqlSelectQuery, SqlTableSelection,
 };
 
 pub trait ToSql {
@@ -14,6 +16,7 @@ pub trait ToSql {
 /// Can be turned into a [`SqlSelectQuery`] in order to be executed by a database system.
 /// # Errors
 /// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
+#[derive(Clone)]
 pub struct ExtremalCounterExampleQuery {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,
@@ -58,8 +61,8 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
             }
         }
         SqlCondition::Exists(_sql_select_query) => {
-            todo!(
-                "Conjectures using sql selections are not yet supported since finding invariants is harder here."
+            panic!(
+                "Conjectures using sql selections are not yet supported since finding invariant names is harder here."
             )
         }
     };
@@ -82,6 +85,16 @@ impl ExtremalCounterExampleQuery {
 
         all_inv
     }
+
+    pub fn as_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let select_query: SqlSelectQuery = self.into();
+
+        select_query.to_sql::<DB>()
+    }
+
     /// Gets all the names of the invariants specified in the conjecture to disprove.
     pub fn get_invariants_from_conjecture(&self) -> HashSet<String> {
         get_all_inv_column(&self.conjecture_to_disprove)
@@ -228,13 +241,18 @@ impl ExtremalCounterExampleQuery {
 
 impl From<ExtremalCounterExampleQuery> for SqlSelectQuery {
     fn from(value: ExtremalCounterExampleQuery) -> Self {
+        (&value).into()
+    }
+}
+impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
+    fn from(value: &ExtremalCounterExampleQuery) -> Self {
         let mut query = ExtremalCounterExampleQuery::with_extremal_graphs(
             &value.selection,
             &value.additional_condition,
             &value.conjecture_to_disprove,
         );
 
-        query.add_and(SqlCondition::not(value.conjecture_to_disprove));
+        query.add_and(SqlCondition::not(value.conjecture_to_disprove.clone()));
 
         query
     }

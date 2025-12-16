@@ -13,6 +13,9 @@ pub const INVARIANT_COLUMN_NAME: &str = "value";
 /// The name of the table that has all the data
 pub const FULL_TABLE_NAME: &str = "all_inv";
 
+/// The name of a table used to rename temporarly a selection in a from clause
+pub const TEMPORARY_TABLE_NAME: &str = "tempo_table";
+
 /// The name of the table that has all the extremal graph
 pub const EXTREMAL_TABLE_NAME: &str = "extremal";
 
