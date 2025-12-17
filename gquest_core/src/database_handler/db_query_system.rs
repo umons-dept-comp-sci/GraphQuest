@@ -92,6 +92,34 @@ impl SqlCondition {
         }
     }
 
+    /// Adds the given prefix to all [`ArgType::IdentifierName`] present inside this comparison.
+    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
+        let prefix = prefix.to_string();
+        match self {
+            SqlCondition::Operation(sql_comparison) => {
+                sql_comparison.add_prefix_identifier(prefix);
+            }
+            SqlCondition::Or(sql_condition, sql_condition1)
+            | SqlCondition::And(sql_condition, sql_condition1) => {
+                sql_condition.add_prefix_identifier(&prefix);
+                sql_condition1.add_prefix_identifier(prefix);
+            }
+            SqlCondition::AndVec(sql_condition, sql_conditions)
+            | SqlCondition::OrVec(sql_condition, sql_conditions) => {
+                sql_condition.add_prefix_identifier(&prefix);
+                sql_conditions
+                    .iter_mut()
+                    .for_each(|cond| cond.add_prefix_identifier(&prefix));
+            }
+            SqlCondition::Not(sql_condition) => {
+                sql_condition.add_prefix_identifier(prefix);
+            }
+            SqlCondition::Exists(_) => {
+                todo!("Renaming is not yet implemented for select queries")
+            }
+        }
+    }
+
     pub fn to_sql<DB>(&self) -> String
     where
         DB: Database + DbQuerySystem<DB>,
@@ -142,15 +170,15 @@ pub enum SqlComparison {
 #[derive(Debug, Clone)]
 pub enum ArgType {
     Value(String),
-    ColumnName(String),
+    Identifier(String),
 }
 
 impl ArgType {
     pub fn value(value: impl ToString) -> Self {
         ArgType::Value(value.to_string())
     }
-    pub fn column_name(name: impl ToString) -> Self {
-        ArgType::ColumnName(name.to_string())
+    pub fn identifier(name: impl ToString) -> Self {
+        ArgType::Identifier(name.to_string())
     }
 }
 
@@ -160,7 +188,7 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) | ArgType::ColumnName(v) => v,
+                ArgType::Value(v) | ArgType::Identifier(v) => v,
             }
         )
     }
@@ -185,6 +213,27 @@ impl Display for SqlComparison {
 impl From<SqlComparison> for SqlCondition {
     fn from(val: SqlComparison) -> Self {
         SqlCondition::Operation(val)
+    }
+}
+
+impl SqlComparison {
+    /// Adds the given prefix to the [`ArgType::IdentifierName`] present inside this comparison.
+    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
+        let prefix = prefix.to_string();
+        match self {
+            SqlComparison::Greater(arg_type, arg_type1)
+            | SqlComparison::GreaterEqual(arg_type, arg_type1)
+            | SqlComparison::Less(arg_type, arg_type1)
+            | SqlComparison::LessEqual(arg_type, arg_type1)
+            | SqlComparison::Equal(arg_type, arg_type1) => {
+                if let ArgType::Identifier(name) = arg_type {
+                    *name = format!("{prefix}{name}");
+                }
+                if let ArgType::Identifier(name) = arg_type1 {
+                    *name = format!("{prefix}{name}");
+                }
+            }
+        }
     }
 }
 

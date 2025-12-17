@@ -37,10 +37,10 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
             | SqlComparison::Less(a, b)
             | SqlComparison::LessEqual(a, b)
             | SqlComparison::Equal(a, b) => {
-                if let ArgType::ColumnName(name) = a {
+                if let ArgType::Identifier(name) = a {
                     res.insert(name.to_string());
                 }
-                if let ArgType::ColumnName(name) = b {
+                if let ArgType::Identifier(name) = b {
                     res.insert(name.to_string());
                 }
             }
@@ -121,11 +121,11 @@ impl ExtremalCounterExampleQuery {
 
         let all_eq_extremal_clause = SqlCondition::and_vec(
             SqlComparison::Equal(
-                ArgType::ColumnName(format!(
+                ArgType::Identifier(format!(
                     "{FULL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
                 )),
-                ArgType::ColumnName(format!(
+                ArgType::Identifier(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
                 )),
@@ -134,8 +134,8 @@ impl ExtremalCounterExampleQuery {
                 .into_iter()
                 .map(|column| {
                     SqlComparison::Equal(
-                        ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{column}")),
-                        ArgType::ColumnName(format!("{EXTREMAL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")),
                     )
                 })
                 .collect(),
@@ -163,7 +163,10 @@ impl ExtremalCounterExampleQuery {
             limit: None,
         };
         if let Some(add_cond) = &self.additional_condition {
-            query.add_and(add_cond.clone());
+            // To prevent any ambiguity, restrict to a table
+            let mut safe_add_cond = add_cond.clone();
+            safe_add_cond.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
+            query.add_and(safe_add_cond);
         }
         query
     }
@@ -194,8 +197,8 @@ impl ExtremalCounterExampleQuery {
 
         let all_eq_extremal_clause = SqlCondition::and_vec(
             SqlComparison::Equal(
-                ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max)),
-                ArgType::ColumnName(format!(
+                ArgType::Identifier(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max)),
+                ArgType::Identifier(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     selection.invariant_to_max
                 )),
@@ -204,8 +207,8 @@ impl ExtremalCounterExampleQuery {
                 .into_iter()
                 .map(|column| {
                     SqlComparison::Equal(
-                        ArgType::ColumnName(format!("{FULL_TABLE_NAME}.{column}")),
-                        ArgType::ColumnName(format!("{EXTREMAL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")),
                     )
                 })
                 .collect(),
@@ -233,7 +236,10 @@ impl ExtremalCounterExampleQuery {
             limit: None,
         };
         if let Some(add_cond) = additional_condition {
-            query.add_and(add_cond.clone());
+            // To prevent any ambiguity, restrict to a table
+            let mut safe_add_cond = add_cond.clone();
+            safe_add_cond.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
+            query.add_and(safe_add_cond);
         }
         query
     }
@@ -251,8 +257,11 @@ impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
             &value.additional_condition,
             &value.conjecture_to_disprove,
         );
-
-        query.add_and(SqlCondition::not(value.conjecture_to_disprove.clone()));
+        // The conjecture to disprove might cause some ambiguous column name
+        // for this we rename it to prevent any issues
+        let mut safe_conjecture_disprove = value.conjecture_to_disprove.clone();
+        safe_conjecture_disprove.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
+        query.add_and(SqlCondition::not(safe_conjecture_disprove));
 
         query
     }

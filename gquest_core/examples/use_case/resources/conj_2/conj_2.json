@@ -1,0 +1,30 @@
+{
+  "batch_size": 1000,
+  "nb_threads": 10,
+  "executables": [
+    {
+      "path": "p_Gn.py",
+      "names": [
+        "P_Gn"
+      ]
+    },
+    {
+      "path": "m_km_rm.py",
+      "names": [
+        "m",
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "p_Bmn.py",
+      "names": [
+        "P_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    }
+  ]
+}

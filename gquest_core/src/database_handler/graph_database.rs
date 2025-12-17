@@ -710,8 +710,8 @@ where
             };
             join_query.add_table(additional_table);
             join_query.add_and(SqlComparison::Equal(
-                ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-                ArgType::ColumnName(format!("{TEMPORARY_TABLE_NAME}.{PK_NAME}")),
+                ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                ArgType::Identifier(format!("{TEMPORARY_TABLE_NAME}.{PK_NAME}")),
             ));
         }
 
@@ -726,8 +726,8 @@ where
                     group_by: vec![],
                     where_clause: Some(
                         SqlComparison::Equal(
-                            ArgType::ColumnName(format!("{first_inv}.{PK_NAME}")),
-                            ArgType::ColumnName(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                            ArgType::Identifier(format!("{first_inv}.{PK_NAME}")),
+                            ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
                         )
                         .into(),
                     ),
