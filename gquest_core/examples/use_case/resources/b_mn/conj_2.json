@@ -3,7 +3,7 @@
   "nb_threads": 10,
   "executables": [
     {
-      "path": "p_Gn.py",
+      "path": "P_Gn.py",
       "names": [
         "P_Gn"
       ]
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "path": "p_Bmn.py",
+      "path": "P_Bmn.py",
       "names": [
         "P_Bmn"
       ],

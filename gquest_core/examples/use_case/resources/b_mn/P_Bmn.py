@@ -9,7 +9,7 @@ References :
 """
 import sys
 import networkx as nx
-from p_Gn import P
+from P_Gn import P
 
 def create_Bnm(n, km, rm):
     G = nx.complete_graph(km)

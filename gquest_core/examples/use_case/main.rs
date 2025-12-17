@@ -18,7 +18,7 @@ const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/b_mn/configs.
 const CONFIG_PATH_ECCENTRIC: &str =
     "gquest_core/examples/use_case/resources/eccentric/zhang_liu_zhou.json";
 const CONFIG_PATH_CONJ_1: &str = "gquest_core/examples/use_case/resources/conj_1/conj_1.json";
-const CONFIG_PATH_CONJ_2: &str = "gquest_core/examples/use_case/resources/conj_2/conj_2.json";
+const CONFIG_PATH_CONJ_2: &str = "gquest_core/examples/use_case/resources/b_mn/conj_2.json";
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -30,7 +30,7 @@ async fn main() {
     });
 
     // TODO: Here
-    let res = example_eccentric(log_levels).await;
+    let res = example_conj1(log_levels).await;
     if let Some(count_example) = res {
         println!("{count_example}");
     } else {
@@ -124,7 +124,7 @@ async fn example_conj1(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    for i in 1..8 {
+    for i in 1..7 {
         println!("Doing class {i}");
         let geng = GengProcess::call_geng(i, &"".to_string(), (None, None)).expect("correct call");
         db.add_to_dataset(geng.get_reader(), 1500, None)
