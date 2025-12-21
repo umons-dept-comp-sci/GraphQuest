@@ -1,0 +1,52 @@
+// Handles spaces and tabs, which are skipped during parsing.
+WHITESPACE = _{ " " | "\t" }
+
+// Full conjecture : min(p_qn: n, m) and n > 3 => conj1 = 0
+query = { extremal ~ and_op ~ condition ~ implication ~ condition ~ EOI } 
+
+// Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m) 
+extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)* )?  ~ ")" }
+
+extremal_func = _{ max_func | min_func }
+
+condition = { comparison ~ binary_op ~ condition
+             | comparison }
+
+binary_op = { and_op | or_op | not_op }
+
+
+comparison = { primitif ~ comp_operator ~ primitif
+			 | "(" ~ condition ~ ")"
+			 | not_op ~ "(" ~ condition ~ ")"}
+
+comp_operator = { equal 
+		   | not_equal 
+           | less_equal 
+           | less 
+           | greater_equal 
+           | greater }
+
+primitif = { value | identifier }
+// Either a number (-1.212) or a string value ("a value")
+value = { number | "\"" ~ valid_ascii+ ~ "\""  }
+// A value representing an identifier (must start with a letter)
+identifier = @{ ASCII_ALPHA ~ valid_ascii* }
+
+number = _{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+valid_ascii = _{ ASCII_ALPHANUMERIC | "_" }
+
+max_func = { "max" }
+min_func = { "min" }
+
+equal = { "=" }
+not_equal = { "!" ~ "=" | "≠" }
+less_equal = { "<" ~ "=" | "≤" }
+less = { "<" }
+greater_equal = { ">" ~ "=" | "≥" }
+greater = { ">" }
+
+implication = { "⇒" | "=>" }
+
+and_op = { "and" | "∧" }
+or_op = { "or" | "v" }
+not_op = { "not" | "!" }
