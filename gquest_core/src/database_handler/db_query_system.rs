@@ -163,6 +163,8 @@ pub enum SqlComparison {
     LessEqual(ArgType, ArgType),
     /// `a = b`
     Equal(ArgType, ArgType),
+    /// `a != b`
+    NotEqual(ArgType, ArgType),
 }
 
 /// Used to correctly identify arguments in a comparison,
@@ -188,7 +190,8 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) | ArgType::Identifier(v) => v,
+                ArgType::Value(v) => format!("\"{v}\""),
+                ArgType::Identifier(v) => v.to_string(),
             }
         )
     }
@@ -205,6 +208,7 @@ impl Display for SqlComparison {
                 SqlComparison::Less(a, b) => format!("{a} < {b}"),
                 SqlComparison::LessEqual(a, b) => format!("{a} <= {b}"),
                 SqlComparison::Equal(a, b) => format!("{a} = {b}"),
+                SqlComparison::NotEqual(a, b) => format!("{a} != {b}"),
             }
         )
     }
@@ -225,7 +229,8 @@ impl SqlComparison {
             | SqlComparison::GreaterEqual(arg_type, arg_type1)
             | SqlComparison::Less(arg_type, arg_type1)
             | SqlComparison::LessEqual(arg_type, arg_type1)
-            | SqlComparison::Equal(arg_type, arg_type1) => {
+            | SqlComparison::Equal(arg_type, arg_type1)
+            | SqlComparison::NotEqual(arg_type, arg_type1) => {
                 if let ArgType::Identifier(name) = arg_type {
                     *name = format!("{prefix}{name}");
                 }

@@ -184,7 +184,7 @@ async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
         )
         .into(),
     };
-    
+
     println!("{}", conjecture.as_sql::<Sqlite>());
     let res = wp
         .find_counterexamples(conjecture.clone())

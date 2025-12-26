@@ -10,6 +10,10 @@ pub mod data_handler {
     pub mod invariant_execs;
 }
 
+pub mod parser {
+    pub mod query_parser;
+}
+
 pub mod database_handler;
 
 pub mod workplace;

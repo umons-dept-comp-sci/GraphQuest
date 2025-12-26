@@ -36,7 +36,8 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
             | SqlComparison::GreaterEqual(a, b)
             | SqlComparison::Less(a, b)
             | SqlComparison::LessEqual(a, b)
-            | SqlComparison::Equal(a, b) => {
+            | SqlComparison::Equal(a, b)
+            | SqlComparison::NotEqual(a, b) => {
                 if let ArgType::Identifier(name) = a {
                     res.insert(name.to_string());
                 }
@@ -270,7 +271,7 @@ impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
 /// Example: max(`eci`; `n`, `m`)
 ///
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
@@ -332,7 +333,7 @@ impl From<&ClassSelection> for SqlTableSelection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ClassType {
     Min,
     Max,
