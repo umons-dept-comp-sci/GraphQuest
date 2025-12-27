@@ -17,7 +17,7 @@ pub trait ToSql {
 /// # Errors
 /// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
 #[derive(Clone, Debug)]
-pub struct ExtremalCounterExampleQuery {
+pub struct ExtremalCounterQuery {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,
     /// The optional additional condition that can further restrict the graph to explore.
@@ -71,7 +71,7 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
     res
 }
 
-impl ExtremalCounterExampleQuery {
+impl ExtremalCounterQuery {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
@@ -246,14 +246,14 @@ impl ExtremalCounterExampleQuery {
     }
 }
 
-impl From<ExtremalCounterExampleQuery> for SqlSelectQuery {
-    fn from(value: ExtremalCounterExampleQuery) -> Self {
+impl From<ExtremalCounterQuery> for SqlSelectQuery {
+    fn from(value: ExtremalCounterQuery) -> Self {
         (&value).into()
     }
 }
-impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
-    fn from(value: &ExtremalCounterExampleQuery) -> Self {
-        let mut query = ExtremalCounterExampleQuery::with_extremal_graphs(
+impl From<&ExtremalCounterQuery> for SqlSelectQuery {
+    fn from(value: &ExtremalCounterQuery) -> Self {
+        let mut query = ExtremalCounterQuery::with_extremal_graphs(
             &value.selection,
             &value.additional_condition,
             &value.conjecture_to_disprove,
@@ -271,7 +271,7 @@ impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
 /// Example: max(`eci`; `n`, `m`)
 ///
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
@@ -333,7 +333,7 @@ impl From<&ClassSelection> for SqlTableSelection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClassType {
     Min,
     Max,

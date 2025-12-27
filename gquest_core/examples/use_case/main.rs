@@ -3,7 +3,7 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        ArgType, ClassSelection, ClassType, ExtremalCounterExampleQuery, GraphDatabase,
+        ArgType, ClassSelection, ClassType, ExtremalCounterQuery, GraphDatabase,
         SqlComparison, SqlCondition, SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
     },
     utils::{config_file::ConfigFile, table_handler::QueryTable},
@@ -57,7 +57,7 @@ async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> Option<QueryTab
 
     let mut wp = Workplace::new(db, config);
 
-    let conjecture = ExtremalCounterExampleQuery {
+    let conjecture = ExtremalCounterQuery {
         selection: ClassSelection::new(
             gquest_core::database_handler::ClassType::Max,
             "eci",
@@ -99,7 +99,7 @@ async fn example_Bmn(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
 
     let mut wp = Workplace::new(db, config);
 
-    let conjecture = ExtremalCounterExampleQuery {
+    let conjecture = ExtremalCounterQuery {
         selection: ClassSelection::new(ClassType::Min, "P_Gn", vec!["vertices", "m"]),
         additional_condition: None,
         conjecture_to_disprove: SqlComparison::Equal(
@@ -137,7 +137,7 @@ async fn example_conj1(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
 
     let mut wp = Workplace::new(db, config);
 
-    let conjecture = ExtremalCounterExampleQuery {
+    let conjecture = ExtremalCounterQuery {
         selection: ClassSelection::new(ClassType::Min, "ag", vec!["vertices", "r"]),
         additional_condition: None,
         conjecture_to_disprove: SqlComparison::Equal(
@@ -175,7 +175,7 @@ async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
 
     let mut wp = Workplace::new(db, config);
 
-    let conjecture = ExtremalCounterExampleQuery {
+    let conjecture = ExtremalCounterQuery {
         selection: ClassSelection::new(ClassType::Min, "P_Gn", vec!["vertices", "m"]),
         additional_condition: None,
         conjecture_to_disprove: SqlComparison::LessEqual(

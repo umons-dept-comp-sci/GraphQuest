@@ -10,7 +10,7 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        DbQuerySystem, ExtremalCounterExampleQuery, GraphDatabase, GraphDbRuntimeError,
+        DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
         GraphDbStartupError, SqlSelectQuery, VERTICES_TABLE_NAME,
     },
     utils::{config_file::ConfigFile, table_handler::QueryTable},
@@ -161,7 +161,7 @@ where
     /// Tries to find a counter example to a conjecture using this workplace.
     pub async fn find_counterexamples(
         &mut self,
-        conjecture: ExtremalCounterExampleQuery,
+        conjecture: ExtremalCounterQuery,
     ) -> Result<Option<QueryTable>, WorkplaceError> {
         // Fully compute the necessary invariants (and their dependencies)
         let mut inv_to_compute = conjecture.get_invariants_to_compute();

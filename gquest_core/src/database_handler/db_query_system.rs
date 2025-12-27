@@ -25,7 +25,7 @@ pub enum ColumnType {
 }
 
 /// Represents a condition that could appear in a where clause.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlCondition {
     /// A simple comparison
     Operation(SqlComparison),
@@ -151,7 +151,7 @@ impl SqlCondition {
 
 /// Represents a comparison that can be used in an Sql where clause.
 /// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlComparison {
     /// `a > b`
     Greater(ArgType, ArgType),
@@ -169,7 +169,7 @@ pub enum SqlComparison {
 
 /// Used to correctly identify arguments in a comparison,
 /// otherwise it would be hard to guess if they refer to a value or to a column.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArgType {
     Value(String),
     Identifier(String),
@@ -243,7 +243,7 @@ impl SqlComparison {
 }
 
 /// Represents a table in the From section of an Sql Query.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SqlTableSelection {
     /// The table to select
     pub selected_table: SqlTable,
@@ -294,7 +294,7 @@ impl From<&str> for SqlTableSelection {
 }
 
 /// Represents a table to select in Sql
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlTable {
     /// The query used to get this temporary table
     SqlQuery(SqlSelectQuery),
@@ -319,7 +319,7 @@ impl From<&str> for SqlTable {
 
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
     pub select: Vec<String>,
