@@ -16,7 +16,7 @@ pub trait ToSql {
 /// Can be turned into a [`SqlSelectQuery`] in order to be executed by a database system.
 /// # Errors
 /// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExtremalCounterExampleQuery {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,

@@ -1,16 +1,95 @@
 use pest::{
     Parser,
-    iterators::{Pair, Pairs},
+    error::{Error, LineColLocation},
+    iterators::Pair,
 };
 use pest_derive::Parser;
 use sqlx::Sqlite;
+use thiserror::Error;
 
 use crate::database_handler::{
     ArgType, ClassSelection, ClassType, ExtremalCounterExampleQuery, SqlComparison, SqlCondition,
 };
 
+#[derive(Debug, Error)]
+pub enum ParsingError {
+    #[error("Something went wrong when trying to parse the given input : \"{input}\"")]
+    ParseError {
+        /// The input that caused the error
+        input: String,
+        /// The index of the column where the parse error originated
+        col_pos: usize, // No need for line position as they are always one line
+        /// The missing token that could possibly fix the error
+        missing_token: Option<String>,
+    },
+}
+
+impl ParsingError {
+    pub fn pretty_string(&self) -> String {
+        match self {
+            ParsingError::ParseError {
+                input,
+                col_pos,
+                missing_token,
+            } => {
+                format!(
+                    "Could not parse the following input{} : \n{}",
+                    if let Some(token) = missing_token {
+                        format!(", this could be missing: \"{token}\"")
+                    } else {
+                        String::new()
+                    },
+                    Self::get_arrow_under(input, *col_pos)
+                )
+            }
+        }
+    }
+    fn get_arrow_under(value: &String, col: usize) -> String {
+        format!(" {value}\n{}^", String::from("-").repeat(col))
+    }
+}
+
+fn get_parsing_error(error: Error<Rule>) -> ParsingError {
+    let input = error.line();
+    let col = match error.line_col {
+        LineColLocation::Pos((_, col)) => col,
+        LineColLocation::Span(_, _) => todo!("impl span error"),
+    };
+    let mut missing_token = None;
+    match &error.variant {
+        pest::error::ErrorVariant::ParsingError {
+            positives,
+            negatives,
+        } => {
+            println!("positives: {positives:?}");
+            println!("negatives: {negatives:?}");
+            for r in positives {
+                missing_token = match r {
+                    Rule::binary_op => Some(String::from("AND, OR")),
+                    Rule::comp_operator => Some(String::from(">=, <=, =, !=, ...")),
+                    Rule::primitif => Some(String::from("an identifier or a value")),
+                    _ => None,
+                };
+                if missing_token.is_some() {
+                    break;
+                }
+            }
+        }
+        pest::error::ErrorVariant::CustomError { message: _ } => {
+            unreachable!("This should never be triggered")
+        }
+    }
+
+    ParsingError::ParseError {
+        input: input.to_string(),
+        col_pos: col,
+        missing_token,
+    }
+}
+
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"] // relative to src
+/// Used to parse inputs for conjecture queries.
 struct QueryParser;
 
 impl QueryParser {
@@ -126,6 +205,28 @@ impl QueryParser {
             identifiers,
         )
     }
+
+    fn parse_conj_query(rule: Pair<'_, Rule>) -> ExtremalCounterExampleQuery {
+        let mut inner_rules = rule.into_inner();
+
+        let selection = Self::parse_extremal(inner_rules.next().expect("extramal present"));
+        let additional_condition = if inner_rules.len() == 3 {
+            Some(Self::parse_condition(
+                inner_rules.next().expect("extramal present"),
+            ))
+        } else {
+            None
+        };
+
+        let conjecture_to_disprove =
+            Self::parse_condition(inner_rules.next().expect("extramal present"));
+
+        ExtremalCounterExampleQuery {
+            selection,
+            additional_condition,
+            conjecture_to_disprove,
+        }
+    }
 }
 
 fn create_condition(
@@ -177,18 +278,30 @@ fn create_comparison(
 
 #[test]
 fn HELP() {
-    // let comparison = QueryParser::parse(Rule::condition, "((a_1 = x) or not(\"1\"!=4)) and p >= 4")
-    //     .expect("correct")
-    //     .next()
-    //     .expect("correct");
+    let comparison = QueryParser::parse(Rule::condition, "((a_1 = x) v !(\"1\"≠4)) ∧ p ≥ 4")
+        .expect("correct")
+        .next()
+        .expect("correct");
 
-    // let res = QueryParser::parse_condition(comparison);
+    let res = QueryParser::parse_condition(comparison);
 
-    // println!("{}", res.to_sql::<Sqlite>())
-    
-    let extremal = QueryParser::parse(Rule::extremal, "min(a: b, c,d)").expect("correct").next().expect("one val");
+    println!("{}", res.to_sql::<Sqlite>());
 
-    let res = QueryParser::parse_extremal(extremal);
+    let extremal = QueryParser::parse(Rule::extremal, "min(a: b, c,d)")
+        .expect("correct")
+        .next()
+        .expect("one val");
 
-    println!("{:?}", res)
+    let extremal = QueryParser::parse(Rule::conj_query, "min(a: b, c,d), a =b => conj_1 = 0")
+        .expect("correct")
+        .next()
+        .expect("one val");
+
+    let res = QueryParser::parse_conj_query(extremal);
+
+    println!("{:?}", res);
+
+    if let Err(e) = QueryParser::parse(Rule::conj_query, "min(a: b, c,d), a = b => conj_1 = 1") {
+        println!("{}", get_parsing_error(e).pretty_string());
+    }
 }

@@ -1,8 +1,8 @@
 // Handles spaces and tabs, which are skipped during parsing.
 WHITESPACE = _{ " " | "\t" }
 
-// example : min(p_qn: n, m) and d > 3 => conj1 = 0
-conj_query = { extremal ~ and_op ~ condition ~ implication ~ condition ~ EOI } 
+// example : min(p_qn: n, m), d > 3 => conj1 = 0
+conj_query = { extremal ~ ("," ~ condition)? ~ implication ~ condition ~ EOI } 
 
 // Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m) 
 extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)* )?  ~ ")" }
