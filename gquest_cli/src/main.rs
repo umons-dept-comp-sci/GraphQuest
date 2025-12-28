@@ -2,7 +2,7 @@ use clap::Parser;
 use clap_verbosity_flag::{LogLevel, Verbosity};
 use gquest_cli::{
     cli_commands::{CliArg, Modes},
-    command_handlers::init::{add_dataset},
+    command_handlers::init::add_dataset,
 };
 
 /// Starts log environment using the given verbosity arguments

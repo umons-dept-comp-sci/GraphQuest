@@ -69,8 +69,7 @@ pub struct DatabasePath {
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {
     /// The order(s) of the graphs to generate
-    #[clap(name("order|min:[max] order"))]
-    // TODO We should allow the user to exclude value from range
+    #[clap(name("order|min:[max] order"))] // TODO: Change this to reflect new parser
     pub order: String,
     /// The mininum and/or maximum number of edges of the graphs to generate
     #[clap(
@@ -81,9 +80,12 @@ pub struct GengArgs {
     )]
     pub edges: Vec<Option<String>>,
 
-    /// The parameters to give to geng in order to generate a graph of an order
+    /// The addition parameters to give to geng
     #[clap(long, short)]
     pub params: Option<String>,
+
+    #[clap(short('b'), default_value("5000"))]
+    pub batch_size: usize,
 }
 
 #[derive(Subcommand, Debug, Clone)]

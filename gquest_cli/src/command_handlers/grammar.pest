@@ -1,0 +1,13 @@
+WHITESPACE = _{ " " | "\t" }
+
+order = { (int_range_list | int_list) ~ EOI }
+
+int_list = { int ~ (comma ~ int)* }
+
+int_range_list = { int_range ~ (comma ~ int_range)* }
+int_range = { int ~ colon ~ int }
+
+comma = { "," }
+colon = { ":" }
+
+int = @{ ASCII_DIGIT+ }
