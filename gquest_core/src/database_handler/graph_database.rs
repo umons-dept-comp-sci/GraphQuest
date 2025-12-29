@@ -10,6 +10,7 @@ use crate::data_handler::invariant_execs::{
     AsyncInvariantInput, AsyncInvariantOutput, InvariantsExecutable,
 };
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 
@@ -434,19 +435,17 @@ where
             return Ok(());
         }
         for table in tables {
-            let table_query = self
-                .fetch_all_row_query(
-                    &SqlSelectQuery::select_all_from_table(table),
-                    QueryTableOptions::Partial {
-                        first_rows_count: 10,
-                        last_rows_count: 10,
-                    },
-                )
-                .await?;
+            let mut query_table = QueryTable::new_no_header(QueryTableOptions::Partial {
+                first_rows_count: 10,
+                last_rows_count: 10,
+            });
+            self.fetch_all_row_query(
+                &SqlSelectQuery::select_all_from_table(table),
+                &mut query_table,
+            )
+            .await?;
 
-            if let Some(table) = table_query {
-                println!("{table}");
-            }
+            println!("{query_table}");
         }
 
         Ok(())
@@ -812,12 +811,15 @@ where
     }
 
     /// Fetches and stores all rows from the given query inside a table as strings.
-    pub async fn fetch_all_row_query(
+    pub async fn fetch_all_row_query<O>(
         &self,
         query: &SqlSelectQuery,
-        table_option: QueryTableOptions,
-    ) -> Result<Option<QueryTable>, GraphDbRuntimeError> {
-        let mut table = None;
+        output: &mut O,
+    ) -> Result<(), GraphDbRuntimeError>
+    where
+        O: SaveOutput,
+    {
+        let mut added_headers = false;
         let query = query.to_sql::<DB>();
         // Execute query :
         let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
@@ -825,20 +827,17 @@ where
         while let Some(result_row) = results.next().await {
             let row = result_row?;
             // Fetch all header first
-            if table.is_none() {
+            if !added_headers {
+                added_headers = true;
                 let mut headers = vec![];
                 for col in row.columns() {
                     headers.push(col.name().to_string());
                 }
-                table = Some(QueryTable::new(headers, table_option.clone()));
+                output.push_line(headers);
             }
-            // Store each value from that row
-            table
-                .as_mut()
-                .expect("is some")
-                .push_line(Self::read_row_values(&row));
+            output.push_line(Self::read_row_values(&row));
         }
-        Ok(table)
+        Ok(())
     }
 }
 

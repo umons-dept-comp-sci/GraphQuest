@@ -13,7 +13,7 @@ use crate::{
         DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
         GraphDbStartupError, SqlSelectQuery, VERTICES_TABLE_NAME,
     },
-    utils::{config_file::ConfigFile, table_handler::QueryTable},
+    utils::{SaveOutput, config_file::ConfigFile, table_handler::QueryTable},
 };
 
 #[derive(Debug, Error)]
@@ -28,6 +28,7 @@ pub enum WorkplaceError {
     JoinError(#[from] JoinError),
 }
 
+/// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
 pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
     pub db: GraphDatabase<DB>,
     config: ConfigFile,
@@ -92,7 +93,7 @@ where
             .await
     }
 
-    /// Executes the given executables stored inside the sorter using the given settings from the [`ConfigFile`].
+    /// Executes the executables stored inside the sorter using the given settings from the [`ConfigFile`].
     pub async fn execute_invariant_execs(
         &mut self,
         sorter: ExecutableSorter,
@@ -159,10 +160,11 @@ where
     }
 
     /// Tries to find a counter example to a conjecture using this workplace.
-    pub async fn find_counterexamples(
+    pub async fn find_counterexamples<O: SaveOutput>(
         &mut self,
         conjecture: ExtremalCounterQuery,
-    ) -> Result<Option<QueryTable>, WorkplaceError> {
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
         // Fully compute the necessary invariants (and their dependencies)
         let mut inv_to_compute = conjecture.get_invariants_to_compute();
         // This table is used but is not part of any executable
@@ -191,24 +193,23 @@ where
         // Return counter example query result
         let query: SqlSelectQuery = conjecture.into();
 
-        Ok(self
-            .db
-            .fetch_all_row_query(&query, crate::utils::table_handler::QueryTableOptions::Full)
-            .await?)
+        self.db.fetch_all_row_query(&query, output).await?;
+
+        Ok(())
     }
 
     /// Gets a table that will summarize this workplace invariant computation progress.
     ///
     /// For example :
     /// ```b
-    ///╭───┬────────────┬────────┬─────╮
-    ///│ i │ Table Name │ Size   │ %   │
-    ///├───┼────────────┼────────┼─────┤
-    ///│ 0 │ Dataset    │ 288266 │ 100 │
-    ///│ 1 │ size       │ 13598  │ 5   │
-    ///│ 2 │ is_planar  │ 13598  │ 5   │
-    ///│ 3 │ num_col    │ 3000   │ 1   │
-    ///╰───┴────────────┴────────┴─────╯
+    ///╭───┬────────────┬────────╮
+    ///│ i │ Table Name │ Size   │
+    ///├───┼────────────┼────────┤
+    ///│ 0 │ Dataset    │ 288266 │
+    ///│ 1 │ size       │ 13598  │
+    ///│ 2 │ is_planar  │ 13598  │
+    ///│ 3 │ num_col    │ 3000   │
+    ///╰───┴────────────┴────────╯
     /// ```
     pub async fn summary(&self) -> QueryTable {
         todo!()

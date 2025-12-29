@@ -66,7 +66,6 @@ impl ConfigFile {
         let f = File::open(p)?;
         let mut config_json: ConfigJsonFile = serde_json::from_reader(f)?;
 
-
         if let Some(parent_path) = p.parent() {
             for val in &mut config_json.executables {
                 val.path = parent_path.join(&val.path).display().to_string();

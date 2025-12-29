@@ -1,5 +1,7 @@
 use std::{fmt::Display, fs::File, io::Write, path::Path};
 
+use crate::utils::SaveOutput;
+
 /// Small struct used to make the creation of a *csv* type file easier
 pub struct CsvFile {
     /// The file where the data will be stored
@@ -72,6 +74,13 @@ pub fn as_line<T: Into<String> + Clone>(values: &Vec<T>, separator: char) -> Str
     to_write.pop(); // remove the last separator
     to_write.push('\n');
     to_write
+}
+
+impl SaveOutput for CsvFile {
+    fn push_line<T: Into<String> + Clone>(&mut self, values: Vec<T>) {
+        let line = as_line(&values, self.separator);
+        self.file.write_all(line.as_bytes()).expect("no save error")
+    }
 }
 
 //______________________________ ERRORS STRUCT

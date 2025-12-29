@@ -3,10 +3,13 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{
-        ArgType, ClassSelection, ClassType, ExtremalCounterQuery, GraphDatabase,
-        SqlComparison, SqlCondition, SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
+        ArgType, ClassSelection, ClassType, ExtremalCounterQuery, GraphDatabase, SqlComparison,
+        SqlCondition, SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
     },
-    utils::{config_file::ConfigFile, table_handler::QueryTable},
+    utils::{
+        config_file::ConfigFile,
+        table_handler::{QueryTable, QueryTableOptions},
+    },
     workplace::{self, Workplace},
 };
 use log::*;
@@ -31,16 +34,12 @@ async fn main() {
 
     // TODO: Here
     let res = example_conj1(log_levels).await;
-    if let Some(count_example) = res {
-        println!("{count_example}");
-    } else {
-        println!("Did not find any counter examples :(");
-    }
+    println!("{res}");
 
     info!("Program ends");
 }
 
-async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
+async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> QueryTable {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
@@ -73,8 +72,8 @@ async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> Option<QueryTab
         )
         .into(),
     };
-    let res = wp
-        .find_counterexamples(conjecture.clone())
+    let mut res = QueryTable::new_no_header(QueryTableOptions::Full);
+    wp.find_counterexamples(conjecture.clone(), &mut res)
         .await
         .expect("no error");
     println!("{}", conjecture.as_sql::<Sqlite>());
@@ -83,7 +82,7 @@ async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> Option<QueryTab
     res
 }
 
-async fn example_Bmn(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
+async fn example_Bmn(log_levels: Option<SqlxLogLevels>) -> QueryTable {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
@@ -109,22 +108,21 @@ async fn example_Bmn(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
         .into(),
     };
 
-    let res = wp
-        .find_counterexamples(conjecture.clone())
+    let mut res = QueryTable::new_no_header(QueryTableOptions::Full);
+    wp.find_counterexamples(conjecture.clone(), &mut res)
         .await
         .expect("no error");
-    wp.db.print_all_tables().await.expect("no error");
     println!("{}", conjecture.as_sql::<Sqlite>());
     wp.close_workspace().await;
 
     res
 }
 
-async fn example_conj1(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
+async fn example_conj1(log_levels: Option<SqlxLogLevels>) -> QueryTable {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
-    for i in 1..7 {
+    for i in 1..9 {
         println!("Doing class {i}");
         let geng = GengProcess::call_geng(i, &"".to_string(), (None, None)).expect("correct call");
         db.add_to_dataset(geng.get_reader(), 1500, None)
@@ -147,18 +145,17 @@ async fn example_conj1(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
         .into(),
     };
 
-    let res = wp
-        .find_counterexamples(conjecture.clone())
+    let mut res = QueryTable::new_no_header(QueryTableOptions::Full);
+    wp.find_counterexamples(conjecture.clone(), &mut res)
         .await
         .expect("no error");
     println!("{}", conjecture.as_sql::<Sqlite>());
-    wp.db.print_all_tables().await.expect("no error");
     wp.close_workspace().await;
 
     res
 }
 
-async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> {
+async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> QueryTable {
     let mut db = SqliteGraphDB::connect_create_graph_database(DB_URL, log_levels)
         .await
         .expect("Database to be okay");
@@ -185,12 +182,11 @@ async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
         .into(),
     };
 
-    println!("{}", conjecture.as_sql::<Sqlite>());
-    let res = wp
-        .find_counterexamples(conjecture.clone())
+    let mut res = QueryTable::new_no_header(QueryTableOptions::Full);
+    wp.find_counterexamples(conjecture.clone(), &mut res)
         .await
         .expect("no error");
-    wp.db.print_all_tables().await.expect("no error");
+    println!("{}", conjecture.as_sql::<Sqlite>());
     wp.close_workspace().await;
 
     res
@@ -199,7 +195,7 @@ async fn example_conj2(log_levels: Option<SqlxLogLevels>) -> Option<QueryTable> 
 /// Starts the log environment
 pub fn startup_log() {
     env_logger::builder()
-        .filter(Some("sqlx::query"), LevelFilter::Warn)
+        .filter(Some("sqlx::query"), LevelFilter::Debug)
         .filter_level(log::LevelFilter::Debug)
         .format_target(true)
         .format_timestamp(None)
