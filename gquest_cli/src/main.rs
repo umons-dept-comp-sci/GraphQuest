@@ -40,7 +40,7 @@ async fn main() {
     } {
         Ok(_) => {}
         Err(e) => {
-            error!("Ran into an error - {e}");
+            error!("{e}");
         }
     };
 }

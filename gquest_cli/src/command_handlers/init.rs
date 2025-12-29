@@ -1,20 +1,13 @@
-use std::collections::HashSet;
-
 use gquest_core::{
     data_handler::data_loader::{GengProcess, read_file, read_pipe_signatures},
     database_handler::SqliteGraphDB,
 };
 use log::{error, info};
-use pest::{
-    Parser,
-    error::{ErrorVariant, LineColLocation},
-    iterators::Pair,
-};
-use pest_derive::Parser;
 
 use crate::{
     CliError,
     cli_commands::{DatabasePath, DatasetChoice},
+    command_handlers::arg_parser::ArgParser,
     progress_bar::GquestProgressBar,
 };
 
@@ -38,7 +31,7 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
     match input_method {
         DatasetChoice::Geng { args, batch_size } => {
             // Parse input
-            for order in OrderParser::parse_order(&args.order)? {
+            for order in ArgParser::parse_order(&args.order)? {
                 pb.set_message(format!("Doing order: {order}"));
                 let geng_call = GengProcess::call_geng(
                     order,
@@ -70,94 +63,4 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
     info!("Closing database");
     db.close_connection().await;
     Ok(())
-}
-
-#[derive(Parser)]
-#[grammar = "command_handlers/grammar.pest"]
-struct OrderParser;
-
-impl OrderParser {
-    fn parse_order(input: &str) -> Result<Vec<u32>, CliError> {
-        match OrderParser::parse(Rule::order, input) {
-            Ok(mut rule) => Ok(OrderParser::parse_order_rule(
-                rule.next().expect("one present"),
-            )),
-            Err(e) => {
-                let column = match e.line_col {
-                    LineColLocation::Pos((_, col)) => col,
-                    _ => unreachable!(),
-                };
-                // Collect possible missing tokens
-                let missing_tokens: Vec<String> = match e.variant {
-                    ErrorVariant::ParsingError {
-                        positives,
-                        negatives: _,
-                    } => positives
-                        .iter()
-                        .map(|rule| {
-                            match rule {
-                                Rule::colon => ":",
-                                Rule::comma => ",",
-                                Rule::int => "integer",
-                                _ => "",
-                            }
-                            .to_string()
-                        })
-                        .collect(),
-                    _ => unreachable!(),
-                };
-
-                Err(CliError::ArgParseError {
-                    arg: input.to_string(),
-                    column,
-                    missing_tokens,
-                })
-            }
-        }
-    }
-
-    fn parse_order_rule(rule: Pair<'_, Rule>) -> Vec<u32> {
-        let inner_rule = rule.into_inner().next().expect("one sub rule");
-        let mut range = HashSet::new();
-        match &inner_rule.as_rule() {
-            Rule::int_list => {
-                for int_value in inner_rule.into_inner() {
-                    match &int_value.as_rule() {
-                        Rule::int => {
-                            range.insert(Self::parse_int_rule(int_value));
-                        }
-                        Rule::comma => {}
-                        _ => unreachable!(),
-                    }
-                }
-            }
-            Rule::int_range_list => {
-                for int_range in inner_rule.into_inner() {
-                    match &int_range.as_rule() {
-                        Rule::int_range => {
-                            let mut int_range_rules = int_range.into_inner();
-                            // int range is always : int ~ ":" ~ int
-                            let start = Self::parse_int_rule(
-                                int_range_rules.next().expect("first int present"),
-                            );
-                            int_range_rules.next(); // skip colon
-                            let end = Self::parse_int_rule(
-                                int_range_rules.next().expect("last int present"),
-                            );
-
-                            range.extend(start..end + 1);
-                        }
-                        Rule::comma => {}
-                        _ => unreachable!(),
-                    }
-                }
-            }
-            _ => unreachable!(),
-        };
-        Vec::from_iter(range)
-    }
-
-    fn parse_int_rule(rule: Pair<'_, Rule>) -> u32 {
-        rule.as_str().parse::<u32>().expect("correct integer")
-    }
 }

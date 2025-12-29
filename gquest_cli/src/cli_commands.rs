@@ -1,4 +1,4 @@
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
@@ -18,7 +18,7 @@ pub struct CliArg {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
-    /// Add graphs to an already existing project  
+    /// Add signatures to a database (and creates it if needed).  
     Add {
         #[command(subcommand)]
         input_method: DatasetChoice,
@@ -42,10 +42,10 @@ pub enum Modes {
     //     #[command(flatten)]
     //     path: DatabasePath,
     // },
-    /// Send querries to a database
+    /// Try to find counter examples
     Query {
-        #[command(flatten)]
-        output: OutputQueryArgs,
+        #[command(subcommand)]
+        output: OutputChoice,
         /// The path to the config file to use
         #[clap()]
         config_file: String,
@@ -55,7 +55,7 @@ pub enum Modes {
         #[command(flatten)]
         path: DatabasePath,
     },
-    /// Show a summary of a project
+    /// Show the tables present in the database
     Summary {
         #[command(flatten)]
         path: DatabasePath,
@@ -71,8 +71,9 @@ pub struct DatabasePath {
 
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {
-    /// The order(s) of the graphs to generate
-    #[clap(name("order|min:[max] order"))] // TODO: Change this to reflect new parser
+    /// The order(s) of the graphs to generate.
+    /// Either an order list (ex: "1,2,5") or range list (ex: "1:4, 6:10") with inclusive bounds.
+    #[clap(name("(order | range) list"))]
     pub order: String,
     // /// The mininum and/or maximum number of edges of the graphs to generate
     // #[clap(
@@ -136,29 +137,30 @@ pub struct ComputeChoice {
     pub programs: Vec<String>,
 }
 
-#[derive(Debug, clap::Args, Clone)]
-#[group(required = false, multiple = true)]
-pub struct OutputQueryArgs {
-    #[command(subcommand)]
-    pub choice: Option<OutputChoice>,
-    /// Saves the result to a file
-    #[clap(short, long)]
-    pub file: Option<String>,
-}
+// #[derive(Debug, clap::Args, Clone)]
+// #[group(required = false, multiple = false)]
+// pub struct OutputQueryArgs {
+//     #[command(subcommand)]
+//     pub choice: Option<OutputChoice>,
+// }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum OutputChoice {
+    /// Stores the result as a `csv` file
+    File {
+        /// The path of the file
+        path: String,
+        /// The separator of the values
+        #[clap(short, default_value = ",")]
+        separator: char,
+    },
     /// Prints result line by line to the standart output
-    Stream,
+    Stdout,
     /// Prints the result as a pretty table
     #[group(required = false, multiple = false)]
     Table {
-        #[clap(long, action=ArgAction::SetTrue, default_value="true")]
-        /// Stores the entire query results in the table
-        full: bool,
-
         /// [n:m] Only stores the n first and the m last rows
-        #[clap(long)]
+        #[clap(short)]
         partial: Option<String>,
     },
 }
