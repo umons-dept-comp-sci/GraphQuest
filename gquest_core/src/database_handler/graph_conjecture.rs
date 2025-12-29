@@ -1,6 +1,7 @@
 use std::{collections::HashSet, vec};
 
 use sqlx::Database;
+use thiserror::Error;
 
 use crate::database_handler::{
     ArgType, DbQuerySystem, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison,
@@ -274,24 +275,41 @@ impl From<&ExtremalCounterQuery> for SqlSelectQuery {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassSelection {
     class_type: ClassType,
-    invariant_to_max: String, // TODO: this cannot appear in the invariant combination ...
+    invariant_to_max: String,
     invariants_combination: Vec<String>,
+}
+#[derive(Error, Debug)]
+pub enum ClassSelectionError {
+    #[error("Cannot group the following invariant with itself \"{0}\"")]
+    CombineWithItself(String),
+    #[error("Invariant appears twice : \"{0}\"")]
+    DuplicateInv(String),
 }
 
 impl ClassSelection {
     pub fn new(
         class_type: ClassType,
         extremal_inv: impl ToString,
-        invariant_combination: Vec<impl ToString>,
-    ) -> Self {
-        Self {
-            class_type,
-            invariant_to_max: extremal_inv.to_string(),
-            invariants_combination: Vec::from_iter(invariant_combination)
-                .iter()
-                .map(|f| f.to_string())
-                .collect(),
+        invariants_combination: Vec<impl ToString>,
+    ) -> Result<Self, ClassSelectionError> {
+        let invariant_to_max = extremal_inv.to_string();
+        let invariants_combination: Vec<String> = Vec::from_iter(invariants_combination)
+            .iter()
+            .map(|f| f.to_string())
+            .collect();
+
+        if invariants_combination.contains(&invariant_to_max) {
+            return Err(ClassSelectionError::CombineWithItself(invariant_to_max));
         }
+        if let Some(val) = check_all_unique(&invariants_combination) {
+            return Err(ClassSelectionError::DuplicateInv(val));
+        }
+
+        Ok(Self {
+            class_type,
+            invariant_to_max,
+            invariants_combination,
+        })
     }
 }
 
@@ -331,6 +349,18 @@ impl From<&ClassSelection> for SqlTableSelection {
             rename_as: Some("extremal".to_string()),
         }
     }
+}
+
+fn check_all_unique(iter: &Vec<String>) -> Option<String> {
+    let mut hash_set = HashSet::new();
+
+    for val in iter {
+        if !hash_set.insert(val.to_string()) {
+            return Some(val.to_string());
+        }
+    }
+
+    None
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -7,7 +7,8 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, ClassSelection, ClassType, ExtremalCounterQuery, SqlComparison, SqlCondition,
+    ArgType, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery, SqlComparison,
+    SqlCondition,
 };
 
 #[derive(Debug, Error)]
@@ -21,6 +22,8 @@ pub enum ParsingError {
         /// The missing token that could possibly fix the error
         missing_token: Option<String>,
     },
+    #[error("Error when creating the class selection \"{0}\", reason : \"{1}\"")]
+    ClassSelectionError(String, ClassSelectionError),
 }
 
 impl ParsingError {
@@ -43,6 +46,7 @@ impl ParsingError {
                     Self::get_arrow_under(input, *col_pos)
                 )
             }
+            _ => self.to_string(),
         }
     }
     fn get_arrow_under(value: &String, col: usize) -> String {
@@ -109,15 +113,15 @@ impl QueryParser {
     /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
     /// For example : `min(p_gn: n,m), d_nm => conj1 = 1`
     pub fn parse_conj_query(input: impl ToString) -> Result<ExtremalCounterQuery, ParsingError> {
-        let input = input.to_string();
-        let input = match QueryParser::parse(Rule::conj_query, &input) {
+        let input_str = input.to_string();
+        let input = match QueryParser::parse(Rule::conj_query, &input_str) {
             Ok(mut input) => input.next().expect("one present"),
             Err(e) => {
                 return Err(get_parsing_error(e));
             }
         };
 
-        Ok(Self::_parse_conj_query(input))
+        Self::_parse_conj_query(input)
     }
 
     fn _parse_condition(rule: Pair<'_, Rule>) -> SqlCondition {
@@ -194,7 +198,8 @@ impl QueryParser {
         }
     }
 
-    fn _parse_extremal(rule: Pair<'_, Rule>) -> ClassSelection {
+    fn _parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
+        let rule_str = rule.as_str();
         let inner_rules = rule.into_inner();
 
         let mut first_identifier = None;
@@ -225,17 +230,20 @@ impl QueryParser {
                 _ => unreachable!(),
             }
         }
-        ClassSelection::new(
+        match ClassSelection::new(
             class_type,
             first_identifier.expect("at least one"),
             identifiers,
-        )
+        ) {
+            Ok(val) => Ok(val),
+            Err(e) => Err(ParsingError::ClassSelectionError(rule_str.to_string(), e)),
+        }
     }
 
-    fn _parse_conj_query(rule: Pair<'_, Rule>) -> ExtremalCounterQuery {
+    fn _parse_conj_query(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
-        let selection = Self::_parse_extremal(inner_rules.next().expect("extramal present"));
+        let selection = Self::_parse_extremal(inner_rules.next().expect("extramal present"))?;
         let additional_condition = if inner_rules.len() == 3 {
             Some(Self::_parse_condition(
                 inner_rules.next().expect("extramal present"),
@@ -247,11 +255,11 @@ impl QueryParser {
         let conjecture_to_disprove =
             Self::_parse_condition(inner_rules.next().expect("extramal present"));
 
-        ExtremalCounterQuery {
+        Ok(ExtremalCounterQuery {
             selection,
             additional_condition,
             conjecture_to_disprove,
-        }
+        })
     }
 }
 
@@ -378,7 +386,7 @@ mod tests {
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
-            if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]) && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
+            if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
             ArgType::Identifier("d_nm".to_string()),
             ArgType::Value("3".to_string())),
         )) && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
@@ -388,7 +396,7 @@ mod tests {
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
-            if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()) && additional_condition.is_none() 
+            if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none() 
             && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
     }
 }

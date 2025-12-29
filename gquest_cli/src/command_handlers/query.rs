@@ -24,6 +24,8 @@ pub async fn query_database(
     path: DatabasePath,
 ) -> Result<(), CliError> {
     // open database :
+    info!("Parsing query");
+    let query = QueryParser::parse_conj_query(formula)?;
     info!("Opening database");
     let db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
 
@@ -31,8 +33,6 @@ pub async fn query_database(
     let config = ConfigFile::read_json_file(&config_file)?;
     let mut wp = Workplace::new(db, config);
     // TODO: Encapsulate the error here to close the database after catching it
-    info!("Parsing query");
-    let query = QueryParser::parse_conj_query(formula)?;
 
     info!("Executing query with workplace");
     match output {
