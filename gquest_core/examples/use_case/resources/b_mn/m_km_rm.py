@@ -1,4 +1,4 @@
-#! /home/axel/GitProject/GraphQuest/gquest_core/examples/use_case/resources/env/bin/python3
+#! /usr/bin/env python
 """Computes the size m, the greatest triangle number k_m less than m and the remainder m - comb(k_m, 2)."""
 import sys
 import networkx as nx

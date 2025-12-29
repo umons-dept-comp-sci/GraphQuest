@@ -1,4 +1,4 @@
-#! /home/axel/GitProject/GraphQuest/gquest_core/examples/use_case/resources/env/bin/python3
+#! /usr/bin/env python
 
 import sys
 import networkx as nx
