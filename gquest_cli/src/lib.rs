@@ -26,7 +26,7 @@ pub enum CliError {
     MethodErrorMethodError(#[from] MethodError),
     #[error("Something went wrong when starting the database -> {0}")]
     GraphDbStartupError(#[from] GraphDbStartupError),
-    #[error("{0}")]
+    #[error("{}", ParsingError::pretty_string(.0))]
     QueryParserError(#[from] ParsingError),
     #[error("Something went wrong with the config file -> {0}")]
     ConfigFileError(#[from] ConfigFileError),

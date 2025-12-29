@@ -846,7 +846,7 @@ fn get_nb_vertices(signature: &str) -> Result<usize, GraphDbRuntimeError> {
 
     let signature_byte = signature.as_bytes();
     // Check signature validity :
-    if signature_byte.is_empty() {
+    if signature_byte.is_empty() || !signature_byte.iter().all(|b| *b >= 63 && *b <= 126) {
         return Err(GraphDbRuntimeError::InvalidSignature(signature.to_owned()));
     }
     // Check wether it is the extended format or not

@@ -24,15 +24,26 @@ pub async fn query_database(
     path: DatabasePath,
 ) -> Result<(), CliError> {
     // open database :
-    info!("Parsing query");
-    let query = QueryParser::parse_conj_query(formula)?;
     info!("Opening database");
-    let db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    // Store the result, then close the database even if we encountered an error
+    let res = workplace_counterexample(&mut db, output, formula, config_file).await;
+    info!("Closing database");
+    db.close_connection().await;
+    res
+}
 
+async fn workplace_counterexample(
+    db: &mut SqliteGraphDB,
+    output: OutputChoice,
+    formula: String,
+    config_file: String,
+) -> Result<(), CliError> {
     info!("Opening config file");
     let config = ConfigFile::read_json_file(&config_file)?;
     let mut wp = Workplace::new(db, config);
-    // TODO: Encapsulate the error here to close the database after catching it
+    info!("Parsing query");
+    let query = QueryParser::parse_conj_query(formula)?;
 
     info!("Executing query with workplace");
     match output {
@@ -56,10 +67,8 @@ pub async fn query_database(
             info!("Finished executing query");
             println!("{table}");
         }
-    }
+    };
 
-    info!("Closing database");
-    wp.close_workspace().await;
     Ok(())
 }
 

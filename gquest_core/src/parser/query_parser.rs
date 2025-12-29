@@ -39,7 +39,7 @@ impl ParsingError {
                 format!(
                     "Could not parse the following input{} : \n{}",
                     if let Some(token) = missing_token {
-                        format!(", this could be missing: \"{token}\"")
+                        format!(", because one of these tokens could be missing: \"{token}\"")
                     } else {
                         String::new()
                     },

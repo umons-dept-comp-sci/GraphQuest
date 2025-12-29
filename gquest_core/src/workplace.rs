@@ -13,7 +13,7 @@ use crate::{
         DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
         GraphDbStartupError, SqlSelectQuery, VERTICES_TABLE_NAME,
     },
-    utils::{SaveOutput, config_file::ConfigFile, table_handler::QueryTable},
+    utils::{SaveOutput, config_file::ConfigFile},
 };
 
 #[derive(Debug, Error)]
@@ -29,12 +29,12 @@ pub enum WorkplaceError {
 }
 
 /// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
-pub struct Workplace<DB: Database + DbQuerySystem<DB>> {
-    pub db: GraphDatabase<DB>,
+pub struct Workplace<'a, DB: Database + DbQuerySystem<DB>> {
+    pub db: &'a mut GraphDatabase<DB>,
     config: ConfigFile,
 }
 
-impl<DB: Database + DbQuerySystem<DB>> Workplace<DB>
+impl<'a, DB: Database + DbQuerySystem<DB>> Workplace<'a, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -42,48 +42,21 @@ where
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
     String: sqlx::Encode<'static, DB>,
-    for<'a> String: sqlx::Decode<'a, DB>,
-    for<'a> i64: sqlx::Decode<'a, DB>,
-    for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'q> String: sqlx::Decode<'q, DB>,
+    for<'q> i64: sqlx::Decode<'q, DB>,
+    for<'q> f64: sqlx::Decode<'q, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
     // Return values
-    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i64,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
+    (String,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
+    (String, f64): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
 {
-    pub fn new(db: GraphDatabase<DB>, config: ConfigFile) -> Self {
+    /// Creates a new [`Workplace`].
+    pub fn new(db: &'a mut GraphDatabase<DB>, config: ConfigFile) -> Self {
         Self { db, config }
-    }
-    pub async fn init_workplace(
-        uri: impl ToString,
-        config: ConfigFile,
-    ) -> Result<Self, WorkplaceError> {
-        let db = GraphDatabase::connect_create_graph_database(uri, None).await?;
-
-        Ok(Self::new(db, config))
-    }
-
-    /// Connects to the workspace using the given url
-    pub async fn connect_workplace(
-        _db_url: &str,
-        _config: Option<ConfigFile>,
-    ) -> Result<Self, WorkplaceError> {
-        todo!()
-    }
-
-    pub async fn init_connect_workplace(
-        _db_url: &str,
-        _config: Option<ConfigFile>,
-    ) -> Result<Self, WorkplaceError> {
-        todo!()
-    }
-
-    /// Properly closes the worspace
-    pub async fn close_workspace(self) {
-        self.db.close_connection().await;
     }
 
     /// Executes all stored invariants using the given settings from the [`ConfigFile`].
@@ -196,23 +169,6 @@ where
         self.db.fetch_all_row_query(&query, output).await?;
 
         Ok(())
-    }
-
-    /// Gets a table that will summarize this workplace invariant computation progress.
-    ///
-    /// For example :
-    /// ```b
-    ///╭───┬────────────┬────────╮
-    ///│ i │ Table Name │ Size   │
-    ///├───┼────────────┼────────┤
-    ///│ 0 │ Dataset    │ 288266 │
-    ///│ 1 │ size       │ 13598  │
-    ///│ 2 │ is_planar  │ 13598  │
-    ///│ 3 │ num_col    │ 3000   │
-    ///╰───┴────────────┴────────╯
-    /// ```
-    pub async fn summary(&self) -> QueryTable {
-        todo!()
     }
 }
 

@@ -27,10 +27,11 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
         Option::<String>::None,
         100,
     );
-
-    match input_method {
+    // Store the result, close the database, then return the result up
+    let val = match input_method {
         DatasetChoice::Geng { args, batch_size } => {
             // Parse input
+            let mut res = Ok(());
             for order in ArgParser::parse_order(&args.order)? {
                 pb.set_message(format!("Doing order: {order}"));
                 let geng_call = GengProcess::call_geng(
@@ -39,28 +40,39 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
                     (None, None),
                 )?;
 
-                db.add_to_dataset(geng_call.get_reader(), batch_size.batch_size, Some(&mut pb))
-                    .await?;
+                if let Err(e) = db
+                    .add_to_dataset(geng_call.get_reader(), batch_size.batch_size, Some(&mut pb))
+                    .await
+                {
+                    res = Err(e);
+                    break;
+                }
             }
             pb.set_message("Finished loading dataset");
+            res
         }
         DatasetChoice::File { path, batch_size } => {
             let file = read_file(&path)?;
             pb.set_message(format!("Reading \"{path}\""));
-            db.add_to_dataset(file, batch_size.batch_size, Some(&mut pb))
-                .await?;
+            let res = db
+                .add_to_dataset(file, batch_size.batch_size, Some(&mut pb))
+                .await;
             pb.set_message(format!("Finished reading \"{path}\""));
+            res
         }
         DatasetChoice::Pipe { batch_size } => {
             pb.set_message("Reading pipe");
-            db.add_to_dataset(read_pipe_signatures(), batch_size.batch_size, Some(&mut pb))
-                .await?;
+            let res = db
+                .add_to_dataset(read_pipe_signatures(), batch_size.batch_size, Some(&mut pb))
+                .await;
 
             pb.set_message("Pipe is closed");
+            res
         }
     };
     pb.force_finish();
     info!("Closing database");
     db.close_connection().await;
-    Ok(())
+
+    Ok(val?)
 }
