@@ -41,6 +41,8 @@ pub enum GraphDbRuntimeError {
     InvariantDependencyError(InvariantsExecutable, String),
     #[error("Ran into an error while computing an executable : \"{0}\"")]
     InvariantExecutionError(#[from] InvariantExecutionError),
+    #[error("The given value is not a valid signature: \"{0}\"")]
+    InvalidSignature(String),
 }
 
 impl From<sqlx::Error> for GraphDbRuntimeError {

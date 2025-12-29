@@ -1,3 +1,10 @@
+use gquest_core::{
+    data_handler::data_loader::MethodError,
+    database_handler::{GraphDbRuntimeError, GraphDbStartupError},
+    parser::query_parser::ParsingError,
+    utils::config_file::ConfigFileError,
+    workplace::WorkplaceError,
+};
 use thiserror::Error;
 
 pub mod cli_commands;
@@ -15,4 +22,16 @@ pub enum CliError {
         column: usize,
         missing_tokens: Vec<String>,
     },
+    #[error("Something went wrong when trying to import signatures : {0}")]
+    MethodErrorMethodError(#[from] MethodError),
+    #[error("Something went wrong when starting the database : {0}")]
+    GraphDbStartupError(#[from] GraphDbStartupError),
+    #[error("{0}")]
+    QueryParserError(#[from] ParsingError),
+    #[error("Something went wrong when opening the config file : {0}")]
+    ConfigFileError(#[from] ConfigFileError),
+    #[error("Something went wrong with the workplace : {0}")]
+    WorplaceError(#[from] WorkplaceError),
+    #[error("Something went wrong with the database : {0}")]
+    GraphDbRuntimeError(#[from] GraphDbRuntimeError),
 }

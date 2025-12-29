@@ -2,19 +2,19 @@ use std::collections::HashSet;
 
 use gquest_core::{
     data_handler::data_loader::{GengProcess, read_file, read_pipe_signatures},
-    database_handler::{GraphDatabase, SqliteGraphDB},
+    database_handler::SqliteGraphDB,
 };
 use log::{error, info};
 use pest::{
     Parser,
     error::{ErrorVariant, LineColLocation},
-    iterators::{Pair, Pairs},
+    iterators::Pair,
 };
 use pest_derive::Parser;
 
 use crate::{
     CliError,
-    cli_commands::{DatabasePath, DatasetChoice, GengArgs},
+    cli_commands::{DatabasePath, DatasetChoice},
     progress_bar::GquestProgressBar,
 };
 
@@ -30,40 +30,40 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
     };
     info!("Importing given dataset");
     let mut pb = GquestProgressBar::new(
-        crate::progress_bar::ProgressBarType::Iterating {
-            start: 0,
-            length: 12005168,
-        },
-        Some("Cool"),
+        crate::progress_bar::ProgressBarType::Reading,
+        Option::<String>::None,
+        100,
     );
 
     match input_method {
-        DatasetChoice::Geng { args } => {
+        DatasetChoice::Geng { args, batch_size } => {
             // Parse input
             for order in OrderParser::parse_order(&args.order)? {
-                println!("{order}");
-                let geng_call = GengProcess::call_geng(order, &String::new(), (None, None))
-                    .expect("correct geng");
+                pb.set_message(format!("Doing order: {order}"));
+                let geng_call = GengProcess::call_geng(
+                    order,
+                    &args.params.clone().unwrap_or_default(),
+                    (None, None),
+                )?;
 
-                db.add_to_dataset(geng_call.get_reader(), args.batch_size, Some(&mut pb))
-                    .await.expect("erro");
+                db.add_to_dataset(geng_call.get_reader(), batch_size.batch_size, Some(&mut pb))
+                    .await?;
             }
+            pb.set_message("Finished loading dataset");
         }
-
-        DatasetChoice::File { path } => {
-            // let file = match read_file(&path) {
-            //     Ok(f) => f,
-            //     Err(e) => {
-            //         error!("Could not open the given file : {e}");
-            //         return;
-            //     }
-            // };
-
-            // db.add_to_dataset(file, 100, Some(&mut pb)).await;
+        DatasetChoice::File { path, batch_size } => {
+            let file = read_file(&path)?;
+            pb.set_message(format!("Reading \"{path}\""));
+            db.add_to_dataset(file, batch_size.batch_size, Some(&mut pb))
+                .await?;
+            pb.set_message(format!("Finished reading \"{path}\""));
         }
-        DatasetChoice::Pipe => {
-            db.add_to_dataset(read_pipe_signatures(), 100, Some(&mut pb))
-                .await;
+        DatasetChoice::Pipe { batch_size } => {
+            pb.set_message("Reading pipe");
+            db.add_to_dataset(read_pipe_signatures(), batch_size.batch_size, Some(&mut pb))
+                .await?;
+
+            pb.set_message("Pipe is closed");
         }
     };
     pb.force_finish();
@@ -145,7 +145,7 @@ impl OrderParser {
                                 int_range_rules.next().expect("last int present"),
                             );
 
-                            range.extend(start..end+1);
+                            range.extend(start..end + 1);
                         }
                         Rule::comma => {}
                         _ => unreachable!(),

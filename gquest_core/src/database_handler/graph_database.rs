@@ -524,15 +524,18 @@ where
         let mut data_batch = vec![];
 
         for canonical_form in reader.lines().map_while(Result::ok) {
-            let value = get_nb_vertices(&canonical_form);
+            // Check input and get value
+            let value = get_nb_vertices(&canonical_form)?;
             signature_batch.push(canonical_form);
             data_batch.push(value.to_string());
 
             if data_batch.len() >= batch_size {
+                // push collected data to database
                 push_to_db(&signature_batch, &data_batch, batch_size).await?;
                 if let Some(obs) = &mut optional_obs {
                     obs.notify_data_pushed(batch_size.try_into().expect("val to be u64"));
                 }
+                // Clear has no effect on batch capacity
                 data_batch.clear();
                 signature_batch.clear();
             }
@@ -541,6 +544,7 @@ where
                 obs.notify_tick();
             }
         }
+        // If any is still cached, store it in the database
         if !data_batch.is_empty() {
             push_to_db(&signature_batch, &data_batch, data_batch.len()).await?;
 
@@ -838,17 +842,26 @@ where
     }
 }
 
-fn get_nb_vertices(signature: &String) -> usize {
+fn get_nb_vertices(signature: &str) -> Result<usize, GraphDbRuntimeError> {
+    let signature = signature.trim(); // remove any space
+
     let signature_byte = signature.as_bytes();
+    // Check signature validity :
+    if signature_byte.is_empty() {
+        return Err(GraphDbRuntimeError::InvalidSignature(signature.to_owned()));
+    }
     // Check wether it is the extended format or not
     if signature_byte[0] != b'~' {
-        (signature_byte[0] as usize) - 63
+        Ok((signature_byte[0] as usize) - 63)
     }
     // Extended format
     else {
-        (((signature_byte[1] - 63) as usize) << 18)
+        if signature_byte.len() < 5 {
+            return Err(GraphDbRuntimeError::InvalidSignature(signature.to_string()));
+        }
+        Ok((((signature_byte[1] - 63) as usize) << 18)
             | (((signature_byte[2] - 63) as usize) << 12)
             | (((signature_byte[3] - 63) as usize) << 6)
-            | (((signature_byte[4] - 63) as usize) << 3)
+            | (((signature_byte[4] - 63) as usize) << 3))
     }
 }

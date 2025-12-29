@@ -7,7 +7,7 @@ const DEFAULT_URL: &str = "sqlite://gquest.db";
 #[command(
     author("Axel Foucart"),
     version,
-    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2025")
+    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2026")
 )]
 pub struct CliArg {
     #[command(subcommand)]
@@ -25,27 +25,30 @@ pub enum Modes {
         #[command(flatten)]
         path: DatabasePath,
     },
-    /// Compute invariants from a dataset
-    Compute {
-        #[command(flatten)]
-        programs: ComputeChoice,
-        #[clap(short, default_value = "3")]
-        max_processes: usize,
-        #[command(flatten)]
-        path: DatabasePath,
-    },
-    /// Delete a table from a dataset
-    Delete {
-        /// The name of the table/invariant to delete
-        #[clap()]
-        table_name: String,
-        #[command(flatten)]
-        path: DatabasePath,
-    },
+    // /// Compute invariants from a dataset
+    // Compute {
+    //     #[command(flatten)]
+    //     programs: ComputeChoice,
+    //     #[clap(short, default_value = "3")]
+    //     max_processes: usize,
+    //     #[command(flatten)]
+    //     path: DatabasePath,
+    // },
+    // /// Delete a table from a dataset
+    // Delete {
+    //     /// The name of the table/invariant to delete
+    //     #[clap()]
+    //     table_name: String,
+    //     #[command(flatten)]
+    //     path: DatabasePath,
+    // },
     /// Send querries to a database
     Query {
         #[command(flatten)]
         output: OutputQueryArgs,
+        /// The path to the config file to use
+        #[clap()]
+        config_file: String,
         /// The query to ask the database
         #[clap()]
         formula: String,
@@ -71,21 +74,17 @@ pub struct GengArgs {
     /// The order(s) of the graphs to generate
     #[clap(name("order|min:[max] order"))] // TODO: Change this to reflect new parser
     pub order: String,
-    /// The mininum and/or maximum number of edges of the graphs to generate
-    #[clap(
-        name("edges|min:[max] edges"),
-        long("edges"),
-        short('e'),
-        value_delimiter = ':'
-    )]
-    pub edges: Vec<Option<String>>,
-
+    // /// The mininum and/or maximum number of edges of the graphs to generate
+    // #[clap(
+    //     name("edges|min:[max] edges"),
+    //     long("edges"),
+    //     short('e'),
+    //     value_delimiter = ':'
+    // )]
+    // pub edges: Vec<Option<String>>,
     /// The addition parameters to give to geng
     #[clap(long, short)]
     pub params: Option<String>,
-
-    #[clap(short('b'), default_value("5000"))]
-    pub batch_size: usize,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -94,21 +93,36 @@ pub enum DatasetChoice {
     Geng {
         #[command(flatten)]
         args: GengArgs,
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a file
     File {
         /// The path to were the dataset to add is stored
         path: String,
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a pipe
-    Pipe,
+    Pipe {
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
+    },
 }
 
+// Used to not repeat the same field everywhere
 #[derive(Args, Debug, Clone)]
 struct DatabaseInfoPath {
     /// The path or url to the database to access
     #[clap(short, long)]
     pub database_path_url: String,
+}
+
+// Also used to not repeat the same field multiple times
+#[derive(Args, Debug, Clone)]
+pub struct BatchSizeArg {
+    #[clap(short('b'), default_value("5000"))]
+    pub batch_size: usize,
 }
 
 #[derive(Debug, clap::Args, Clone)]
@@ -139,7 +153,7 @@ pub enum OutputChoice {
     /// Prints the result as a pretty table
     #[group(required = false, multiple = false)]
     Table {
-        #[clap(long, action=ArgAction::SetTrue, default_value="false")]
+        #[clap(long, action=ArgAction::SetTrue, default_value="true")]
         /// Stores the entire query results in the table
         full: bool,
 

@@ -64,8 +64,8 @@ impl ConfigFile {
     pub fn read_json_file(path: &String) -> Result<Self, ConfigFileError> {
         let p = Path::new(&path);
         let f = File::open(p)?;
-
         let mut config_json: ConfigJsonFile = serde_json::from_reader(f)?;
+
 
         if let Some(parent_path) = p.parent() {
             for val in &mut config_json.executables {
