@@ -335,7 +335,6 @@ async fn compute_executable_no_duplicate() {
         .expect("No errors");
 
     assert_eq!(expected.len() - first_batch_size, obs.progression as usize);
-    
 }
 
 async fn remove_all_created_df() {

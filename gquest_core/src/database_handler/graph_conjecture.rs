@@ -273,7 +273,7 @@ impl From<&ExtremalCounterQuery> for SqlSelectQuery {
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassSelection {
-    class_type: ClassType, 
+    class_type: ClassType,
     invariant_to_max: String, // TODO: this cannot appear in the invariant combination ...
     invariants_combination: Vec<String>,
 }

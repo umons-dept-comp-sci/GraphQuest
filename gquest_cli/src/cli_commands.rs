@@ -25,23 +25,6 @@ pub enum Modes {
         #[command(flatten)]
         path: DatabasePath,
     },
-    // /// Compute invariants from a dataset
-    // Compute {
-    //     #[command(flatten)]
-    //     programs: ComputeChoice,
-    //     #[clap(short, default_value = "3")]
-    //     max_processes: usize,
-    //     #[command(flatten)]
-    //     path: DatabasePath,
-    // },
-    // /// Delete a table from a dataset
-    // Delete {
-    //     /// The name of the table/invariant to delete
-    //     #[clap()]
-    //     table_name: String,
-    //     #[command(flatten)]
-    //     path: DatabasePath,
-    // },
     /// Try to find counter examples
     Query {
         #[command(subcommand)]
@@ -75,14 +58,6 @@ pub struct GengArgs {
     /// Either an order list (ex: "1,2,5") or range list (ex: "1:4, 6:10") with inclusive bounds.
     #[clap(name("(order | range) list"))]
     pub order: String,
-    // /// The mininum and/or maximum number of edges of the graphs to generate
-    // #[clap(
-    //     name("edges|min:[max] edges"),
-    //     long("edges"),
-    //     short('e'),
-    //     value_delimiter = ':'
-    // )]
-    // pub edges: Vec<Option<String>>,
     /// The addition parameters to give to geng
     #[clap(long, short)]
     pub params: Option<String>,
@@ -136,13 +111,6 @@ pub struct ComputeChoice {
     #[clap(long, short, value_parser, num_args = 1.., value_delimiter = ' ')]
     pub programs: Vec<String>,
 }
-
-// #[derive(Debug, clap::Args, Clone)]
-// #[group(required = false, multiple = false)]
-// pub struct OutputQueryArgs {
-//     #[command(subcommand)]
-//     pub choice: Option<OutputChoice>,
-// }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum OutputChoice {
