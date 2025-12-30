@@ -37,6 +37,8 @@ impl Observer for CustomObs {
     fn notify_data_pushed(&mut self, delta: u64) {
         self.progression += delta;
     }
+
+    fn finish(self) {}
 }
 
 #[tokio::test]
