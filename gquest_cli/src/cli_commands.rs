@@ -42,6 +42,9 @@ pub enum Modes {
     Summary {
         #[command(flatten)]
         path: DatabasePath,
+        /// [n:m] Only displays the n first and the m last rows. Can improve performances.
+        #[clap(short)]
+        partial: Option<String>,
     },
 }
 
@@ -127,7 +130,7 @@ pub enum OutputChoice {
     /// Prints the result as a pretty table
     #[group(required = false, multiple = false)]
     Table {
-        /// [n:m] Only stores the n first and the m last rows
+        /// [n:m] Only stores the n first and the m last rows. Can improve performances.
         #[clap(short)]
         partial: Option<String>,
     },

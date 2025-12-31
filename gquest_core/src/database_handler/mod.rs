@@ -6,7 +6,7 @@ pub const CANONICAL_TABLE_NAME: &str = "Dataset";
 pub const PK_NAME: &str = "canon";
 
 /// The name of the vertices table of the dataset
-pub const VERTICES_TABLE_NAME: &str = "vertices";
+pub const VERTICES_TABLE_NAME: &str = "n";
 
 pub const INVARIANT_COLUMN_NAME: &str = "value";
 

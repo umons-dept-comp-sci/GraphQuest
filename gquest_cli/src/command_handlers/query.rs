@@ -72,4 +72,22 @@ async fn workplace_counterexample(
     Ok(())
 }
 
+pub async fn summary(path: DatabasePath, partial: Option<String>) -> Result<(), CliError> {
+    // open database :
+    info!("Opening database");
+    let db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+
+    let table_opt = if let Some(partial) = partial {
+        ArgParser::parse_partial_table(&partial)?
+    } else {
+        QueryTableOptions::Full
+    };
+
+    let res = db.print_all_tables(table_opt).await;
+    info!("Closing database");
+    db.close_connection().await;
+
+    Ok(res?)
+}
+
 // ../../../target/release/gquest_cli query resources/conj_1/conj_1.json "max(ag: vertices), r >= 2 => conj1 != 0"

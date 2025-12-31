@@ -2,7 +2,10 @@ use clap::Parser;
 use clap_verbosity_flag::{LogLevel, Verbosity};
 use gquest_cli::{
     cli_commands::{CliArg, Modes},
-    command_handlers::{init::add_dataset, query::query_database},
+    command_handlers::{
+        init::add_dataset,
+        query::{query_database, summary},
+    },
 };
 use log::error;
 
@@ -24,19 +27,13 @@ async fn main() {
 
     match match args.cmd {
         Modes::Add { input_method, path } => add_dataset(path, input_method).await,
-        // Modes::Compute {
-        //     programs,
-        //     max_processes,
-        //     path,
-        // } => todo!(),
-        // Modes::Delete { table_name, path } => todo!(),
         Modes::Query {
             output,
             formula,
             config_file,
             path,
         } => query_database(output, formula, config_file, path).await,
-        Modes::Summary { path } => todo!(),
+        Modes::Summary { path, partial } => summary(path, partial).await,
     } {
         Ok(_) => {}
         Err(e) => {

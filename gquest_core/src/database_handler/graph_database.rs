@@ -427,7 +427,10 @@ where
     }
 
     /// Pretty prints all table to the standart output.
-    pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
+    pub async fn print_all_tables(
+        &self,
+        table_option: QueryTableOptions,
+    ) -> Result<(), GraphDbRuntimeError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
         if tables.is_empty() {
@@ -435,10 +438,7 @@ where
             return Ok(());
         }
         for table in tables {
-            let mut query_table = QueryTable::new_no_header(QueryTableOptions::Partial {
-                first_rows_count: 10,
-                last_rows_count: 10,
-            });
+            let mut query_table = QueryTable::new_no_header(table_option.clone());
             self.fetch_all_row_query(
                 &SqlSelectQuery::select_all_from_table(table),
                 &mut query_table,

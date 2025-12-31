@@ -72,20 +72,28 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
     res
 }
 
+/// Gets all the names of the invariants to compute in order to find the extremal graphs.
+pub fn get_extremal_invariants(
+    selection: &ClassSelection,
+    additional_condition: &Option<SqlCondition>,
+) -> HashSet<String> {
+    let mut all_inv = HashSet::new();
+    all_inv.insert(selection.invariant_to_max.clone());
+    all_inv.extend(selection.invariants_combination.clone());
+
+    if let Some(additional_cond) = &additional_condition {
+        all_inv.extend(get_all_inv_column(additional_cond));
+    }
+
+    all_inv
+}
+
 impl ExtremalCounterQuery {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
     pub fn get_invariants_to_compute(&self) -> HashSet<String> {
-        let mut all_inv = HashSet::new();
-        all_inv.insert(self.selection.invariant_to_max.clone());
-        all_inv.extend(self.selection.invariants_combination.clone());
-
-        if let Some(additional_cond) = &self.additional_condition {
-            all_inv.extend(get_all_inv_column(additional_cond));
-        }
-
-        all_inv
+        get_extremal_invariants(&self.selection, &self.additional_condition)
     }
 
     pub fn as_sql<DB>(&self) -> String
@@ -346,7 +354,7 @@ impl From<&ClassSelection> for SqlTableSelection {
                 .into()
             },
             join_clause: None,
-            rename_as: Some("extremal".to_string()),
+            rename_as: Some(EXTREMAL_TABLE_NAME.to_string()),
         }
     }
 }

@@ -11,8 +11,9 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
-        GraphDbStartupError, SqlSelectQuery, VERTICES_TABLE_NAME,
+        ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
+        GraphDbStartupError, SqlCondition, SqlSelectQuery, SqlTableSelection, VERTICES_TABLE_NAME,
+        get_extremal_invariants,
     },
     utils::{SaveOutput, config_file::ConfigFile},
 };
@@ -177,6 +178,38 @@ where
             handle?
         }
         info!("Finished waiting for threads");
+        Ok(())
+    }
+
+    pub async fn find_extremals<O: SaveOutput>(
+        &mut self,
+        extremal: ClassSelection,
+        additional_condition: Option<SqlCondition>,
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
+        let mut extremal_inv = get_extremal_invariants(&extremal, &additional_condition);
+
+        // This table is used but is not part of any executable
+        extremal_inv.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
+        info!("Find extremal graphs of {:?}", extremal);
+
+        if !extremal_inv.is_empty() {
+            let invariant_necessary =
+                ExecutableSorter::new_from(self.config.get_execs_ref(), &extremal_inv)?;
+            // Compute them
+            self.execute_invariant_execs(invariant_necessary, None, vec![])
+                .await?;
+        }
+
+        // Get them
+        let table: SqlTableSelection = extremal.into();
+        let mut query = SqlSelectQuery::select_all_from_table(table);
+        if let Some(add_cond) = additional_condition {
+            query = query.set_where_clause(add_cond);
+        }
+
+        self.db.fetch_all_row_query(&query, output).await?;
+
         Ok(())
     }
 

@@ -83,7 +83,7 @@ pub struct QueryTable {
 }
 
 impl QueryTable {
-    /// Creates a new empty [`QueryTable`]
+    /// Creates a new [`QueryTable`] with the given header.
     pub fn new<T: Into<String> + Clone>(header: Vec<T>, mode: QueryTableOptions) -> Self {
         let mut res = Self::new_no_header(mode);
 
@@ -92,6 +92,7 @@ impl QueryTable {
         res
     }
 
+    /// Creates a new empty [`QueryTable`] where the first added line will be considered as the header.
     pub fn new_no_header(mode: QueryTableOptions) -> Self {
         Self {
             curr_index: 0,
