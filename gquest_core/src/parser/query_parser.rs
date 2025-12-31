@@ -107,11 +107,11 @@ impl QueryParser {
             }
         };
 
-        Ok(Self::_parse_condition(input))
+        Ok(Self::parse_condition_rule(input))
     }
 
     /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
-    /// For example : `min(p_gn: n,m), d_nm => conj1 = 1`
+    /// For example : `min(p_gn: n,m), d_nm >= 3 => conj1 = 1`
     pub fn parse_conj_query(input: impl ToString) -> Result<ExtremalCounterQuery, ParsingError> {
         let input_str = input.to_string();
         let input = match QueryParser::parse(Rule::conj_query, &input_str) {
@@ -121,10 +121,27 @@ impl QueryParser {
             }
         };
 
-        Self::_parse_conj_query(input)
+        Self::parse_conj_query_rule(input)
     }
 
-    fn _parse_condition(rule: Pair<'_, Rule>) -> SqlCondition {
+    /// Parses an extremal query.
+    /// For example : `min(p_gn: n,m), d_nm >= 3
+    pub fn parse_extremal_query(
+        input: impl ToString,
+    ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
+        let input_str = input.to_string();
+        let input = match QueryParser::parse(Rule::extremal_query, &input_str) {
+            Ok(mut input) => input.next().expect("one present"),
+            Err(e) => {
+                return Err(get_parsing_error(e));
+            }
+        };
+        let inner_rule = input.into_inner().next().expect("one subrule");
+
+        Self::parse_extremal_selection_rule(inner_rule)
+    }
+
+    fn parse_condition_rule(rule: Pair<'_, Rule>) -> SqlCondition {
         let mut inner_rules = rule.into_inner();
         if inner_rules.len() == 1 {
             // comparison
@@ -141,7 +158,7 @@ impl QueryParser {
                     Rule::binary_op => {
                         binary_op = Some(inner_rule.into_inner().next().expect("one value"));
                     }
-                    Rule::condition => condition = Some(Self::_parse_condition(inner_rule)),
+                    Rule::condition => condition = Some(Self::parse_condition_rule(inner_rule)),
                     _ => unreachable!(),
                 }
             }
@@ -162,11 +179,11 @@ impl QueryParser {
                 Rule::not_comparison => {
                     // made up of a condition
                     // parse inner condition
-                    SqlCondition::not(Self::_parse_condition(
+                    SqlCondition::not(Self::parse_condition_rule(
                         inner_rule.into_inner().next().expect("at least one"),
                     ))
                 }
-                Rule::condition => Self::_parse_condition(inner_rule),
+                Rule::condition => Self::parse_condition_rule(inner_rule),
                 _ => unreachable!(),
             }
         } else {
@@ -198,7 +215,7 @@ impl QueryParser {
         }
     }
 
-    fn _parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
+    fn parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
         let rule_str = rule.as_str();
         let inner_rules = rule.into_inner();
 
@@ -240,26 +257,37 @@ impl QueryParser {
         }
     }
 
-    fn _parse_conj_query(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
+    fn parse_conj_query_rule(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
-        let selection = Self::_parse_extremal(inner_rules.next().expect("extramal present"))?;
-        let additional_condition = if inner_rules.len() == 3 {
-            Some(Self::_parse_condition(
-                inner_rules.next().expect("extramal present"),
-            ))
-        } else {
-            None
-        };
+        let (selection, additional_condition) = Self::parse_extremal_selection_rule(
+            inner_rules.next().expect("extremal query present"),
+        )?;
 
         let conjecture_to_disprove =
-            Self::_parse_condition(inner_rules.next().expect("extramal present"));
+            Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
 
         Ok(ExtremalCounterQuery {
             selection,
             additional_condition,
             conjecture_to_disprove,
         })
+    }
+
+    fn parse_extremal_selection_rule(
+        rule: Pair<'_, Rule>,
+    ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
+        let mut inner_rules = rule.into_inner();
+        let selection = Self::parse_extremal(inner_rules.next().expect("extramal present"))?;
+        let additional_condition = if inner_rules.len() == 1 {
+            Some(Self::parse_condition_rule(
+                inner_rules.next().expect("condition present"),
+            ))
+        } else {
+            None
+        };
+
+        Ok((selection, additional_condition))
     }
 }
 
@@ -312,11 +340,14 @@ fn create_comparison(
 
 #[cfg(test)]
 mod tests {
+    use std::string::ParseError;
+
     use crate::{
         database_handler::{
-            ArgType, ClassSelection, ClassType, ExtremalCounterQuery, SqlComparison, SqlCondition,
+            ArgType, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery,
+            SqlComparison, SqlCondition,
         },
-        parser::query_parser::QueryParser,
+        parser::query_parser::{ParsingError, QueryParser},
     };
 
     #[test]
@@ -380,6 +411,46 @@ mod tests {
     }
 
     #[test]
+    fn parse_extremal_query() {
+        assert!(matches!(
+            QueryParser::parse_extremal_query("min(p_gn: m,n), d_nm >= 3"),
+            Ok(
+                (selection, additional_condition)
+            )
+            if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
+            ArgType::Identifier("d_nm".to_string()),
+            ArgType::Value("3".to_string())),
+        ))));
+
+        assert!(matches!(
+        QueryParser::parse_extremal_query("min(p_gn)"),
+        Ok(
+            (selection, additional_condition)
+        )
+        if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none()
+        ));
+
+        assert!(matches!(
+            QueryParser::parse_extremal_query("min(p_gn), d >"),
+            Err(ParsingError::ParseError {
+                col_pos: _,
+                input: _,
+                missing_token: _
+            })
+        ));
+
+        assert!(matches!(
+            QueryParser::parse_extremal_query("min(p_gn: p_gn), d > 4"),
+            Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
+        ));
+
+        assert!(matches!(
+            QueryParser::parse_extremal_query("min(p_gn: g, d, g), d > 4"),
+            Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
+        ));
+    }
+
+    #[test]
     fn parse_conj_query() {
         assert!(matches!(
             QueryParser::parse_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1 = 1"),
@@ -398,5 +469,16 @@ mod tests {
             )
             if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none() 
             && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
+
+        
+        assert!(matches!(
+            QueryParser::parse_conj_query("min(p_gn: p_gn) => conj1 = 1"),
+            Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
+        ));
+
+        assert!(matches!(
+            QueryParser::parse_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
+            Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
+        ));
     }
 }

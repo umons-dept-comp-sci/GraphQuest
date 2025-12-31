@@ -471,7 +471,7 @@ where
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
-        } else if col_type == "REAL" {
+        } else if col_type == "REAL" || col_type == "NULL" {
             let value = row.get::<f64, usize>(col_index);
             value.to_string()
         } else if col_type == "TEXT" {

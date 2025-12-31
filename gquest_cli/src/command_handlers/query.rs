@@ -1,13 +1,13 @@
 use gquest_core::{
-    database_handler::SqliteGraphDB,
-    parser::query_parser::QueryParser,
+    database_handler::{ClassSelection, ExtremalCounterQuery, SqlCondition, SqliteGraphDB},
+    parser::query_parser::{ParsingError, QueryParser},
     utils::{
-        StdoutOutput,
+        SaveOutput, StdoutOutput,
         config_file::ConfigFile,
         csv_utils::CsvFile,
         table_handler::{QueryTable, QueryTableOptions},
     },
-    workplace::Workplace,
+    workplace::{Workplace, WorkplaceError},
 };
 use log::info;
 
@@ -27,13 +27,13 @@ pub async fn query_database(
     info!("Opening database");
     let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
     // Store the result, then close the database even if we encountered an error
-    let res = workplace_counterexample(&mut db, output, formula, config_file).await;
+    let res = execute_query(&mut db, output, formula, config_file).await;
     info!("Closing database");
     db.close_connection().await;
     res
 }
 
-async fn workplace_counterexample(
+async fn execute_query(
     db: &mut SqliteGraphDB,
     output: OutputChoice,
     formula: String,
@@ -41,19 +41,43 @@ async fn workplace_counterexample(
 ) -> Result<(), CliError> {
     info!("Opening config file");
     let config = ConfigFile::read_json_file(&config_file)?;
+
+    // try to parse query:
+    let res = QueryParser::parse_conj_query(formula.clone());
+    match res {
+        Ok(conj_query) => workplace_counterexample(db, output, conj_query, config).await,
+        Err(e) => {
+            if let ParsingError::ClassSelectionError(_, _) = &e {
+                Err(CliError::QueryParserError(e))
+            } else {
+                // Try a second parse but this time as an extremal selection :
+                let (selection, add_cond) = QueryParser::parse_extremal_query(formula)?;
+                workplace_extremal_query(db, output, selection, add_cond, config).await
+            }
+        }
+    }
+}
+
+async fn workplace_extremal_query(
+    db: &mut SqliteGraphDB,
+    output: OutputChoice,
+    selection: ClassSelection,
+    add_cond: Option<SqlCondition>,
+    config: ConfigFile,
+) -> Result<(), CliError> {
+    info!("Opening config file");
     let mut wp = Workplace::new(db, config);
-    info!("Parsing query");
-    let query = QueryParser::parse_conj_query(formula)?;
 
     info!("Executing query with workplace");
     match output {
         OutputChoice::File { path, separator } => {
             // open csv file
             let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
-            wp.find_counterexamples(query, &mut csv).await?;
+            wp.find_extremals(selection, add_cond, &mut csv).await?;
         }
         OutputChoice::Stdout => {
-            wp.find_counterexamples(query, &mut StdoutOutput).await?;
+            wp.find_extremals(selection, add_cond, &mut StdoutOutput)
+                .await?;
             info!("Finished executing query");
         }
         OutputChoice::Table { partial } => {
@@ -63,7 +87,44 @@ async fn workplace_counterexample(
                 QueryTableOptions::Full
             };
             let mut table = QueryTable::new_no_header(options);
-            wp.find_counterexamples(query, &mut table).await?;
+            wp.find_extremals(selection, add_cond, &mut table).await?;
+            info!("Finished executing query");
+            println!("{table}");
+        }
+    };
+
+    Ok(())
+}
+
+async fn workplace_counterexample(
+    db: &mut SqliteGraphDB,
+    output: OutputChoice,
+    conj_query: ExtremalCounterQuery,
+    config: ConfigFile,
+) -> Result<(), CliError> {
+    info!("Opening config file");
+    let mut wp = Workplace::new(db, config);
+
+    info!("Executing query with workplace");
+    match output {
+        OutputChoice::File { path, separator } => {
+            // open csv file
+            let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
+            wp.find_counterexamples(conj_query, &mut csv).await?;
+        }
+        OutputChoice::Stdout => {
+            wp.find_counterexamples(conj_query, &mut StdoutOutput)
+                .await?;
+            info!("Finished executing query");
+        }
+        OutputChoice::Table { partial } => {
+            let options = if let Some(partial_input) = partial {
+                ArgParser::parse_partial_table(&partial_input)?
+            } else {
+                QueryTableOptions::Full
+            };
+            let mut table = QueryTable::new_no_header(options);
+            wp.find_counterexamples(conj_query, &mut table).await?;
             info!("Finished executing query");
             println!("{table}");
         }

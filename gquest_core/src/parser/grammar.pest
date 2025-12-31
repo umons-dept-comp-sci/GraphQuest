@@ -2,7 +2,13 @@
 WHITESPACE = _{ " " | "\t" }
 
 // example : min(p_qn: n, m), d > 3 => conj1 = 0
-conj_query = { extremal ~ ("," ~ condition)? ~ implication ~ condition ~ EOI } 
+conj_query = { extremal_selection ~ implication ~ condition ~ EOI } 
+
+
+extremal_query =  { extremal_selection ~ EOI }
+
+extremal_selection =  { extremal ~ ("," ~ condition)? }
+
 
 // Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m) 
 extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)* )?  ~ ")" }
