@@ -1,0 +1,81 @@
+{
+  "batch_size": 5000,
+  "nb_threads": 10,
+  "executables": [
+    {
+      "path": "P_Gn.py",
+      "names": [
+        "P_Gn"
+      ]
+    },
+    {
+      "path": "km_rm.py",
+      "names": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "is_Bmn.py",
+      "names": [
+        "is_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "P_Bmn.py",
+      "names": [
+        "P_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "randie_index.py",
+      "names": [
+        "r"
+      ]
+    },
+    {
+      "path": "arithmetic_geo_index.py",
+      "names": [
+        "ag"
+      ]
+    },
+    {
+      "path": "edges.py",
+      "names": [
+        "m"
+      ]
+    },
+    {
+      "path": "conj_1.py",
+      "names": [
+        "conj1"
+      ],
+      "dep": [
+        "ag", "r"
+      ]
+    },
+    {
+      "path": "d_nm.py",
+      "names": [
+        "d_nm", "m"
+      ]
+    },
+    {
+      "path": "comp.py",
+      "names": [
+        "eci", "comp"
+      ],
+      "dep": [
+        "d_nm"
+      ]
+    }
+  ]
+}

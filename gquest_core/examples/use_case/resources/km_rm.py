@@ -24,10 +24,10 @@ if __name__ == "__main__":
         if m not in memory:
             memory[m] = (greatest_triangle_number_less_than(m), remainder_m(m))
         if flush_count >= max_flush_count-1:
-            print(sig, m, *memory[m], flush=True)
+            print(sig, *memory[m], flush=True)
             flush_count = 0
         else:
-            print(sig, m, *memory[m], flush=False)
+            print(sig, *memory[m], flush=False)
             flush_count += 1
         
     print()
