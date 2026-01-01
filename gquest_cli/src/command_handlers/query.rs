@@ -2,12 +2,12 @@ use gquest_core::{
     database_handler::{ClassSelection, ExtremalCounterQuery, SqlCondition, SqliteGraphDB},
     parser::query_parser::{ParsingError, QueryParser},
     utils::{
-        SaveOutput, StdoutOutput,
+        StdoutOutput,
         config_file::ConfigFile,
         csv_utils::CsvFile,
         table_handler::{QueryTable, QueryTableOptions},
     },
-    workplace::{Workplace, WorkplaceError},
+    workplace::Workplace,
 };
 use log::info;
 

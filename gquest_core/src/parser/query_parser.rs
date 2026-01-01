@@ -340,8 +340,6 @@ fn create_comparison(
 
 #[cfg(test)]
 mod tests {
-    use std::string::ParseError;
-
     use crate::{
         database_handler::{
             ArgType, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery,
@@ -470,7 +468,6 @@ mod tests {
             if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none() 
             && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
 
-        
         assert!(matches!(
             QueryParser::parse_conj_query("min(p_gn: p_gn) => conj1 = 1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
