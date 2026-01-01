@@ -481,6 +481,36 @@ where
         }
     }
 
+    /// Removes the dataset and the related vertices table from the database.
+    /// Does not return an error if no dataset were present.
+    pub async fn remove_dataset(&mut self) -> Result<(), GraphDbRuntimeError> {
+        if self.is_table_added(CANONICAL_TABLE_NAME).await? {
+            let query = DB::get_delete_table_query(CANONICAL_TABLE_NAME);
+            DB::execute_query_no_return(&self.pool, QueryBuilder::new(query)).await?;
+        }
+
+        if self.is_table_added(VERTICES_TABLE_NAME).await? {
+            let query = DB::get_delete_table_query(VERTICES_TABLE_NAME);
+            DB::execute_query_no_return(&self.pool, QueryBuilder::new(query)).await?;
+        }
+        Ok(())
+    }
+
+    /// Removes all tables from the dataset.
+    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let table_names = Self::get_all_table_names(self).await?;
+
+        for table in table_names {
+            DB::execute_query_no_return(
+                &self.pool,
+                QueryBuilder::new(DB::get_delete_table_query(table)),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
     /// Will not crash if a signature was already added previously.
     /// If provided, the observer will be notified of every data pushed to the dataset and will tick after reading each signature.

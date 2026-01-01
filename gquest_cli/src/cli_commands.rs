@@ -25,6 +25,12 @@ pub enum Modes {
         #[command(flatten)]
         path: DatabasePath,
     },
+    Remove {
+        #[command(flatten)]
+        path: DatabasePath,
+        #[command(subcommand)]
+        choice: RemoveChoice,
+    },
     /// Try to find counter examples
     Query {
         #[command(subcommand)]
@@ -134,4 +140,12 @@ pub enum OutputChoice {
         #[clap(short)]
         partial: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum RemoveChoice {
+    /// Clears the datasets from the given database.
+    Dataset,
+    /// Clears the entire datasets tables, even if not related to gquest !
+    All,
 }

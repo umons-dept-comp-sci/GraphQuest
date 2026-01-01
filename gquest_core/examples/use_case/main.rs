@@ -1,42 +1,36 @@
-use std::time::Duration;
+// use std::time::Duration;
 
-use gquest_core::{
-    data_handler::data_loader::GengProcess,
-    database_handler::{
-        ArgType, ClassSelection, ClassType, ExtremalCounterQuery, GraphDatabase, SqlComparison,
-        SqlCondition, SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
-    },
-    utils::{
-        config_file::ConfigFile,
-        table_handler::{QueryTable, QueryTableOptions},
-    },
-    workplace::{self, Workplace},
-};
-use log::*;
-use sqlx::Sqlite;
-use tabled::settings::TableOption;
+// use gquest_core::{
+//     data_handler::data_loader::GengProcess,
+//     database_handler::{
+//         ArgType, ClassSelection, ClassType, ExtremalCounterQuery, GraphDatabase, SqlComparison,
+//         SqlCondition, SqlSelectQuery, SqliteGraphDB, SqlxLogLevels,
+//     },
+//     utils::{
+//         config_file::ConfigFile,
+//         table_handler::{QueryTable, QueryTableOptions},
+//     },
+//     workplace::{self, Workplace},
+// };
+// use log::*;
 
-const DB_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
-const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/b_mn/configs.json";
-const CONFIG_PATH_ECCENTRIC: &str =
-    "gquest_core/examples/use_case/resources/eccentric/zhang_liu_zhou.json";
-const CONFIG_PATH_CONJ_1: &str = "gquest_core/examples/use_case/resources/conj_1/conj_1.json";
-const CONFIG_PATH_CONJ_2: &str = "gquest_core/examples/use_case/resources/b_mn/conj_2.json";
+// const DB_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
+// const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/b_mn/configs.json";
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    startup_log();
-    info!("Program starts");
+    //     startup_log();
+    //     info!("Program starts");
 
-    let log_levels = Some(SqlxLogLevels {
-        log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
-    });
+    //     let log_levels = Some(SqlxLogLevels {
+    //         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
+    //     });
 
-    // TODO: Here
-    // let res = example_conj1(log_levels).await;
-    // println!("{res}");
+    //     // TODO: Here
+    //     // let res = example_conj1(log_levels).await;
+    //     // println!("{res}");
 
-    info!("Program ends");
+    //     info!("Program ends");
 }
 
 // async fn example_eccentric(log_levels: Option<SqlxLogLevels>) -> QueryTable {
@@ -192,12 +186,12 @@ async fn main() {
 //     res
 // }
 
-/// Starts the log environment
-pub fn startup_log() {
-    env_logger::builder()
-        .filter(Some("sqlx::query"), LevelFilter::Debug)
-        .filter_level(log::LevelFilter::Debug)
-        .format_target(true)
-        .format_timestamp(None)
-        .init();
-}
+// /// Starts the log environment
+// pub fn startup_log() {
+//     env_logger::builder()
+//         .filter(Some("sqlx::query"), LevelFilter::Debug)
+//         .filter_level(log::LevelFilter::Debug)
+//         .format_target(true)
+//         .format_timestamp(None)
+//         .init();
+// }

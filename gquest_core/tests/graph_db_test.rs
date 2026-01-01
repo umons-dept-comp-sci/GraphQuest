@@ -143,6 +143,69 @@ async fn is_table_added_test() {
 }
 
 #[tokio::test]
+async fn remove_dataset_test() {
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
+
+    let (_, geng_reader) = get_geng_values();
+
+    test.add_to_dataset(geng_reader, 1000, None)
+        .await
+        .expect("no issues");
+
+    test.remove_dataset().await.expect("no isses");
+
+    assert!(
+        !test
+            .is_table_added(CANONICAL_TABLE_NAME)
+            .await
+            .expect("no issues")
+    );
+    assert!(
+        !test
+            .is_table_added(VERTICES_TABLE_NAME)
+            .await
+            .expect("no issues")
+    );
+}
+
+#[tokio::test]
+async fn clear_database_test() {
+    let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
+        .await
+        .unwrap();
+
+    let (_, geng_reader) = get_geng_values();
+
+    test.add_to_dataset(geng_reader, 1000, None)
+        .await
+        .expect("no issues");
+    test.add_table(
+        "test",
+        "test",
+        gquest_core::database_handler::ColumnType::Boolean {
+            default_value: None,
+        },
+        "test_value",
+        gquest_core::database_handler::ColumnType::Boolean {
+            default_value: None,
+        },
+    )
+    .await
+    .expect("no problem");
+
+    test.clear_database().await.expect("no isses");
+
+    assert!(
+        test.get_all_table_names()
+            .await
+            .expect("no issues")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn get_size_of_table_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await

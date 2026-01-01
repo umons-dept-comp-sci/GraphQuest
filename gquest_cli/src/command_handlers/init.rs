@@ -6,7 +6,7 @@ use log::{error, info};
 
 use crate::{
     CliError,
-    cli_commands::{DatabasePath, DatasetChoice},
+    cli_commands::{DatabasePath, DatasetChoice, RemoveChoice},
     command_handlers::arg_parser::ArgParser,
     progress_bar::GquestProgressBar,
 };
@@ -75,4 +75,25 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
     db.close_connection().await;
 
     Ok(val?)
+}
+
+/// Creates a database (or simply connects to the existant one) and adds a dataset using the prefered way of the user
+pub async fn remove_dataset(
+    path: DatabasePath,
+    remove_choice: RemoveChoice,
+) -> Result<(), CliError> {
+    info!("Opening database");
+    let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+
+    match remove_choice {
+        RemoveChoice::Dataset => {
+            db.remove_dataset().await?;
+        }
+        RemoveChoice::All => {
+            db.clear_database().await?;
+        }
+    }
+    info!("Closing database");
+    db.close_connection().await;
+    Ok(())
 }

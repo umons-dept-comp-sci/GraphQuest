@@ -482,7 +482,7 @@ where
     ) -> String;
 
     /// Returns the query that can be used to delete a table with the given name from the dataset
-    fn get_delete_table_query() -> String;
+    fn get_delete_table_query(name: impl ToString) -> String;
 
     /// Turns the given query to a valid Sql query that could be executed using this database system.
     ///
