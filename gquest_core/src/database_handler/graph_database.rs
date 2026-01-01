@@ -10,6 +10,7 @@ use crate::data_handler::invariant_execs::{
     AsyncInvariantInput, AsyncInvariantOutput, InvariantsExecutable,
 };
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
 
@@ -426,7 +427,10 @@ where
     }
 
     /// Pretty prints all table to the standart output.
-    pub async fn print_all_tables(&self) -> Result<(), GraphDbRuntimeError> {
+    pub async fn print_all_tables(
+        &self,
+        table_option: QueryTableOptions,
+    ) -> Result<(), GraphDbRuntimeError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
         if tables.is_empty() {
@@ -434,19 +438,14 @@ where
             return Ok(());
         }
         for table in tables {
-            let table_query = self
-                .fetch_all_row_query(
-                    &SqlSelectQuery::select_all_from_table(table),
-                    QueryTableOptions::Partial {
-                        first_rows_count: 10,
-                        last_rows_count: 10,
-                    },
-                )
-                .await?;
+            let mut query_table = QueryTable::new_no_header(table_option.clone());
+            self.fetch_all_row_query(
+                &SqlSelectQuery::select_all_from_table(table),
+                &mut query_table,
+            )
+            .await?;
 
-            if let Some(table) = table_query {
-                println!("{table}");
-            }
+            println!("{query_table}");
         }
 
         Ok(())
@@ -472,7 +471,7 @@ where
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
-        } else if col_type == "REAL" {
+        } else if col_type == "REAL" || col_type == "NULL" {
             let value = row.get::<f64, usize>(col_index);
             value.to_string()
         } else if col_type == "TEXT" {
@@ -480,6 +479,36 @@ where
         } else {
             "No string value".to_string()
         }
+    }
+
+    /// Removes the dataset and the related vertices table from the database.
+    /// Does not return an error if no dataset were present.
+    pub async fn remove_dataset(&mut self) -> Result<(), GraphDbRuntimeError> {
+        if self.is_table_added(CANONICAL_TABLE_NAME).await? {
+            let query = DB::get_delete_table_query(CANONICAL_TABLE_NAME);
+            DB::execute_query_no_return(&self.pool, QueryBuilder::new(query)).await?;
+        }
+
+        if self.is_table_added(VERTICES_TABLE_NAME).await? {
+            let query = DB::get_delete_table_query(VERTICES_TABLE_NAME);
+            DB::execute_query_no_return(&self.pool, QueryBuilder::new(query)).await?;
+        }
+        Ok(())
+    }
+
+    /// Removes all tables from the dataset.
+    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let table_names = Self::get_all_table_names(self).await?;
+
+        for table in table_names {
+            DB::execute_query_no_return(
+                &self.pool,
+                QueryBuilder::new(DB::get_delete_table_query(table)),
+            )
+            .await?;
+        }
+
+        Ok(())
     }
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
@@ -524,15 +553,18 @@ where
         let mut data_batch = vec![];
 
         for canonical_form in reader.lines().map_while(Result::ok) {
-            let value = get_nb_vertices(&canonical_form);
+            // Check input and get value
+            let value = get_nb_vertices(&canonical_form)?;
             signature_batch.push(canonical_form);
             data_batch.push(value.to_string());
 
             if data_batch.len() >= batch_size {
+                // push collected data to database
                 push_to_db(&signature_batch, &data_batch, batch_size).await?;
                 if let Some(obs) = &mut optional_obs {
                     obs.notify_data_pushed(batch_size.try_into().expect("val to be u64"));
                 }
+                // Clear has no effect on batch capacity
                 data_batch.clear();
                 signature_batch.clear();
             }
@@ -541,6 +573,7 @@ where
                 obs.notify_tick();
             }
         }
+        // If any is still cached, store it in the database
         if !data_batch.is_empty() {
             push_to_db(&signature_batch, &data_batch, data_batch.len()).await?;
 
@@ -808,12 +841,15 @@ where
     }
 
     /// Fetches and stores all rows from the given query inside a table as strings.
-    pub async fn fetch_all_row_query(
+    pub async fn fetch_all_row_query<O>(
         &self,
         query: &SqlSelectQuery,
-        table_option: QueryTableOptions,
-    ) -> Result<Option<QueryTable>, GraphDbRuntimeError> {
-        let mut table = None;
+        output: &mut O,
+    ) -> Result<(), GraphDbRuntimeError>
+    where
+        O: SaveOutput,
+    {
+        let mut added_headers = false;
         let query = query.to_sql::<DB>();
         // Execute query :
         let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
@@ -821,34 +857,40 @@ where
         while let Some(result_row) = results.next().await {
             let row = result_row?;
             // Fetch all header first
-            if table.is_none() {
+            if !added_headers {
+                added_headers = true;
                 let mut headers = vec![];
                 for col in row.columns() {
                     headers.push(col.name().to_string());
                 }
-                table = Some(QueryTable::new(headers, table_option.clone()));
+                output.push_line(headers);
             }
-            // Store each value from that row
-            table
-                .as_mut()
-                .expect("is some")
-                .push_line(Self::read_row_values(&row));
+            output.push_line(Self::read_row_values(&row));
         }
-        Ok(table)
+        Ok(())
     }
 }
 
-fn get_nb_vertices(signature: &String) -> usize {
+fn get_nb_vertices(signature: &str) -> Result<usize, GraphDbRuntimeError> {
+    let signature = signature.trim(); // remove any space
+
     let signature_byte = signature.as_bytes();
+    // Check signature validity :
+    if signature_byte.is_empty() || !signature_byte.iter().all(|b| *b >= 63 && *b <= 126) {
+        return Err(GraphDbRuntimeError::InvalidSignature(signature.to_owned()));
+    }
     // Check wether it is the extended format or not
     if signature_byte[0] != b'~' {
-        (signature_byte[0] as usize) - 63
+        Ok((signature_byte[0] as usize) - 63)
     }
     // Extended format
     else {
-        (((signature_byte[1] - 63) as usize) << 18)
+        if signature_byte.len() < 5 {
+            return Err(GraphDbRuntimeError::InvalidSignature(signature.to_string()));
+        }
+        Ok((((signature_byte[1] - 63) as usize) << 18)
             | (((signature_byte[2] - 63) as usize) << 12)
             | (((signature_byte[3] - 63) as usize) << 6)
-            | (((signature_byte[4] - 63) as usize) << 3)
+            | (((signature_byte[4] - 63) as usize) << 3))
     }
 }

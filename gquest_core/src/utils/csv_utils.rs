@@ -1,4 +1,8 @@
-use std::{fmt::Display, fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::Path};
+
+use thiserror::Error;
+
+use crate::utils::SaveOutput;
 
 /// Small struct used to make the creation of a *csv* type file easier
 pub struct CsvFile {
@@ -37,6 +41,25 @@ impl CsvFile {
 
         Ok(res)
     }
+    /// Creates a new **empty** file at the given path (or crushes the one already present)
+    /// # Errors
+    /// Will return a [`CsvFileError`] if there was a problem during the creation of the file
+    pub fn new_no_headers(
+        file_path: &String,
+        separator: Option<char>,
+    ) -> Result<Self, CsvFileError> {
+        let path = Path::new(&file_path);
+        let file = match File::create(path) {
+            Ok(f) => f,
+            Err(_) => return Err(CsvFileError::CreationError(file_path.to_string())),
+        };
+
+        Ok(Self {
+            file,
+            file_path: file_path.to_string(),
+            separator: separator.unwrap_or(','),
+        })
+    }
 
     /// Writes lines to the csv
     ///
@@ -74,29 +97,20 @@ pub fn as_line<T: Into<String> + Clone>(values: &Vec<T>, separator: char) -> Str
     to_write
 }
 
+impl SaveOutput for CsvFile {
+    fn push_line<T: Into<String> + Clone>(&mut self, values: Vec<T>) {
+        let line = as_line(&values, self.separator);
+        self.file.write_all(line.as_bytes()).expect("no save error")
+    }
+}
+
 //______________________________ ERRORS STRUCT
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 /// Enum used to report a [`CsvFile`] error
 pub enum CsvFileError {
-    /// Is used when there is an error during the creation of the file
+    #[error("Could not create the file \"{0}\"")]
     CreationError(String),
-    /// Is used when there is an error when trying to write in the file
+    #[error("Could not write in file \"{0}\"")]
     WriteError(String),
-}
-
-impl Display for CsvFileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get_error_message())
-    }
-}
-
-impl CsvFileError {
-    /// Returns the error message to display for the user
-    fn get_error_message(&self) -> String {
-        match self {
-            CsvFileError::CreationError(name) => format!("Could not create file \"{}\"", name),
-            CsvFileError::WriteError(name) => format!("Could not write in file \"{}\"", name),
-        }
-    }
 }

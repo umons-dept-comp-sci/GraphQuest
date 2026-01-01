@@ -1,0 +1,18 @@
+WHITESPACE = _{ " " | "\t" }
+
+// ___ Order ___
+order = { (int_range_list | int_list) ~ EOI }
+int_list = { int ~ (comma ~ int)* }
+int_range_list = { int_range ~ (comma ~ int_range)* }
+int_range = { int ~ colon ~ int }
+
+// ___ Partial Table selection ___
+partial_table = { partial | partial_no_start | partial_no_end } // Separated to keep code simple and to prevent accepting a single colon character
+partial_no_start = { colon ~ int }
+partial_no_end = { int ~ colon }
+partial = { int ~ colon ~ int }
+
+comma = { "," }
+colon = { ":" }
+
+int = @{ ASCII_DIGIT+ }

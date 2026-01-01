@@ -1,6 +1,7 @@
 use std::{collections::HashSet, vec};
 
 use sqlx::Database;
+use thiserror::Error;
 
 use crate::database_handler::{
     ArgType, DbQuerySystem, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME, SqlComparison,
@@ -16,8 +17,8 @@ pub trait ToSql {
 /// Can be turned into a [`SqlSelectQuery`] in order to be executed by a database system.
 /// # Errors
 /// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
-#[derive(Clone)]
-pub struct ExtremalCounterExampleQuery {
+#[derive(Clone, Debug)]
+pub struct ExtremalCounterQuery {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,
     /// The optional additional condition that can further restrict the graph to explore.
@@ -36,7 +37,8 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
             | SqlComparison::GreaterEqual(a, b)
             | SqlComparison::Less(a, b)
             | SqlComparison::LessEqual(a, b)
-            | SqlComparison::Equal(a, b) => {
+            | SqlComparison::Equal(a, b)
+            | SqlComparison::NotEqual(a, b) => {
                 if let ArgType::Identifier(name) = a {
                     res.insert(name.to_string());
                 }
@@ -70,20 +72,28 @@ fn get_all_inv_column(cond: &SqlCondition) -> HashSet<String> {
     res
 }
 
-impl ExtremalCounterExampleQuery {
+/// Gets all the names of the invariants to compute in order to find the extremal graphs.
+pub fn get_extremal_invariants(
+    selection: &ClassSelection,
+    additional_condition: &Option<SqlCondition>,
+) -> HashSet<String> {
+    let mut all_inv = HashSet::new();
+    all_inv.insert(selection.invariant_to_max.clone());
+    all_inv.extend(selection.invariants_combination.clone());
+
+    if let Some(additional_cond) = &additional_condition {
+        all_inv.extend(get_all_inv_column(additional_cond));
+    }
+
+    all_inv
+}
+
+impl ExtremalCounterQuery {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
     pub fn get_invariants_to_compute(&self) -> HashSet<String> {
-        let mut all_inv = HashSet::new();
-        all_inv.insert(self.selection.invariant_to_max.clone());
-        all_inv.extend(self.selection.invariants_combination.clone());
-
-        if let Some(additional_cond) = &self.additional_condition {
-            all_inv.extend(get_all_inv_column(additional_cond));
-        }
-
-        all_inv
+        get_extremal_invariants(&self.selection, &self.additional_condition)
     }
 
     pub fn as_sql<DB>(&self) -> String
@@ -245,14 +255,14 @@ impl ExtremalCounterExampleQuery {
     }
 }
 
-impl From<ExtremalCounterExampleQuery> for SqlSelectQuery {
-    fn from(value: ExtremalCounterExampleQuery) -> Self {
+impl From<ExtremalCounterQuery> for SqlSelectQuery {
+    fn from(value: ExtremalCounterQuery) -> Self {
         (&value).into()
     }
 }
-impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
-    fn from(value: &ExtremalCounterExampleQuery) -> Self {
-        let mut query = ExtremalCounterExampleQuery::with_extremal_graphs(
+impl From<&ExtremalCounterQuery> for SqlSelectQuery {
+    fn from(value: &ExtremalCounterQuery) -> Self {
+        let mut query = ExtremalCounterQuery::with_extremal_graphs(
             &value.selection,
             &value.additional_condition,
             &value.conjecture_to_disprove,
@@ -270,27 +280,44 @@ impl From<&ExtremalCounterExampleQuery> for SqlSelectQuery {
 /// Example: max(`eci`; `n`, `m`)
 ///
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClassSelection {
     class_type: ClassType,
     invariant_to_max: String,
     invariants_combination: Vec<String>,
+}
+#[derive(Error, Debug)]
+pub enum ClassSelectionError {
+    #[error("Cannot group the following invariant with itself \"{0}\"")]
+    CombineWithItself(String),
+    #[error("Invariant appears twice : \"{0}\"")]
+    DuplicateInv(String),
 }
 
 impl ClassSelection {
     pub fn new(
         class_type: ClassType,
         extremal_inv: impl ToString,
-        invariant_combination: Vec<impl ToString>,
-    ) -> Self {
-        Self {
-            class_type,
-            invariant_to_max: extremal_inv.to_string(),
-            invariants_combination: Vec::from_iter(invariant_combination)
-                .iter()
-                .map(|f| f.to_string())
-                .collect(),
+        invariants_combination: Vec<impl ToString>,
+    ) -> Result<Self, ClassSelectionError> {
+        let invariant_to_max = extremal_inv.to_string();
+        let invariants_combination: Vec<String> = Vec::from_iter(invariants_combination)
+            .iter()
+            .map(|f| f.to_string())
+            .collect();
+
+        if invariants_combination.contains(&invariant_to_max) {
+            return Err(ClassSelectionError::CombineWithItself(invariant_to_max));
         }
+        if let Some(val) = check_all_unique(&invariants_combination) {
+            return Err(ClassSelectionError::DuplicateInv(val));
+        }
+
+        Ok(Self {
+            class_type,
+            invariant_to_max,
+            invariants_combination,
+        })
     }
 }
 
@@ -327,12 +354,24 @@ impl From<&ClassSelection> for SqlTableSelection {
                 .into()
             },
             join_clause: None,
-            rename_as: Some("extremal".to_string()),
+            rename_as: Some(EXTREMAL_TABLE_NAME.to_string()),
         }
     }
 }
 
-#[derive(Clone)]
+fn check_all_unique(iter: &Vec<String>) -> Option<String> {
+    let mut hash_set = HashSet::new();
+
+    for val in iter {
+        if !hash_set.insert(val.to_string()) {
+            return Some(val.to_string());
+        }
+    }
+
+    None
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClassType {
     Min,
     Max,

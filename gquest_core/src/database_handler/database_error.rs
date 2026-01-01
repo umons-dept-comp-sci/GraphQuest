@@ -41,6 +41,8 @@ pub enum GraphDbRuntimeError {
     InvariantDependencyError(InvariantsExecutable, String),
     #[error("Ran into an error while computing an executable : \"{0}\"")]
     InvariantExecutionError(#[from] InvariantExecutionError),
+    #[error("The given value is not a valid signature: \"{0}\"")]
+    InvalidSignature(String),
 }
 
 impl From<sqlx::Error> for GraphDbRuntimeError {
@@ -62,6 +64,17 @@ fn sqlx_error_to_db_error(val: sqlx::Error) -> GraphDbRuntimeError {
                     GraphDbRuntimeError::TableAlreadyCreatedError(val)
                 } else if e_str.contains("syntax") {
                     GraphDbRuntimeError::QueryError(val)
+                } else if e_str.contains("no such table:") {
+                    // Error looks like this : `[error details here] no such table: [TABLE NAME]`
+                    let mut e_str_iter = e_str.split("no such table:");
+                    e_str_iter.next(); // Skip 
+
+                    let table_name = e_str_iter
+                        .next()
+                        .expect("table name present")
+                        .trim()
+                        .to_string();
+                    GraphDbRuntimeError::TableNotFoundError { table_name }
                 } else {
                     GraphDbRuntimeError::UnknownError(val)
                 }

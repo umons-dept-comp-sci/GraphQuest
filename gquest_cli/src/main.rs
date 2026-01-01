@@ -2,8 +2,12 @@ use clap::Parser;
 use clap_verbosity_flag::{LogLevel, Verbosity};
 use gquest_cli::{
     cli_commands::{CliArg, Modes},
-    command_handlers::init::{add_dataset},
+    command_handlers::{
+        init::{add_dataset, remove_dataset},
+        query::{query_database, summary},
+    },
 };
+use log::error;
 
 /// Starts log environment using the given verbosity arguments
 fn startup_log<T: LogLevel>(verb: Verbosity<T>) {
@@ -21,20 +25,20 @@ async fn main() {
     let args = CliArg::parse();
     startup_log(args.verbose);
 
-    match args.cmd {
-        Modes::Add { input_method, path } => add_dataset(path, input_method),
-        Modes::Compute {
-            programs,
-            max_processes,
-            path,
-        } => todo!(),
-        Modes::Delete { table_name, path } => todo!(),
+    match match args.cmd {
+        Modes::Add { input_method, path } => add_dataset(path, input_method).await,
         Modes::Query {
             output,
             formula,
+            config_file,
             path,
-        } => todo!(),
-        Modes::Summary { path } => todo!(),
-    }
-    .await;
+        } => query_database(output, formula, config_file, path).await,
+        Modes::Remove { path, choice } => remove_dataset(path, choice).await,
+        Modes::Summary { path, partial } => summary(path, partial).await,
+    } {
+        Ok(_) => {}
+        Err(e) => {
+            error!("{e}");
+        }
+    };
 }

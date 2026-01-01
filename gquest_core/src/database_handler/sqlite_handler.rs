@@ -175,10 +175,6 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         res
     }
 
-    fn get_delete_table_query() -> String {
-        "DROP TABLE $".to_string()
-    }
-
     fn get_insert_into_query(table_name: impl ToString, nb_rows: usize, nb_value: usize) -> String {
         let mut query = format!("INSERT OR REPLACE INTO {} VALUES ", table_name.to_string());
 
@@ -206,6 +202,10 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             "SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{}';",
             table_name.to_string()
         )
+    }
+
+    fn get_delete_table_query(name: impl ToString) -> String {
+        format!("DROP TABLE {}", name.to_string())
     }
 }
 

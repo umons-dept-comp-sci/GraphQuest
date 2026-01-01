@@ -404,7 +404,7 @@ impl InvariantsExecutable {
 /// Such as by checking :
 /// * if an invariant was already added
 /// * if one of it's dependencies does not exists
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct ExecutableSorter {
     /// `Invariant name` -> `Linked Executable path`
     name_path_hashmap: IndexMap<String, PathBuf>,
@@ -423,7 +423,7 @@ impl ExecutableSorter {
     /// Returns an [`InvariantError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
     pub fn new_from(
         all_invariants: &[InvariantsExecutable],
-        inv_to_add: &HashSet<String>,
+        inv_to_add: &HashSet<impl ToString>,
     ) -> Result<Self, InvariantError> {
         let mut res = Self::new();
 
@@ -437,7 +437,7 @@ impl ExecutableSorter {
 
         // Adds all invariants
         for inv_name in inv_to_add {
-            res.add_inv_from_name(all_invariants, &name_index_map, inv_name)?;
+            res.add_inv_from_name(all_invariants, &name_index_map, &inv_name.to_string())?;
         }
 
         Ok(res)
@@ -473,6 +473,17 @@ impl ExecutableSorter {
 
         Ok(())
     }
+
+    // /// Removes the given invariant with this name (if it was present).
+    // pub fn remove_inv_from_name(&mut self, name: &String) {
+    //     let path = self.name_path_hashmap.shift_remove(name);
+    //     if let Some(path) = path {
+    //         // If no invariant is left for this path, remove it
+    //         if self.name_path_hashmap.iter().all(|(_, p)| p != &path) {
+    //             self.path_exec_hashmap.shift_remove(&path);
+    //         }
+    //     }
+    // }
 
     /// Adds an invariant executable to the sorter.
     pub fn add_inv_exec(&mut self, inv: InvariantsExecutable) -> Result<(), InvariantError> {

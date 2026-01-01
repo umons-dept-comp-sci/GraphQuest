@@ -1,4 +1,4 @@
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
@@ -7,7 +7,7 @@ const DEFAULT_URL: &str = "sqlite://gquest.db";
 #[command(
     author("Axel Foucart"),
     version,
-    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2025")
+    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2026")
 )]
 pub struct CliArg {
     #[command(subcommand)]
@@ -18,44 +18,39 @@ pub struct CliArg {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
-    /// Add graphs to an already existing project  
+    /// Add signatures to a database (and creates it if needed).  
     Add {
         #[command(subcommand)]
         input_method: DatasetChoice,
         #[command(flatten)]
         path: DatabasePath,
     },
-    /// Compute invariants from a dataset
-    Compute {
-        #[command(flatten)]
-        programs: ComputeChoice,
-        #[clap(short, default_value = "3")]
-        max_processes: usize,
+    Remove {
         #[command(flatten)]
         path: DatabasePath,
+        #[command(subcommand)]
+        choice: RemoveChoice,
     },
-    /// Delete a table from a dataset
-    Delete {
-        /// The name of the table/invariant to delete
-        #[clap()]
-        table_name: String,
-        #[command(flatten)]
-        path: DatabasePath,
-    },
-    /// Send querries to a database
+    /// Try to find counter examples
     Query {
-        #[command(flatten)]
-        output: OutputQueryArgs,
+        #[command(subcommand)]
+        output: OutputChoice,
+        /// The path to the config file to use
+        #[clap()]
+        config_file: String,
         /// The query to ask the database
         #[clap()]
         formula: String,
         #[command(flatten)]
         path: DatabasePath,
     },
-    /// Show a summary of a project
+    /// Show the tables present in the database
     Summary {
         #[command(flatten)]
         path: DatabasePath,
+        /// [n:m] Only displays the n first and the m last rows. Can improve performances.
+        #[clap(short)]
+        partial: Option<String>,
     },
 }
 
@@ -68,20 +63,11 @@ pub struct DatabasePath {
 
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {
-    /// The order(s) of the graphs to generate
-    #[clap(name("order|min:[max] order"))]
-    // TODO We should allow the user to exclude value from range
+    /// The order(s) of the graphs to generate.
+    /// Either an order list (ex: "1,2,5") or range list (ex: "1:4, 6:10") with inclusive bounds.
+    #[clap(name("(order | range) list"))]
     pub order: String,
-    /// The mininum and/or maximum number of edges of the graphs to generate
-    #[clap(
-        name("edges|min:[max] edges"),
-        long("edges"),
-        short('e'),
-        value_delimiter = ':'
-    )]
-    pub edges: Vec<Option<String>>,
-
-    /// The parameters to give to geng in order to generate a graph of an order
+    /// The addition parameters to give to geng
     #[clap(long, short)]
     pub params: Option<String>,
 }
@@ -92,21 +78,36 @@ pub enum DatasetChoice {
     Geng {
         #[command(flatten)]
         args: GengArgs,
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a file
     File {
         /// The path to were the dataset to add is stored
         path: String,
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a pipe
-    Pipe,
+    Pipe {
+        #[command(flatten)]
+        batch_size: BatchSizeArg,
+    },
 }
 
+// Used to not repeat the same field everywhere
 #[derive(Args, Debug, Clone)]
 struct DatabaseInfoPath {
     /// The path or url to the database to access
     #[clap(short, long)]
     pub database_path_url: String,
+}
+
+// Also used to not repeat the same field multiple times
+#[derive(Args, Debug, Clone)]
+pub struct BatchSizeArg {
+    #[clap(short('b'), default_value("5000"))]
+    pub batch_size: usize,
 }
 
 #[derive(Debug, clap::Args, Clone)]
@@ -120,29 +121,31 @@ pub struct ComputeChoice {
     pub programs: Vec<String>,
 }
 
-#[derive(Debug, clap::Args, Clone)]
-#[group(required = false, multiple = true)]
-pub struct OutputQueryArgs {
-    #[command(subcommand)]
-    pub choice: Option<OutputChoice>,
-    /// Saves the result to a file
-    #[clap(short, long)]
-    pub file: Option<String>,
-}
-
 #[derive(Subcommand, Debug, Clone)]
 pub enum OutputChoice {
+    /// Stores the result as a `csv` file
+    File {
+        /// The path of the file
+        path: String,
+        /// The separator of the values
+        #[clap(short, default_value = ",")]
+        separator: char,
+    },
     /// Prints result line by line to the standart output
-    Stream,
+    Stdout,
     /// Prints the result as a pretty table
     #[group(required = false, multiple = false)]
     Table {
-        #[clap(long, action=ArgAction::SetTrue, default_value="false")]
-        /// Stores the entire query results in the table
-        full: bool,
-
-        /// [n:m] Only stores the n first and the m last rows
-        #[clap(long)]
+        /// [n:m] Only stores the n first and the m last rows. Can improve performances.
+        #[clap(short)]
         partial: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum RemoveChoice {
+    /// Clears the datasets from the given database.
+    Dataset,
+    /// Clears the entire datasets tables, even if not related to gquest !
+    All,
 }

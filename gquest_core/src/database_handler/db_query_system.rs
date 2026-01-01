@@ -25,7 +25,7 @@ pub enum ColumnType {
 }
 
 /// Represents a condition that could appear in a where clause.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlCondition {
     /// A simple comparison
     Operation(SqlComparison),
@@ -151,7 +151,7 @@ impl SqlCondition {
 
 /// Represents a comparison that can be used in an Sql where clause.
 /// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlComparison {
     /// `a > b`
     Greater(ArgType, ArgType),
@@ -163,11 +163,13 @@ pub enum SqlComparison {
     LessEqual(ArgType, ArgType),
     /// `a = b`
     Equal(ArgType, ArgType),
+    /// `a != b`
+    NotEqual(ArgType, ArgType),
 }
 
 /// Used to correctly identify arguments in a comparison,
 /// otherwise it would be hard to guess if they refer to a value or to a column.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArgType {
     Value(String),
     Identifier(String),
@@ -188,7 +190,8 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) | ArgType::Identifier(v) => v,
+                ArgType::Value(v) => format!("\"{v}\""),
+                ArgType::Identifier(v) => v.to_string(),
             }
         )
     }
@@ -205,6 +208,7 @@ impl Display for SqlComparison {
                 SqlComparison::Less(a, b) => format!("{a} < {b}"),
                 SqlComparison::LessEqual(a, b) => format!("{a} <= {b}"),
                 SqlComparison::Equal(a, b) => format!("{a} = {b}"),
+                SqlComparison::NotEqual(a, b) => format!("{a} != {b}"),
             }
         )
     }
@@ -225,7 +229,8 @@ impl SqlComparison {
             | SqlComparison::GreaterEqual(arg_type, arg_type1)
             | SqlComparison::Less(arg_type, arg_type1)
             | SqlComparison::LessEqual(arg_type, arg_type1)
-            | SqlComparison::Equal(arg_type, arg_type1) => {
+            | SqlComparison::Equal(arg_type, arg_type1)
+            | SqlComparison::NotEqual(arg_type, arg_type1) => {
                 if let ArgType::Identifier(name) = arg_type {
                     *name = format!("{prefix}{name}");
                 }
@@ -238,7 +243,7 @@ impl SqlComparison {
 }
 
 /// Represents a table in the From section of an Sql Query.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SqlTableSelection {
     /// The table to select
     pub selected_table: SqlTable,
@@ -289,7 +294,7 @@ impl From<&str> for SqlTableSelection {
 }
 
 /// Represents a table to select in Sql
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SqlTable {
     /// The query used to get this temporary table
     SqlQuery(SqlSelectQuery),
@@ -314,7 +319,7 @@ impl From<&str> for SqlTable {
 
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
     pub select: Vec<String>,
@@ -477,7 +482,7 @@ where
     ) -> String;
 
     /// Returns the query that can be used to delete a table with the given name from the dataset
-    fn get_delete_table_query() -> String;
+    fn get_delete_table_query(name: impl ToString) -> String;
 
     /// Turns the given query to a valid Sql query that could be executed using this database system.
     ///

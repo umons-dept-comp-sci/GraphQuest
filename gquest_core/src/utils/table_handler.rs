@@ -1,6 +1,8 @@
 use std::{collections::VecDeque, fmt::Display, vec};
 use tabled::{builder::Builder, settings::Style};
 
+use crate::utils::SaveOutput;
+
 /// Enum used to specify the options to use when creating a [QueryTable]
 #[derive(Debug, Clone)]
 pub enum QueryTableOptions {
@@ -76,33 +78,44 @@ struct TableData {
 pub struct QueryTable {
     curr_index: usize,
     table_data: TableData,
+    header_added: bool,
     mode: QueryTableOptions,
 }
 
 impl QueryTable {
-    /// Creates a new empty [`QueryTable`]
+    /// Creates a new [`QueryTable`] with the given header.
     pub fn new<T: Into<String> + Clone>(header: Vec<T>, mode: QueryTableOptions) -> Self {
-        let mut res = Self {
-            curr_index: 0,
-            table_data: TableData::default(),
-            mode,
-        };
+        let mut res = Self::new_no_header(mode);
 
-        let mut header_clone = vec![String::from("i")];
-        header_clone.append(&mut to_vec_string(header));
-
-        res.mode.add_line(&mut res.table_data, header_clone);
+        res.push_line(header);
 
         res
     }
 
-    /// Push the given lines in the table, while respecting the options of the table
-    pub fn push_line<T: Into<String> + Clone>(&mut self, values: Vec<T>) {
-        let mut values_indexed = vec![self.curr_index.to_string()];
-        values_indexed.append(&mut to_vec_string(values));
+    /// Creates a new empty [`QueryTable`] where the first added line will be considered as the header.
+    pub fn new_no_header(mode: QueryTableOptions) -> Self {
+        Self {
+            curr_index: 0,
+            table_data: TableData::default(),
+            header_added: false,
+            mode,
+        }
+    }
+}
 
+impl SaveOutput for QueryTable {
+    /// Push the given lines in the table, while respecting the options of the table
+    fn push_line<T: Into<String> + Clone>(&mut self, values: Vec<T>) {
+        let mut values_indexed = if !self.header_added {
+            self.header_added = true;
+            vec![String::from("i")]
+        } else {
+            self.curr_index += 1;
+            vec![(self.curr_index - 1).to_string()]
+        };
+
+        values_indexed.append(&mut to_vec_string(values));
         self.mode.add_line(&mut self.table_data, values_indexed);
-        self.curr_index += 1;
     }
 }
 
@@ -120,6 +133,9 @@ impl Display for QueryTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", {
             let mut builder = Builder::default();
+            if !self.header_added {
+                builder.push_record(vec!["Empty table"]);
+            }
             if self.table_data.first_lines.is_empty() && self.table_data.last_lines.is_empty() {
                 builder.push_record(vec!["     /     "]);
             }

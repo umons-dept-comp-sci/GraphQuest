@@ -86,10 +86,6 @@ impl DbQuerySystem<MySql> for MySql {
         todo!()
     }
 
-    fn get_delete_table_query() -> String {
-        todo!()
-    }
-
     fn get_insert_into_query(
         _table_name: impl ToString,
         _nb_cols: usize,
@@ -111,6 +107,10 @@ impl DbQuerySystem<MySql> for MySql {
     }
 
     fn to_sql(_query: &super::SqlSelectQuery) -> String {
+        todo!()
+    }
+
+    fn get_delete_table_query(_name: impl ToString) -> String {
         todo!()
     }
 }

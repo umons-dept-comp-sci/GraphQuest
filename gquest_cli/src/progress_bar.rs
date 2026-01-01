@@ -16,7 +16,7 @@ impl ProgressBarType {
                 length: _,
                 start: _,
             } => "[{spinner:.green} {elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-            ProgressBarType::Reading => "[{spinner:.red} {elapsed_precise}]",
+            ProgressBarType::Reading => "[{spinner:.green}] - {elapsed_precise} - {msg}",
         })
         .expect("Correct style")
         .progress_chars("#|-")
@@ -25,6 +25,8 @@ impl ProgressBarType {
 
 pub struct GquestProgressBar {
     pb: ProgressBar,
+    update_delay: u64,
+    current: u64,
 }
 
 impl Observer for GquestProgressBar {
@@ -33,20 +35,28 @@ impl Observer for GquestProgressBar {
     }
 
     fn notify_data_pushed(&mut self, delta: u64) {
-        if let Some(length) = self.pb.length() {
-            let new = min(self.pb.position() + delta, length);
-            self.pb.set_position(new);
+        self.current += delta;
+        if self.current >= self.update_delay {
+            if let Some(length) = self.pb.length() {
+                let new = min(self.pb.position() + self.current, length);
+                self.pb.set_position(new);
 
-            if length <= self.pb.position() {
-                self.pb.finish();
+                if length <= self.pb.position() {
+                    self.pb.finish();
+                }
             }
+            self.current = 0;
+            self.pb.tick();
         }
-        self.pb.tick();
     }
 }
 
 impl GquestProgressBar {
-    pub fn new(pb_type: ProgressBarType, message: Option<impl ToString>) -> Self {
+    pub fn new(
+        pb_type: ProgressBarType,
+        message: Option<impl ToString>,
+        update_delay: u64,
+    ) -> Self {
         let pb = match &pb_type {
             ProgressBarType::Iterating { start, length } => {
                 let pb = ProgressBar::new(*length);
@@ -60,10 +70,18 @@ impl GquestProgressBar {
             pb.set_message(msg.to_string());
         }
 
-        Self { pb }
+        Self {
+            pb,
+            update_delay,
+            current: 0,
+        }
     }
 
     pub fn force_finish(&self) {
         self.pb.finish();
+    }
+
+    pub fn set_message(&mut self, new_msg: impl Into<String>) {
+        self.pb.set_message(new_msg.into());
     }
 }

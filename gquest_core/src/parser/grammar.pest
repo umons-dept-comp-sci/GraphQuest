@@ -1,0 +1,65 @@
+// Handles spaces and tabs, which are skipped during parsing.
+WHITESPACE = _{ " " | "\t" }
+
+// example : min(p_qn: n, m), d > 3 => conj1 = 0
+conj_query = { extremal_selection ~ implication ~ condition ~ EOI } 
+
+
+extremal_query =  { extremal_selection ~ EOI }
+
+extremal_selection =  { extremal ~ ("," ~ condition)? }
+
+
+// Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m) 
+extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)* )?  ~ ")" }
+
+extremal_func = { max_func | min_func }
+
+condition = { comparison ~ binary_op ~ condition
+             | comparison }
+
+binary_op = { and_op | or_op }
+
+
+comparison = { primitif ~ comp_operator ~ primitif
+			 | "(" ~ condition ~ ")"
+			 | not_comparison }
+
+not_comparison = { not_op ~ "(" ~ condition ~ ")" }
+
+
+comp_operator = { equal 
+		   | not_equal 
+           | less_equal 
+           | less 
+           | greater_equal 
+           | greater }
+
+primitif = { value | identifier }
+// Either a number (-1.212) or a string value ("a value")
+value = { number | string }
+
+// A value representing an identifier (must start with a letter)
+identifier = @{ ASCII_ALPHA ~ valid_ascii* }
+
+string = { double_quotes ~ valid_ascii+ ~ double_quotes }
+double_quotes = _{ "\"" }
+
+number = { "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+valid_ascii = _{ ASCII_ALPHANUMERIC | "_" }
+
+max_func = { "max" }
+min_func = { "min" }
+
+equal = { "=" | "==" }
+not_equal = { "!" ~ "=" | "≠" }
+less_equal = { "<" ~ "=" | "≤" }
+less = { "<" }
+greater_equal = { ">" ~ "=" | "≥" }
+greater = { ">" }
+
+implication = _{ "⇒" | "=>" }
+
+and_op = { "and" | "∧" }
+or_op = { "or" | "v" }
+not_op = _{ "not" | "!" }
