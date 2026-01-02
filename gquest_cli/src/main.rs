@@ -25,16 +25,20 @@ async fn main() {
     let args = CliArg::parse();
     startup_log(args.verbose);
 
+    let path = args.path;
+
     match match args.cmd {
-        Modes::Add { input_method, path } => add_dataset(path, input_method).await,
+        Modes::Add {
+            input_method,
+            batch_size,
+        } => add_dataset(path, input_method, batch_size).await,
         Modes::Query {
             output,
             formula,
             config_file,
-            path,
         } => query_database(output, formula, config_file, path).await,
-        Modes::Remove { path, choice } => remove_dataset(path, choice).await,
-        Modes::Summary { path, partial } => summary(path, partial).await,
+        Modes::Remove { choice } => remove_dataset(path, choice).await,
+        Modes::Summary { partial } => summary(path, partial).await,
     } {
         Ok(_) => {}
         Err(e) => {

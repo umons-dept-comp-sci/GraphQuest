@@ -13,21 +13,22 @@ pub struct CliArg {
     #[command(subcommand)]
     pub cmd: Modes,
     #[command(flatten)]
+    pub path: DatabasePath,
+    #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
-    /// Add signatures to a database (and creates it if needed).  
+    /// Add signatures to a database (and creates it if needed)
     Add {
         #[command(subcommand)]
         input_method: DatasetChoice,
         #[command(flatten)]
-        path: DatabasePath,
+        batch_size: BatchSizeArg,
     },
+    /// Removes data from the database
     Remove {
-        #[command(flatten)]
-        path: DatabasePath,
         #[command(subcommand)]
         choice: RemoveChoice,
     },
@@ -41,13 +42,9 @@ pub enum Modes {
         /// The query to ask the database
         #[clap()]
         formula: String,
-        #[command(flatten)]
-        path: DatabasePath,
     },
     /// Show the tables present in the database
     Summary {
-        #[command(flatten)]
-        path: DatabasePath,
         /// [n:m] Only displays the n first and the m last rows. Can improve performances.
         #[clap(short)]
         partial: Option<String>,
@@ -68,7 +65,6 @@ pub struct GengArgs {
     #[clap(name("(order | range) list"))]
     pub order: String,
     /// The addition parameters to give to geng
-    #[clap(long, short)]
     pub params: Option<String>,
 }
 
@@ -78,21 +74,14 @@ pub enum DatasetChoice {
     Geng {
         #[command(flatten)]
         args: GengArgs,
-        #[command(flatten)]
-        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a file
     File {
         /// The path to were the dataset to add is stored
         path: String,
-        #[command(flatten)]
-        batch_size: BatchSizeArg,
     },
     /// Imports graph signatures from a pipe
-    Pipe {
-        #[command(flatten)]
-        batch_size: BatchSizeArg,
-    },
+    Pipe {},
 }
 
 // Used to not repeat the same field everywhere

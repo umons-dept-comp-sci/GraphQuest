@@ -6,13 +6,17 @@ use log::{error, info};
 
 use crate::{
     CliError,
-    cli_commands::{DatabasePath, DatasetChoice, RemoveChoice},
+    cli_commands::{BatchSizeArg, DatabasePath, DatasetChoice, RemoveChoice},
     command_handlers::arg_parser::ArgParser,
     progress_bar::GquestProgressBar,
 };
 
 /// Creates a database (or simply connects to the existant one) and adds a dataset using the prefered way of the user
-pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Result<(), CliError> {
+pub async fn add_dataset(
+    path: DatabasePath,
+    input_method: DatasetChoice,
+    batch_size: BatchSizeArg,
+) -> Result<(), CliError> {
     info!("Creating/connecting database at path : {:?}", path.url);
     let mut db = match SqliteGraphDB::connect_create_graph_database(path.url, None).await {
         Ok(db) => db,
@@ -29,7 +33,7 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
     );
     // Store the result, close the database, then return the result up
     let val = match input_method {
-        DatasetChoice::Geng { args, batch_size } => {
+        DatasetChoice::Geng { args } => {
             // Parse input
             let mut res = Ok(());
             for order in ArgParser::parse_order(&args.order)? {
@@ -51,7 +55,7 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
             pb.set_message("Finished loading dataset");
             res
         }
-        DatasetChoice::File { path, batch_size } => {
+        DatasetChoice::File { path } => {
             let file = read_file(&path)?;
             pb.set_message(format!("Reading \"{path}\""));
             let res = db
@@ -60,7 +64,7 @@ pub async fn add_dataset(path: DatabasePath, input_method: DatasetChoice) -> Res
             pb.set_message(format!("Finished reading \"{path}\""));
             res
         }
-        DatasetChoice::Pipe { batch_size } => {
+        DatasetChoice::Pipe {} => {
             pb.set_message("Reading pipe");
             let res = db
                 .add_to_dataset(read_pipe_signatures(), batch_size.batch_size, Some(&mut pb))
