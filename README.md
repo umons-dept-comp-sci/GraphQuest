@@ -27,44 +27,58 @@ The invariant tables always have two columns :
 
 
 ### Adding graphs
-To add new signatures, use the `add` command. 
+To add new signatures, use the "*add*" command. 
 
 ```bash
 gquest add [OPTIONS] <COMMAND>
 ```
 
-A new options is added, `batch_size`, which lets the user decide the maximum number of data that can be held in the memory of $\texttt{gquest}$ before being sent to the database. The bigger this number gets, the more the memory will be used. But it can also improve the performances of the program depending on the limit of how much data a single INSERT query can carry in your database.
+A new options is added, *batch_size*, which lets the user decide the maximum number of data that can be held in the memory of $\texttt{gquest}$ before being sent to the database. The bigger this number gets, the more the memory will be used. But it can also improve the performances of the program depending on the limit of how much data a single INSERT query can carry in your database.
 
-There are 3 possible sub-commands, `geng`, `file` and `pipe`. Each of these lets the user decide on how to import signatures to the dataset.
+There are 3 possible sub-commands, "*geng*", "*file*" and "*pipe*". Each of these lets the user decide on how to import signatures to the dataset.
 
 
 #### geng
-
+Using the `geng` tool from the [Nauty \& Traces collection](https://pallini.di.uniroma1.it/), generates and directly stores graphs in the dataset.
 ```bash
 gquest add geng [OPTIONS] <(order | range) list> [PARAMS]
 ```
 
+* The order of the graphs to generate always needs to be specified. Provide either a list of :
+  - orders (like `1,5,7,3`, which will generate graphs of order 1, 3, 5 and 7).
+  - or ranges of orders (like `1:5, 8:10`, which will generate graphs of orders going from 1 to 10 with the exception of 6 and 7).
+* The optional params fields represent the additional parameters that can be provided to `geng` to control the class of the graph to generate (ex: "c" for connected graphs).
+
+> [!NOTE]
+> To use all of `geng` features, such as controlling the number of edges, you can always use the original tool alongside $\texttt{gquest}$ other commands ("*file*" and "*pipe*"). This command is simply a quick shortcut targeted for simple usage. 
+
+> [!WARNING]
+> The `geng` program needs to be part of your $PATH to use this feature.
+
 #### file
 
+Imports all signatures contained within a text file.
 
 ```bash
 gquest add file [OPTIONS] <PATH>
 ```
+* With the path of the file to read the data from.
+  * The file must contain a signature per line.
 
 #### pipe
 
+Reads signatures from the stdin until it closes.
 
 ```bash
 gquest add pipe [OPTIONS]
 ```
 
+* The value read must only contain one signature per line.
 
 
-### Clearing the database
+### Removing data
 
-## Querrying the database :
-
-### Modules :
+## Modules :
 
 We refer to as an *invariant executable*,  or *module*, a file that matches the following conditions :
 * An **executable** file
@@ -158,4 +172,16 @@ For example :
 size D]w ... DUw
 ``` -->
 
-## Database handling
+## Queries :
+
+
+## Examples :
+
+```
+gquest add geng 1:4, 6:8 "c"
+```
+
+
+```bash
+gquest query "path_to_config.json" "min(P_Gn: m,n), n>=3 => is_Bmn = 1" table -p 2:
+```
