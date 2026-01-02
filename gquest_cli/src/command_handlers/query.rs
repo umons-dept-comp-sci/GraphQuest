@@ -18,16 +18,17 @@ use crate::{
 };
 
 pub async fn query_database(
-    output: OutputChoice,
-    formula: String,
+    output: Option<OutputChoice>,
+    query: String,
     config_file: String,
     path: DatabasePath,
 ) -> Result<(), CliError> {
+    let output = output.unwrap_or(OutputChoice::Table { partial: None });
     // open database :
     info!("Opening database");
     let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
     // Store the result, then close the database even if we encountered an error
-    let res = execute_query(&mut db, output, formula, config_file).await;
+    let res = execute_query(&mut db, output, query, config_file).await;
     info!("Closing database");
     db.close_connection().await;
     res

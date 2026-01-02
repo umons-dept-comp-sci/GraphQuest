@@ -496,10 +496,7 @@ where
         Ok(())
     }
 
-    /// Removes all tables from the dataset.
-    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
-        let table_names = Self::get_all_table_names(self).await?;
-
+    async fn remove_tables(&mut self, table_names: &[String]) -> Result<(), GraphDbRuntimeError> {
         for table in table_names {
             DB::execute_query_no_return(
                 &self.pool,
@@ -509,6 +506,22 @@ where
         }
 
         Ok(())
+    }
+
+    /// Removes all tables from the dataset **except** the dataset (and vertices) table.
+    pub async fn clear_invariants(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let mut table_names = Self::get_all_table_names(self).await?;
+
+        table_names.retain(|name| name != CANONICAL_TABLE_NAME && name != VERTICES_TABLE_NAME);
+
+        self.remove_tables(&table_names).await
+    }
+
+    /// Removes all tables from the dataset (and vertices) table.
+    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
+        let table_names = Self::get_all_table_names(self).await?;
+
+        self.remove_tables(&table_names).await
     }
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.

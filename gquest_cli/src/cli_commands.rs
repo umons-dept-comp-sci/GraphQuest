@@ -21,27 +21,30 @@ pub struct CliArg {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
     /// Add signatures to a database (and creates it if needed)
+    #[command(subcommand_value_name = "SOURCE", subcommand_help_heading = "Sources")]
     Add {
-        #[command(subcommand)]
+        #[command(subcommand, name = "SOURCE")]
         input_method: DatasetChoice,
         #[command(flatten)]
         batch_size: BatchSizeArg,
     },
     /// Removes data from the database
+    #[command(subcommand_value_name = "TARGET", subcommand_help_heading = "Targets")]
     Remove {
-        #[command(subcommand)]
+        #[command(subcommand, name = "TARGET")]
         choice: RemoveChoice,
     },
-    /// Try to find counter examples
+    /// Explore the dataset
+    #[command(subcommand_value_name = "OUTPUT", subcommand_help_heading = "Outputs")]
     Query {
-        #[command(subcommand)]
-        output: OutputChoice,
+        #[command(subcommand, name = "OUTPUT")]
+        output: Option<OutputChoice>,
         /// The path to the config file to use
         #[clap()]
         config_file: String,
         /// The query to ask the database
         #[clap()]
-        formula: String,
+        query: String,
     },
     /// Show the tables present in the database
     Summary {
@@ -122,7 +125,7 @@ pub enum OutputChoice {
     },
     /// Prints result line by line to the standart output
     Stdout,
-    /// Prints the result as a pretty table
+    /// Prints the result as a pretty table (default)
     #[group(required = false, multiple = false)]
     Table {
         /// [n:m] Only stores the n first and the m last rows. Can improve performances.
@@ -133,8 +136,10 @@ pub enum OutputChoice {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum RemoveChoice {
-    /// Clears the datasets from the given database.
+    /// Removes all tables except the dataset.
+    Invariants,
+    /// Removes the dataset from the database.
     Dataset,
-    /// Clears the entire datasets tables, even if not related to gquest !
+    /// Removes all tables from the database, even if not related to gquest !
     All,
 }

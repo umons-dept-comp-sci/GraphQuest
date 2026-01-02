@@ -3,7 +3,7 @@ use clap_verbosity_flag::{LogLevel, Verbosity};
 use gquest_cli::{
     cli_commands::{CliArg, Modes},
     command_handlers::{
-        init::{add_dataset, remove_dataset},
+        add_remove::{add_dataset, remove_dataset},
         query::{query_database, summary},
     },
 };
@@ -34,9 +34,9 @@ async fn main() {
         } => add_dataset(path, input_method, batch_size).await,
         Modes::Query {
             output,
-            formula,
+            query,
             config_file,
-        } => query_database(output, formula, config_file, path).await,
+        } => query_database(output, query, config_file, path).await,
         Modes::Remove { choice } => remove_dataset(path, choice).await,
         Modes::Summary { partial } => summary(path, partial).await,
     } {

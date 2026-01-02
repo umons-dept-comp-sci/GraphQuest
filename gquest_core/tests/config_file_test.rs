@@ -14,7 +14,7 @@ pub const OPTION_FILE: &str = "tests/modules/dep.json";
 pub fn from_value_test() {
     // Correct config file to parse
     let config_file = json!({
-        "executables": [
+        "modules": [
             {
                 "path": VALID_EXEC_A,
                 "names": [
@@ -90,7 +90,7 @@ pub fn full_config_file_test() {
     let config_file = json!({
         "batch_size": 3,
         "nb_threads": 10,
-        "executables": [
+        "modules": [
             {
                 "path": VALID_EXEC_A,
                 "names": [
@@ -114,7 +114,7 @@ pub fn no_batch_size_test() {
     // Correct config file to parse
     let config_file = json!({
         "nb_threads": 10,
-        "executables": [
+        "modules": [
             {
                 "path": VALID_EXEC_A,
                 "names": [
@@ -131,7 +131,7 @@ pub fn no_nb_threads_test() {
     // Correct config file to parse
     let config_file = json!({
         "batch_size": 3,
-        "executables": [
+        "modules": [
             {
                 "path": VALID_EXEC_A,
                 "names": [
@@ -144,11 +144,11 @@ pub fn no_nb_threads_test() {
 }
 
 #[test]
-pub fn empty_executables_test() {
+pub fn empty_modules_test() {
     // Correct config file to parse
     let config_file = json!({
         "batch_size": 3,
-        "executables": [
+        "modules": [
         ]
     });
 

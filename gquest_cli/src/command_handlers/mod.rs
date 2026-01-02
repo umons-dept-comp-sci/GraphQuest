@@ -1,3 +1,3 @@
 pub mod arg_parser;
-pub mod init;
+pub mod add_remove;
 pub mod query;

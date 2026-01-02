@@ -96,6 +96,9 @@ pub async fn remove_dataset(
         RemoveChoice::All => {
             db.clear_database().await?;
         }
+        RemoveChoice::Invariants => {
+            db.clear_invariants().await?;
+        }
     }
     info!("Closing database");
     db.close_connection().await;

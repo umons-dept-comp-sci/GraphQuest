@@ -1,7 +1,7 @@
 {
   "batch_size": 5000,
   "nb_threads": 10,
-  "executables": [
+  "modules": [
     {
       "path": "P_Gn.py",
       "names": [
@@ -59,19 +59,22 @@
         "conj1"
       ],
       "dep": [
-        "ag", "r"
+        "ag",
+        "r"
       ]
     },
     {
       "path": "d_nm.py",
       "names": [
-        "d_nm", "m"
+        "d_nm",
+        "m"
       ]
     },
     {
       "path": "comp.py",
       "names": [
-        "eci", "comp"
+        "eci",
+        "comp"
       ],
       "dep": [
         "d_nm"

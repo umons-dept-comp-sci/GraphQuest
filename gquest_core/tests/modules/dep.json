@@ -1,5 +1,5 @@
 {
-    "executables": [
+    "modules": [
         {
             "path": "a.py",
             "names": [

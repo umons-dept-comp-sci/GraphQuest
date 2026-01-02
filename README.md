@@ -30,10 +30,10 @@ The invariant tables always have two columns :
 To add new signatures, use the "*add*" command. 
 
 ```bash
-gquest add [OPTIONS] <COMMAND>
+gquest add [OPTIONS] <SOURCE>
 ```
 
-A new options is added, *batch_size*, which lets the user decide the maximum number of data that can be held in the memory of $\texttt{gquest}$ before being sent to the database. The bigger this number gets, the more the memory will be used. But it can also improve the performances of the program depending on the limit of how much data a single INSERT query can carry in your database.
+A new options is present, *batch_size*, which lets the user decide the maximum number of data that can be stored in the memory of $\texttt{gquest}$ before being sent to the database. The bigger this number gets, the more the memory will be used. But it can also improve the performances of the program depending on the limit of how much data a single INSERT query can carry in your database.
 
 There are 3 possible sub-commands, "*geng*", "*file*" and "*pipe*". Each of these lets the user decide on how to import signatures to the dataset.
 
@@ -78,6 +78,20 @@ gquest add pipe [OPTIONS]
 
 ### Removing data
 
+Instead of deleting the database to entirely clear it, $\texttt{gquest}$ lets you either remove specific tables :
+
+```bash
+gquest remove [OPTIONS] <TARGET>
+```
+There are three possibles choices :
+* "*invariants*" : Removes all tables other than the dataset (and related vertices table).
+* "*dataset*" : Removes the dataset (and related vertices table).
+* "*all*" : Removes **all** tables present in the dataset.
+
+> [!WARNING]
+> GraphQuest can delete tables that do not have anything to do with invariants. Because of this, it is not recommended to use a database not entirely controlled by it since it could delete or overwrite any table.
+
+
 ## Modules :
 
 We refer to as an *invariant executable*,  or *module*, a file that matches the following conditions :
@@ -99,17 +113,51 @@ To correctly use one, $\texttt{gquest}$ needs the following informations :
 
 #### Configuration files :
 
-Configuration files are used to specify multiple modules in one file alongside some other helpful settings.
+Configuration files are used to specify multiple modules in one file alongside some other helpful settings. These files are written using the json format and are made up of three name-value fields :
+1. The optional batch size. It is similar to what was explained prior but for queries. Set to 1000 by default.
+2. The optional maximum number of threads to use when computing invariants. Set to 1 by default.
+3. The list of modules, each is also an object made up of three name-value pairs :
+   1. A path to the executable.
+   2. A list with the names of the returned invariants.
+   3. The optional list with the names of the dependencies to provide to this module.
 
 
-#### Executable sorter :
-
-Topological sort
-
+##### Example config file : `example.json`
+```json
+{
+  "batch_size": 5000,
+  "nb_threads": 10,
+  "executables": [
+    {
+      "path": "P_Gn.py",
+      "names": [
+        "P_Gn"
+      ]
+    },
+    {
+      "path": "km_rm.py",
+      "names": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "is_Bmn.py",
+      "names": [
+        "is_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    }
+  ]
+}
+```
 
 ### Module Execution :
 
-After executing a module, $\texttt{gquest}$ communicates with it by doing the following :
+After starting the execution of a module, $\texttt{gquest}$ communicates with it by doing the following :
 ```
 1. While data is left to compute :
 2.    Write a data batch to the standard input of the progam.
@@ -173,6 +221,54 @@ size D]w ... DUw
 ``` -->
 
 ## Queries :
+
+Now that the concepts of modules and configuration files were introduced, we now have everything we need to query the database.
+
+```bash
+gquest query [OPTIONS] <CONFIG_FILE> <QUERY> [OUTPUT]
+```
+To correctly run a query, we need to provide :
+
+* A config file, which should contain executables so that it is possible to compute every invariants referenced in the provided query.
+* The query to execute (we will talk about this later).
+* The output either as a "*file*", to the "*stdout*" or in a pretty "*table*".
+
+
+### Syntax :
+
+GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing).
+
+#### Extremal values search :
+
+// Work in progress
+
+```
+<extremal selection> [, <Additional condition>] 
+```
+
+With `extremal_selection`:
+```py
+(min|max) '(' inv (':' inv (',' inv)*)? ')'
+```
+
+
+#### Counter-example search :
+
+
+```py
+extremal_selection (',' optional_condition)? '=>' condition_to_disprove
+```
+
+For example the following query, `min(inv1: inv2, inv3), inv4 >= 3 => inv5 = 1` :
+1. Will compute every value of `inv1`, `inv2`, `inv3` and `inv4` (and if needed any dependencies they have) for all values contained in the dataset.
+2. Will find the graphs that have the `min` value of `inv1` for each combination of `inv2` and `inv3` and whose `inv4` value is superior or equal to 3. 
+3. Then compute `inv5` only for those extremal graphs
+4. And finally, it tries to find a graph for which the value of `inv5` will not be equal to 1. 
+
+
+
+### Modules sorting
+
 
 
 ## Examples :

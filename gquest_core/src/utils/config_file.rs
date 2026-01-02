@@ -40,7 +40,7 @@ struct ConfigJsonFile {
     /// The maximum number of threads to use to use when computing invariants
     nb_threads: Option<usize>,
     /// The list of executables that should be executed by the program.
-    executables: Vec<ExecutableJson>,
+    modules: Vec<ExecutableJson>,
 }
 
 #[derive(Debug)]
@@ -52,7 +52,7 @@ pub struct ConfigFile {
     /// The maximum number of threads to use when computing invariants
     nb_threads: usize,
     /// The list of executables that should be executed by the program.
-    executables: Vec<InvariantsExecutable>,
+    modules: Vec<InvariantsExecutable>,
 }
 
 impl ConfigFile {
@@ -67,7 +67,7 @@ impl ConfigFile {
         let mut config_json: ConfigJsonFile = serde_json::from_reader(f)?;
 
         if let Some(parent_path) = p.parent() {
-            for val in &mut config_json.executables {
+            for val in &mut config_json.modules {
                 val.path = parent_path.join(&val.path).display().to_string();
             }
         }
@@ -85,7 +85,7 @@ impl ConfigFile {
     }
 
     pub fn get_execs_ref(&self) -> &Vec<InvariantsExecutable> {
-        &self.executables
+        &self.modules
     }
 
     pub fn get_batch_size(&self) -> usize {
@@ -97,12 +97,12 @@ impl ConfigFile {
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
-    if config_json.executables.is_empty() {
+    if config_json.modules.is_empty() {
         return Err(ConfigFileError::NoInvariantError);
     }
     let mut executables = vec![];
 
-    for exec in config_json.executables {
+    for exec in config_json.modules {
         if let Some(dep) = exec.dep {
             executables.push(InvariantsExecutable::new(exec.path, exec.names, dep)?);
         } else {
@@ -111,7 +111,7 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
     }
 
     Ok(ConfigFile {
-        executables,
+        modules: executables,
         nb_threads: config_json.nb_threads.unwrap_or(1),
         batch_size: config_json.batch_size.unwrap_or(1000),
     })
