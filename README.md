@@ -238,46 +238,105 @@ To correctly run a query, we need to provide :
 
 GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing).
 
+
+#### Comparisons : 
+
+
+```py
+a operator b 
+```
+With `a` and `b` either a number, string value or even an invariant name.
+And the `operator` being one of the symbol in the following table :
+
+| Operator :           | Equal | Not Equal | Less  | Less or Equal | Greater | Greater or Equal |
+| -------------------- | :---: | :-------: | :---: | :-----------: | :-----: | :--------------: |
+| **Allowed syntax :** |   =   |    !=     |   <   |      <=       |    >    |        >=        |
+|                      |  ==   |     ≠     |       |       ≤       |         |        ≥         |
+
+##### Example :
+
+Let the comparison be : `inv == "a"`.
+
+This can be translated to : Keep graph whose value of `inv` is equal to `"a"`.
+
+#### Conditions :
+
+```py
+(condtion operator condition) | (condition) | (negation '(' condition ')')
+```
+
+| Operator :           | **And** | **Or** | **Negation** |
+| -------------------- | :-----: | :----: | :----------: |
+| **Allowed syntax :** |   and   |   or   |     not      |
+|                      |    ∧    |   v    |      !       |
+
+
+Please note that parentheses are supported.
+
+##### Examples :
+
+Let a condition be : `inv_1 ≠ inv2 v !(inv_2 ≤ 3)`
+
+This can be translated to : The value of invariant `inv_1` must be different from the value of `inv2` or the value of `inv_2` must be strictly greater than 3.
+
 #### Extremal values search :
 
 // Work in progress
 
-```
-<extremal selection> [, <Additional condition>] 
+```py
+extremal_selection (',' optional_condition)? 
 ```
 
 With `extremal_selection`:
 ```py
-(min|max) '(' inv (':' inv (',' inv)*)? ')'
+(min|max) '(' inv_1 (':' inv_2 (',' inv_i)*)? ')'
 ```
+
+##### Examples : 
+
+Let the selection be : `max(inv)`
+
+This can be translated to : *find the graphs with the maximum value for the given `inv`*.
+
+Let the selection be : `min(inv_1: inv_2, inv_3)`
+
+This can be translated to : *find the graphs with the minimum value for a given `inv_1` for each combination of `inv_2` and `inv_3`* 
+> If you know a bit of SQL think of it as a selection query using the MIN function combined with a GROUP BY clause. 
 
 
 #### Counter-example search :
 
+One of the main feature of $\texttt{gquest}$ is the search of counter-examples for a given conjecture, which can be expressed using the following syntax :
 
 ```py
 extremal_selection (',' optional_condition)? '=>' condition_to_disprove
 ```
 
-For example the following query, `min(inv1: inv2, inv3), inv4 >= 3 => inv5 = 1` :
-1. Will compute every value of `inv1`, `inv2`, `inv3` and `inv4` (and if needed any dependencies they have) for all values contained in the dataset.
-2. Will find the graphs that have the `min` value of `inv1` for each combination of `inv2` and `inv3` and whose `inv4` value is superior or equal to 3. 
-3. Then compute `inv5` only for those extremal graphs
-4. And finally, it tries to find a graph for which the value of `inv5` will not be equal to 1. 
+Using this, $\texttt{gquest}$ will find the extremal graphs that respect the conditions on the left of the query and using them will try to find ones that disprove the given condition on the right.
+
+##### Example : 
+
+Le the following query be `min(inv1: inv2, inv3), inv4 >= 3 => inv5 = 1`.
+
+GraphQuest will :
+1. Compute every value of `inv1`, `inv2`, `inv3` and `inv4` (and if needed any dependencies they have) for all values contained in the dataset.
+2. Find the graphs that have the `min` value of `inv1` for each combination of `inv2` and `inv3` and whose `inv4` value is superior or equal to 3. 
+3. Compute `inv5` only for those extremal graphs (and its required dependencies if any).
+4. Try to find a graph for which the value of `inv5` will not be equal to 1. 
 
 
+### Module sorting :
 
-### Modules sorting
 
 
 
 ## Examples :
 
-```
+```bash
 gquest add geng 1:4, 6:8 "c"
 ```
 
 
 ```bash
-gquest query "path_to_config.json" "min(P_Gn: m,n), n>=3 => is_Bmn = 1" table -p 2:
+gquest query "path_to_config.json" "min(P_Gn: m,n), n>=3 => is_Bmn = 1" -v
 ```
