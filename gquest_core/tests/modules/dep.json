@@ -1,0 +1,30 @@
+{
+    "modules": [
+        {
+            "path": "a.py",
+            "names": [
+                "P_Gn"
+            ],
+            "dep": []
+        },
+        {
+            "path": "b.py",
+            "names": [
+                "m",
+                "km",
+                "rm"
+            ],
+            "dep": []
+        },
+        {
+            "path": "c.py",
+            "names": [
+                "is_Bmn"
+            ],
+            "dep": [
+                "km",
+                "rm"
+            ]
+        }
+    ]
+}
