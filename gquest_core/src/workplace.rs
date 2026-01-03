@@ -12,8 +12,7 @@ use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
         ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
-        GraphDbStartupError, SqlCondition, SqlSelectQuery, SqlTableSelection, VERTICES_TABLE_NAME,
-        get_extremal_invariants,
+        GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
     },
     utils::{SaveOutput, config_file::ConfigFile},
 };
@@ -150,6 +149,7 @@ where
                     let mut db_clone = self.db.clone();
                     let batch_size = self.config.get_batch_size();
                     let add_condition_clone = add_condition.clone();
+                    // let update_dep_clone = *update_dep;
                     let iter_clone = iter.clone();
                     // A thread will compute the given invariant then end
                     handles.spawn(async move {
@@ -181,13 +181,38 @@ where
         Ok(())
     }
 
-    pub async fn find_extremals<O: SaveOutput>(
+    pub async fn find_graphs_condition<O: SaveOutput>(
+        &mut self,
+        condition: SqlCondition,
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
+        let mut invariants = condition.get_all_identifiers();
+        // This table is used but is not part of any executable
+        invariants.remove(VERTICES_TABLE_NAME);
+
+        if !invariants.is_empty() {
+            let invariant_necessary =
+                ExecutableSorter::new_from(self.config.get_execs_ref(), &invariants)?;
+            // Compute them
+            self.execute_invariant_execs(invariant_necessary, None, vec![])
+                .await?;
+        }
+
+        let query = graph_queries::select_all_graph_cond(condition);
+
+        self.db.fetch_all_row_query(&query, output).await?;
+
+        Ok(())
+    }
+
+    pub async fn find_extremals_graphs<O: SaveOutput>(
         &mut self,
         extremal: ClassSelection,
         additional_condition: Option<SqlCondition>,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
-        let mut extremal_inv = get_extremal_invariants(&extremal, &additional_condition);
+        let mut extremal_inv =
+            graph_queries::get_extremal_invariants(&extremal, &additional_condition);
 
         // This table is used but is not part of any executable
         extremal_inv.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
@@ -202,11 +227,7 @@ where
         }
 
         // Get them
-        let table: SqlTableSelection = extremal.into();
-        let mut query = SqlSelectQuery::select_all_from_table(table);
-        if let Some(add_cond) = additional_condition {
-            query = query.set_where_clause(add_cond);
-        }
+        let query = graph_queries::select_all_extremal_graphs(&extremal, &additional_condition);
 
         self.db.fetch_all_row_query(&query, output).await?;
 
@@ -271,18 +292,3 @@ where
         Ok(())
     }
 }
-
-/*
-
-THis doesn't work : too slow :
-SELECT Dataset.*
-    FROM (Dataset),
-        (SELECT * FROM (eci INNER JOIN vertices USING (canon) INNER JOIN d_nm USING (canon) INNER JOIN m USING (canon))) as all_inv,
-        (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) as extremal
-    WHERE ((all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.eci = extremal.eci AND all_inv.vertices = extremal.vertices)
-            AND ((d_nm >= 3)))
-        AND Dataset.canon = all_inv.canon
-        AND (NOT (EXISTS(SELECT canon FROM (m) WHERE m.canon = Dataset.canon)));
-
-SELECT all_inv.* FROM (SELECT * FROM (eci INNER JOIN vertices USING (canon) INNER JOIN d_nm USING (canon) INNER JOIN m USING (canon))) as all_inv, (SELECT vertices, m, MAX(eci) as eci FROM (eci INNER JOIN vertices USING (canon) INNER JOIN m USING (canon)) GROUP BY vertices, m) as extremal WHERE ((all_inv.eci = extremal.eci AND all_inv.m = extremal.m AND all_inv.eci = extremal.eci AND all_inv.vertices = extremal.vertices) AND ((d_nm >= 3))) AND (NOT (EXISTS(SELECT canon FROM (m) WHERE m.canon = all_inv.canon)));
-*/

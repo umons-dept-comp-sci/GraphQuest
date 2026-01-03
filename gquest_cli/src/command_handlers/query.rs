@@ -1,6 +1,6 @@
 use gquest_core::{
     database_handler::{ClassSelection, ExtremalCounterQuery, SqlCondition, SqliteGraphDB},
-    parser::query_parser::{ParsingError, QueryParser},
+    parser::query_parser::{ParsedQuery, QueryParser},
     utils::{
         StdoutOutput,
         config_file::ConfigFile,
@@ -44,19 +44,55 @@ async fn execute_query(
     let config = ConfigFile::read_json_file(&config_file)?;
 
     // try to parse query:
-    let res = QueryParser::parse_conj_query(formula.clone());
+    let res = QueryParser::parse_query(formula.clone())?;
+
     match res {
-        Ok(conj_query) => workplace_counterexample(db, output, conj_query, config).await,
-        Err(e) => {
-            if let ParsingError::ClassSelectionError(_, _) = &e {
-                Err(CliError::QueryParserError(e))
-            } else {
-                // Try a second parse but this time as an extremal selection :
-                let (selection, add_cond) = QueryParser::parse_extremal_query(formula)?;
-                workplace_extremal_query(db, output, selection, add_cond, config).await
-            }
+        ParsedQuery::Condition(sql_condition) => {
+            workplace_condition_query(db, output, sql_condition, config).await
+        }
+        ParsedQuery::Extremal((selection, add_cond)) => {
+            workplace_extremal_query(db, output, selection, add_cond, config).await
+        }
+        ParsedQuery::ExtremalCounter(conj_query) => {
+            workplace_counterexample(db, output, conj_query, config).await
         }
     }
+}
+
+async fn workplace_condition_query(
+    db: &mut SqliteGraphDB,
+    output: OutputChoice,
+    cond: SqlCondition,
+    config: ConfigFile,
+) -> Result<(), CliError> {
+    info!("Opening config file");
+    let mut wp = Workplace::new(db, config);
+
+    info!("Executing query with workplace");
+    match output {
+        OutputChoice::File { path, separator } => {
+            // open csv file
+            let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
+            wp.find_graphs_condition(cond, &mut csv).await?;
+        }
+        OutputChoice::Stdout => {
+            wp.find_graphs_condition(cond, &mut StdoutOutput).await?;
+            info!("Finished executing query");
+        }
+        OutputChoice::Table { partial } => {
+            let options = if let Some(partial_input) = partial {
+                ArgParser::parse_partial_table(&partial_input)?
+            } else {
+                QueryTableOptions::Full
+            };
+            let mut table = QueryTable::new_no_header(options);
+            wp.find_graphs_condition(cond, &mut table).await?;
+            info!("Finished executing query");
+            println!("{table}");
+        }
+    };
+
+    Ok(())
 }
 
 async fn workplace_extremal_query(
@@ -74,10 +110,11 @@ async fn workplace_extremal_query(
         OutputChoice::File { path, separator } => {
             // open csv file
             let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
-            wp.find_extremals(selection, add_cond, &mut csv).await?;
+            wp.find_extremals_graphs(selection, add_cond, &mut csv)
+                .await?;
         }
         OutputChoice::Stdout => {
-            wp.find_extremals(selection, add_cond, &mut StdoutOutput)
+            wp.find_extremals_graphs(selection, add_cond, &mut StdoutOutput)
                 .await?;
             info!("Finished executing query");
         }
@@ -88,7 +125,8 @@ async fn workplace_extremal_query(
                 QueryTableOptions::Full
             };
             let mut table = QueryTable::new_no_header(options);
-            wp.find_extremals(selection, add_cond, &mut table).await?;
+            wp.find_extremals_graphs(selection, add_cond, &mut table)
+                .await?;
             info!("Finished executing query");
             println!("{table}");
         }

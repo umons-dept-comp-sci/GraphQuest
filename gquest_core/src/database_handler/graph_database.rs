@@ -122,20 +122,14 @@ where
         connection_options: Option<SqlxLogLevels>,
     ) -> Result<Self, GraphDbStartupError> {
         let pool = {
-            let res = match connection_options {
-                Some(opt) => Self::connect_with_options(db_url, opt).await,
-                None => sqlx::Pool::connect(&db_url.to_string()).await,
-            };
+            let res = Self::connect_with_options(db_url, connection_options).await;
             match res {
                 Ok(p) => p,
                 Err(e) => return Err(e.into()),
             }
         };
-        Ok(GraphDatabase::<DB> {
-            // obs: None,
-            // _url: db_url.to_string(),
-            pool,
-        })
+
+        Ok(GraphDatabase::<DB> { pool })
     }
 
     /// Simply uses the given pool as the connection to the database.
@@ -151,11 +145,13 @@ where
     /// Applies the given options to the pool *before* opening it.
     async fn connect_with_options(
         url: impl ToString,
-        log_levels: SqlxLogLevels,
+        log_levels: Option<SqlxLogLevels>,
     ) -> Result<Pool<DB>, sqlx::Error> {
-        let mut connect_opt = PoolOptions::new();
+        let mut connect_opt = PoolOptions::new().max_connections(20);
 
-        if let Some(level) = log_levels.log_slow_statement_level {
+        if let Some(log_lvl) = log_levels
+            && let Some(level) = log_lvl.log_slow_statement_level
+        {
             connect_opt = connect_opt
                 .acquire_slow_level(level.0)
                 .acquire_slow_threshold(level.1);
@@ -813,14 +809,12 @@ where
                 optional_obs: &mut optional_obs,
             };
 
-            // executable.exec_inv(input).await;
             executable
                 .execute_invariant(input, output, batch_size)
                 .await?;
         }
         if count != 0 {
             let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
-
             self.push_batch(&mut signatures, &mut batch_to_store, executable)
                 .await?;
 

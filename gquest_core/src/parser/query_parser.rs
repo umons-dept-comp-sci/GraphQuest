@@ -11,6 +11,16 @@ use crate::database_handler::{
     SqlCondition,
 };
 
+/// Represents the available queries that can be parsed and submitted to the graph database.
+pub enum ParsedQuery {
+    /// A simple condition to apply to the database.
+    Condition(SqlCondition),
+    /// An extremal selection of graphs with an optional condition.
+    Extremal((ClassSelection, Option<SqlCondition>)),
+    /// A counter example query for a given conjecture.
+    ExtremalCounter(ExtremalCounterQuery),
+}
+
 #[derive(Debug, Error)]
 pub enum ParsingError {
     #[error("Something went wrong when trying to parse the given input : \"{input}\"")]
@@ -96,6 +106,38 @@ fn get_parsing_error(error: Error<Rule>) -> ParsingError {
 pub struct QueryParser;
 
 impl QueryParser {
+    /// Parses a given query into one of the available queries. See [`ParsedQuery`] for more information.
+    pub fn parse_query(input: impl ToString) -> Result<ParsedQuery, ParsingError> {
+        let input_str = input.to_string();
+        let input = Self::parse(Rule::query, &input_str);
+        match input {
+            Ok(mut rules) => {
+                let mut rules = rules
+                    .next()
+                    .expect("first rule should be a query rule")
+                    .into_inner();
+
+                let inner_rule = rules.next().expect("always at least one subrule");
+                match inner_rule.as_rule() {
+                    Rule::condition => Ok(ParsedQuery::Condition(Self::parse_condition_rule(
+                        inner_rule,
+                    ))),
+                    Rule::extremal_query => {
+                        let inner_rule = inner_rule.into_inner().next().expect("one subrule");
+                        Ok(ParsedQuery::Extremal(Self::parse_extremal_query_rule(
+                            inner_rule,
+                        )?))
+                    }
+                    Rule::conj_query => Ok(ParsedQuery::ExtremalCounter(
+                        Self::parse_conj_query_rule(inner_rule)?,
+                    )),
+                    _ => unreachable!(),
+                }
+            }
+            Err(e) => Err(get_parsing_error(e)),
+        }
+    }
+
     /// Parses a condition using a string value into an equivalent [`SqlCondition`].
     /// For example : `(a = 2 or not(x < y))`
     pub fn parse_condition(input: impl ToString) -> Result<SqlCondition, ParsingError> {
@@ -138,7 +180,7 @@ impl QueryParser {
         };
         let inner_rule = input.into_inner().next().expect("one subrule");
 
-        Self::parse_extremal_selection_rule(inner_rule)
+        Self::parse_extremal_query_rule(inner_rule)
     }
 
     fn parse_condition_rule(rule: Pair<'_, Rule>) -> SqlCondition {
@@ -260,9 +302,8 @@ impl QueryParser {
     fn parse_conj_query_rule(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
-        let (selection, additional_condition) = Self::parse_extremal_selection_rule(
-            inner_rules.next().expect("extremal query present"),
-        )?;
+        let (selection, additional_condition) =
+            Self::parse_extremal_query_rule(inner_rules.next().expect("extremal query present"))?;
 
         let conjecture_to_disprove =
             Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
@@ -274,7 +315,7 @@ impl QueryParser {
         })
     }
 
-    fn parse_extremal_selection_rule(
+    fn parse_extremal_query_rule(
         rule: Pair<'_, Rule>,
     ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
         let mut inner_rules = rule.into_inner();
@@ -477,5 +518,39 @@ mod tests {
             QueryParser::parse_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
         ));
+    }
+
+    #[test]
+    fn parse_query() {
+        let sql_cond = SqlCondition::Operation(SqlComparison::Equal(
+            ArgType::Identifier("x".to_string()),
+            ArgType::Value("1".to_string()),
+        ));
+
+        let extremal = (
+            ClassSelection::new(ClassType::Min, "p_gn", vec!["g", "d"]).expect("correct"),
+            Some(sql_cond.clone()),
+        );
+
+        let conjecture = ExtremalCounterQuery {
+            selection: extremal.0.clone(),
+            additional_condition: extremal.1.clone(),
+            conjecture_to_disprove: SqlCondition::not(SqlComparison::Equal(
+                ArgType::Value("1".to_string()),
+                ArgType::Identifier("p".to_string()),
+            )),
+        };
+
+        assert!(
+            matches!(QueryParser::parse_query("x = 1"), Ok(crate::parser::query_parser::ParsedQuery::Condition(x)) if x == sql_cond )
+        );
+
+        assert!(
+            matches!(QueryParser::parse_query("min(p_gn: g, d), x = 1"), Ok(crate::parser::query_parser::ParsedQuery::Extremal(val)) if val == extremal )
+        );
+
+        assert!(
+            matches!(QueryParser::parse_query("min(p_gn: g, d), x = 1 => !(1 = p)"), Ok(crate::parser::query_parser::ParsedQuery::ExtremalCounter(val)) if val == conjecture )
+        )
     }
 }

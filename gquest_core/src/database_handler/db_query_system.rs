@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::{Debug, Display},
     pin::Pin,
 };
@@ -118,6 +119,50 @@ impl SqlCondition {
                 todo!("Renaming is not yet implemented for select queries")
             }
         }
+    }
+
+    /// Searches recursively in the given condition for any column name.
+    pub fn get_all_identifiers(&self) -> HashSet<String> {
+        let mut res: HashSet<String> = HashSet::new();
+        match &self {
+            SqlCondition::Operation(sql_comparison) => match sql_comparison {
+                SqlComparison::Greater(a, b)
+                | SqlComparison::GreaterEqual(a, b)
+                | SqlComparison::Less(a, b)
+                | SqlComparison::LessEqual(a, b)
+                | SqlComparison::Equal(a, b)
+                | SqlComparison::NotEqual(a, b) => {
+                    if let ArgType::Identifier(name) = a {
+                        res.insert(name.to_string());
+                    }
+                    if let ArgType::Identifier(name) = b {
+                        res.insert(name.to_string());
+                    }
+                }
+            },
+            SqlCondition::And(sql_condition, sql_condition1)
+            | SqlCondition::Or(sql_condition, sql_condition1) => {
+                res.extend(sql_condition.get_all_identifiers());
+                res.extend(sql_condition1.get_all_identifiers());
+            }
+            SqlCondition::Not(sql_condition) => {
+                res.extend(sql_condition.get_all_identifiers());
+            }
+            SqlCondition::AndVec(sql_condition, sql_conditions)
+            | SqlCondition::OrVec(sql_condition, sql_conditions) => {
+                res.extend(sql_condition.get_all_identifiers());
+                for condition in sql_conditions {
+                    res.extend(condition.get_all_identifiers());
+                }
+            }
+            SqlCondition::Exists(_sql_select_query) => {
+                todo!(
+                    "Conditions using sql selections are not yet supported since finding identifiers names is harder here."
+                )
+            }
+        };
+
+        res
     }
 
     pub fn to_sql<DB>(&self) -> String

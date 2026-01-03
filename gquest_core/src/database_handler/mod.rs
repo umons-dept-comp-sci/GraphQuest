@@ -41,5 +41,5 @@ pub use mysql_handler::*;
 pub mod db_query_system;
 pub use db_query_system::*;
 
-pub mod graph_conjecture;
-pub use graph_conjecture::*;
+pub mod graph_queries;
+pub use graph_queries::*;

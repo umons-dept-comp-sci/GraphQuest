@@ -236,7 +236,7 @@ To correctly run a query, we need to provide :
 
 ### Syntax :
 
-GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing).
+GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing). All of the following query syntaxes are considered valid and can be executed by $\texttt{gquest}$.
 
 
 #### Comparisons : 
@@ -281,7 +281,7 @@ This can be translated to : The value of invariant `inv_1` must be different fro
 
 #### Extremal values search :
 
-// Work in progress
+You can use the following syntax to get all extremal graphs respecting a certain query.
 
 ```py
 extremal_selection (',' optional_condition)? 
