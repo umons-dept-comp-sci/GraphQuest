@@ -42,16 +42,21 @@ where
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'q> String: sqlx::Decode<'q, DB>,
     for<'q> i64: sqlx::Decode<'q, DB>,
     for<'q> f64: sqlx::Decode<'q, DB>,
+    for<'q> f32: sqlx::Decode<'q, DB>,
+    for<'q> i32: sqlx::Decode<'q, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
+    (i32,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
     (String,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
     (String, f64): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
 {

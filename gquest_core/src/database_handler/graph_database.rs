@@ -242,16 +242,21 @@ where
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -259,7 +264,7 @@ where
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
         match res {
             Ok(row) => Some(Ok(self.db.read_row_val(&row))),
-            Err(e) => Some(Err(e.into())),
+            Err(e) => Some(Err(DB::translate_error(e))),
         }
     }
 }
@@ -267,7 +272,7 @@ where
 struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
     db: GraphDatabase<DB>,
     signatures: &'b mut Vec<String>,
-    batch_to_store: &'b mut Vec<Vec<String>>,
+    batch_to_store: &'b mut Vec<Vec<f64>>,
     count: &'b mut usize,
     optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
     batch_size: usize,
@@ -281,16 +286,21 @@ where
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -302,10 +312,11 @@ where
         // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
         for (i, inv_values) in values.enumerate() {
             // Push into the related storing vector
-            self.batch_to_store
-                .get_mut(i)
-                .expect("correct index")
-                .push(inv_values);
+            self.batch_to_store.get_mut(i).expect("correct index").push(
+                inv_values
+                    .parse()
+                    .expect("value should be able to be turned into float"),
+            ); // TODO: Add better error here
         }
 
         // Notify obs something happened
@@ -337,15 +348,20 @@ where
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
     String: sqlx::Encode<'static, DB>,
+    f64: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -357,7 +373,10 @@ where
 
         let mut results: Vec<String> = vec![];
         while let Some(res_value) = fetch_handle.next().await {
-            results.push(res_value?.0);
+            match res_value {
+                Ok(res) => results.push(res.0),
+                Err(e) => return Err(DB::translate_error(e)),
+            }
         }
         Ok(results)
     }
@@ -369,8 +388,7 @@ where
     ) -> Result<bool, GraphDbRuntimeError> {
         let query_str = DB::get_is_table_present(table_name);
         let builder = QueryBuilder::<DB>::new(query_str);
-        let res: (i64,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
-
+        let res: (i32,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
         Ok(res.0 == 1)
     }
 
@@ -464,13 +482,17 @@ where
     fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
         let col = row.column(col_index);
         let col_type = col.type_info().name();
+        // Float4 & Varchar are for postgre, the rest is for sqlite
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
-        } else if col_type == "REAL" || col_type == "NULL" {
+        } else if col_type == "REAL" || col_type == "FLOAT8" || col_type == "NULL" {
             let value = row.get::<f64, usize>(col_index);
             value.to_string()
-        } else if col_type == "TEXT" {
+        } else if col_type == "FLOAT4" {
+            let value = row.get::<f32, usize>(col_index);
+            value.to_string()
+        } else if col_type == "TEXT" || col_type == "VARCHAR" {
             row.get::<String, usize>(col_index)
         } else {
             "No string value".to_string()
@@ -543,7 +565,7 @@ where
         }
 
         let push_to_db = async |signatures: &Vec<String>,
-                                values: &Vec<String>,
+                                values: &Vec<f64>,
                                 batch_size|
                -> Result<(), GraphDbRuntimeError> {
             // Insert to dataset query
@@ -565,7 +587,7 @@ where
             // Check input and get value
             let value = get_nb_vertices(&canonical_form)?;
             signature_batch.push(canonical_form);
-            data_batch.push(value.to_string());
+            data_batch.push(value as f64);
 
             if data_batch.len() >= batch_size {
                 // push collected data to database
@@ -598,7 +620,7 @@ where
         &mut self,
         inv_name: impl ToString,
         signatures: &[impl ToString],
-        values: &[impl ToString],
+        values: &[f64],
     ) -> Result<(), GraphDbRuntimeError> {
         let inv_name = inv_name.to_string();
 
@@ -612,7 +634,7 @@ where
     fn create_safe_insert_query(
         query_str: String,
         signatures: &[impl ToString],
-        values: &[impl ToString],
+        values: &[f64],
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
         let mut signatures = signatures.iter();
@@ -625,7 +647,7 @@ where
                 if added_signature {
                     match values.next() {
                         Some(value) => {
-                            builder.push_bind::<String>(value.to_string());
+                            builder.push_bind::<f64>(value.clone().into());
                         }
                         None => {
                             return Err(GraphDbRuntimeError::QueryCreationError(
@@ -782,7 +804,7 @@ where
 
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
-        let mut batch_to_store: Vec<Vec<String>> =
+        let mut batch_to_store: Vec<Vec<f64>> =
             Vec::with_capacity(executable.invariant_names.len());
         (0..executable.invariant_names.len())
             .for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
@@ -828,7 +850,7 @@ where
     async fn push_batch(
         &mut self,
         signatures: &mut Vec<String>,
-        batch_to_store: &mut [Vec<String>],
+        batch_to_store: &mut [Vec<f64>],
         executable: &InvariantsExecutable,
     ) -> Result<(), GraphDbRuntimeError> {
         for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
@@ -862,7 +884,10 @@ where
         let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
         // Add each returned row to the table
         while let Some(result_row) = results.next().await {
-            let row = result_row?;
+            let row = match result_row {
+                Ok(row) => row,
+                Err(e) => return Err(DB::translate_error(e)),
+            };
             // Fetch all header first
             if !added_headers {
                 added_headers = true;
