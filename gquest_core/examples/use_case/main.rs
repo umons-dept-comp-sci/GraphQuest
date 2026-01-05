@@ -1,5 +1,4 @@
 const DB_SQLITE_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
-const DB_PSG_URL: &str = "postgresql://axel:031071103@localhost/gquest_test";
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
 
 use std::time::Duration;
@@ -8,7 +7,7 @@ use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{PgSqlGraphDB, SqlxLogLevels},
     parser::query_parser::QueryParser,
-    utils::{StdoutOutput, config_file::ConfigFile, table_handler::QueryTable},
+    utils::{config_file::ConfigFile, table_handler::QueryTable},
     workplace::Workplace,
 };
 use log::{LevelFilter, info};
@@ -22,7 +21,7 @@ async fn main() {
         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
     });
 
-    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_PSG_URL, log_levels)
+    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_SQLITE_URL, log_levels)
         .await
         .expect("no problem");
 
