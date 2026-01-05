@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::info;
-use sqlx::{Database, FromRow, migrate::MigrateDatabase};
+use sqlx::{FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 use tokio::{
     sync::Mutex,
@@ -11,7 +11,7 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
+        ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
         GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
     },
     utils::{SaveOutput, config_file::ConfigFile},
@@ -30,28 +30,32 @@ pub enum WorkplaceError {
 }
 
 /// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
-pub struct Workplace<'a, DB: Database + DbQuerySystem<DB>> {
+pub struct Workplace<'a, DB: GraphDb> {
     pub db: &'a mut GraphDatabase<DB>,
     config: ConfigFile,
 }
 
-impl<'a, DB: Database + DbQuerySystem<DB>> Workplace<'a, DB>
+impl<'a, DB: GraphDb> Workplace<'a, DB>
 where
-    DB: Send,
     DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'q> String: sqlx::Decode<'q, DB>,
     for<'q> i64: sqlx::Decode<'q, DB>,
     for<'q> f64: sqlx::Decode<'q, DB>,
+    for<'q> f32: sqlx::Decode<'q, DB>,
+    for<'q> i32: sqlx::Decode<'q, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
+    (i32,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
     (String,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
     (String, f64): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
 {

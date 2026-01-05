@@ -61,6 +61,12 @@ pub struct DatabasePath {
     pub url: String,
 }
 
+// impl DatabasePath {
+//     pub fn connect_db<DB>(&self) -> GraphDatabase<DB> where DB {
+
+//     }
+// }
+
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {
     /// The order(s) of the graphs to generate.

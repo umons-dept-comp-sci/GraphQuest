@@ -21,22 +21,18 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
+pub trait GraphDb: Database + DbQuerySystem<Self> + Send {}
+
 #[derive(Debug)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
 /// Can be cloned cheaply (since it will just clone the associated [`Pool`]).
-pub struct GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB> + Send,
-{
+pub struct GraphDatabase<DB: GraphDb> {
     pool: Pool<DB>,
 }
 
 // Note: We are not using derive since we don't have to force the DB to be clonable, only the pools.
-impl<DB> Clone for GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB>,
-{
+impl<DB: GraphDb> Clone for GraphDatabase<DB> {
     fn clone(&self) -> Self {
         Self {
             pool: self.pool.clone(),
@@ -45,7 +41,7 @@ where
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+impl<DB: GraphDb> GraphDatabase<DB>
 where
     DB: MigrateDatabase,
 {
@@ -72,7 +68,7 @@ where
                     debug!("Success creating the database {}", db_url);
                 }
                 Err(e) => {
-                    return Err(e.into());
+                    return Err(DB::translate_startup_error(e));
                 }
             }
         } else {
@@ -125,7 +121,7 @@ where
             let res = Self::connect_with_options(db_url, connection_options).await;
             match res {
                 Ok(p) => p,
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(DB::translate_startup_error(e)),
             }
         };
 
@@ -162,10 +158,7 @@ where
 
 // ______________________ ADD TABLES ____________
 
-impl<DB> GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB>,
-{
+impl<DB: GraphDb> GraphDatabase<DB> {
     /// Adds the canonical table to the database.
     async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
         let query_str = DB::get_create_table_query(
@@ -227,31 +220,35 @@ where
 
 // ______________________ UTILS ______________________
 
-struct InputFn<'e, DB: Database + DbQuerySystem<DB>> {
+struct InputFn<'e, DB: GraphDb> {
     db: GraphDatabase<DB>,
     fetch: std::pin::Pin<
         Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send + 'e>,
     >,
 }
 
-impl<'e, DB: Database + DbQuerySystem<DB>> AsyncInvariantInput<GraphDbRuntimeError>
-    for InputFn<'e, DB>
+impl<'e, DB: GraphDb> AsyncInvariantInput<GraphDbRuntimeError> for InputFn<'e, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -259,38 +256,42 @@ where
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
         match res {
             Ok(row) => Some(Ok(self.db.read_row_val(&row))),
-            Err(e) => Some(Err(e.into())),
+            Err(e) => Some(Err(DB::translate_runtime_error(e))),
         }
     }
 }
 
-struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
+struct OutputFn<'b, 'o, DB: GraphDb> {
     db: GraphDatabase<DB>,
     signatures: &'b mut Vec<String>,
-    batch_to_store: &'b mut Vec<Vec<String>>,
+    batch_to_store: &'b mut Vec<Vec<f64>>,
     count: &'b mut usize,
     optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
     batch_size: usize,
     invariant_exec: InvariantsExecutable,
 }
-impl<'b, 'o, DB: Database + DbQuerySystem<DB>> AsyncInvariantOutput<GraphDbRuntimeError>
-    for OutputFn<'b, 'o, DB>
+impl<'b, 'o, DB: GraphDb> AsyncInvariantOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
+    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -302,10 +303,11 @@ where
         // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
         for (i, inv_values) in values.enumerate() {
             // Push into the related storing vector
-            self.batch_to_store
-                .get_mut(i)
-                .expect("correct index")
-                .push(inv_values);
+            self.batch_to_store.get_mut(i).expect("correct index").push(
+                inv_values
+                    .parse()
+                    .expect("value should be able to be turned into float"),
+            ); // TODO: Add better error here
         }
 
         // Notify obs something happened
@@ -329,7 +331,7 @@ where
 }
 
 // TODO: Remove useless import
-impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+impl<DB: GraphDb> GraphDatabase<DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -337,15 +339,20 @@ where
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
     String: sqlx::Encode<'static, DB>,
+    f64: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
+    for<'a> f32: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
+    f32: sqlx::Type<DB>,
     // Return values
     (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
+    (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
@@ -357,7 +364,10 @@ where
 
         let mut results: Vec<String> = vec![];
         while let Some(res_value) = fetch_handle.next().await {
-            results.push(res_value?.0);
+            match res_value {
+                Ok(res) => results.push(res.0),
+                Err(e) => return Err(DB::translate_runtime_error(e)),
+            }
         }
         Ok(results)
     }
@@ -369,8 +379,7 @@ where
     ) -> Result<bool, GraphDbRuntimeError> {
         let query_str = DB::get_is_table_present(table_name);
         let builder = QueryBuilder::<DB>::new(query_str);
-        let res: (i64,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
-
+        let res: (i32,) = DB::execute_query_fetch_one(&self.pool, builder).await?;
         Ok(res.0 == 1)
     }
 
@@ -464,13 +473,17 @@ where
     fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
         let col = row.column(col_index);
         let col_type = col.type_info().name();
+        // Float4 & Varchar are for postgre, the rest is for sqlite
         if col_type == "INTEGER" {
             let value = row.get::<i64, usize>(col_index);
             value.to_string()
-        } else if col_type == "REAL" || col_type == "NULL" {
+        } else if col_type == "REAL" || col_type == "FLOAT8" || col_type == "NULL" {
             let value = row.get::<f64, usize>(col_index);
             value.to_string()
-        } else if col_type == "TEXT" {
+        } else if col_type == "FLOAT4" {
+            let value = row.get::<f32, usize>(col_index);
+            value.to_string()
+        } else if col_type == "TEXT" || col_type == "VARCHAR" {
             row.get::<String, usize>(col_index)
         } else {
             "No string value".to_string()
@@ -543,7 +556,7 @@ where
         }
 
         let push_to_db = async |signatures: &Vec<String>,
-                                values: &Vec<String>,
+                                values: &Vec<f64>,
                                 batch_size|
                -> Result<(), GraphDbRuntimeError> {
             // Insert to dataset query
@@ -565,7 +578,7 @@ where
             // Check input and get value
             let value = get_nb_vertices(&canonical_form)?;
             signature_batch.push(canonical_form);
-            data_batch.push(value.to_string());
+            data_batch.push(value as f64);
 
             if data_batch.len() >= batch_size {
                 // push collected data to database
@@ -598,7 +611,7 @@ where
         &mut self,
         inv_name: impl ToString,
         signatures: &[impl ToString],
-        values: &[impl ToString],
+        values: &[f64],
     ) -> Result<(), GraphDbRuntimeError> {
         let inv_name = inv_name.to_string();
 
@@ -612,7 +625,7 @@ where
     fn create_safe_insert_query(
         query_str: String,
         signatures: &[impl ToString],
-        values: &[impl ToString],
+        values: &[f64],
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
         let mut signatures = signatures.iter();
@@ -625,7 +638,7 @@ where
                 if added_signature {
                     match values.next() {
                         Some(value) => {
-                            builder.push_bind::<String>(value.to_string());
+                            builder.push_bind::<f64>(*value);
                         }
                         None => {
                             return Err(GraphDbRuntimeError::QueryCreationError(
@@ -782,7 +795,7 @@ where
 
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
-        let mut batch_to_store: Vec<Vec<String>> =
+        let mut batch_to_store: Vec<Vec<f64>> =
             Vec::with_capacity(executable.invariant_names.len());
         (0..executable.invariant_names.len())
             .for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
@@ -828,7 +841,7 @@ where
     async fn push_batch(
         &mut self,
         signatures: &mut Vec<String>,
-        batch_to_store: &mut [Vec<String>],
+        batch_to_store: &mut [Vec<f64>],
         executable: &InvariantsExecutable,
     ) -> Result<(), GraphDbRuntimeError> {
         for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
@@ -862,7 +875,10 @@ where
         let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
         // Add each returned row to the table
         while let Some(result_row) = results.next().await {
-            let row = result_row?;
+            let row = match result_row {
+                Ok(row) => row,
+                Err(e) => return Err(DB::translate_runtime_error(e)),
+            };
             // Fetch all header first
             if !added_headers {
                 added_headers = true;

@@ -10,8 +10,10 @@ pub enum GraphDbStartupError {
     DatabaseAlreadyCreated { database_name: String },
     #[error("The given database was not found: \"{database_name}\"")]
     DatabaseNotFound { database_name: String },
-    #[error("Ran into a database error : \"{0}\"")]
-    DatabaseError(#[from] sqlx::Error),
+    #[error("Missing priviledges: \"{0}\"")]
+    MissingPrivilege(sqlx::Error),
+    #[error("Ran into a unknown database error : \"{0}\"")]
+    DatabaseError(sqlx::Error),
 }
 
 #[derive(Debug, Error)]
@@ -43,44 +45,4 @@ pub enum GraphDbRuntimeError {
     InvariantExecutionError(#[from] InvariantExecutionError),
     #[error("The given value is not a valid signature: \"{0}\"")]
     InvalidSignature(String),
-}
-
-impl From<sqlx::Error> for GraphDbRuntimeError {
-    fn from(val: sqlx::Error) -> Self {
-        sqlx_error_to_db_error(val)
-    }
-}
-
-fn sqlx_error_to_db_error(val: sqlx::Error) -> GraphDbRuntimeError {
-    match &val {
-        sqlx::Error::Database(database_error) => match database_error.kind() {
-            sqlx::error::ErrorKind::UniqueViolation
-            | sqlx::error::ErrorKind::ForeignKeyViolation
-            | sqlx::error::ErrorKind::NotNullViolation
-            | sqlx::error::ErrorKind::CheckViolation => GraphDbRuntimeError::ViolationError(val),
-            sqlx::error::ErrorKind::Other => {
-                let e_str = val.to_string();
-                if e_str.contains("table") && e_str.contains("already exists") {
-                    GraphDbRuntimeError::TableAlreadyCreatedError(val)
-                } else if e_str.contains("syntax") {
-                    GraphDbRuntimeError::QueryError(val)
-                } else if e_str.contains("no such table:") {
-                    // Error looks like this : `[error details here] no such table: [TABLE NAME]`
-                    let mut e_str_iter = e_str.split("no such table:");
-                    e_str_iter.next(); // Skip 
-
-                    let table_name = e_str_iter
-                        .next()
-                        .expect("table name present")
-                        .trim()
-                        .to_string();
-                    GraphDbRuntimeError::TableNotFoundError { table_name }
-                } else {
-                    GraphDbRuntimeError::UnknownError(val)
-                }
-            }
-            _ => unreachable!("This is not suppose to be reached"),
-        },
-        _ => GraphDbRuntimeError::UnknownError(val),
-    }
 }

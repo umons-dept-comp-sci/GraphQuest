@@ -7,7 +7,7 @@ use std::{
 use sqlx::{Database, FromRow, Pool, QueryBuilder, query::Query};
 use tokio_stream::Stream;
 
-use crate::database_handler::GraphDbRuntimeError;
+use crate::database_handler::{GraphDbRuntimeError, GraphDbStartupError};
 
 pub enum ColumnType {
     String {
@@ -235,7 +235,7 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) => format!("\"{v}\""),
+                ArgType::Value(v) => format!("\'{v}\'"),
                 ArgType::Identifier(v) => v.to_string(),
             }
         )
@@ -541,4 +541,15 @@ where
     /// Checks if the given table is present inside a database.
     /// Returns 1 if the table is present, 0 otherwise.
     fn get_is_table_present(table_name: impl ToString) -> String;
+
+    fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError;
+
+    fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
+}
+
+pub trait ErrorTraduction<DB>
+where
+    DB: Database,
+{
+    fn to_graph_runtime_error(&self) -> GraphDbRuntimeError;
 }

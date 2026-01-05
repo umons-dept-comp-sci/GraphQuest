@@ -1,7 +1,7 @@
 /// The maximum capacity of the vector before pushing and flushing its content
 pub const BUFFER_VECTOR_MAX_SIZE: usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
-pub const CANONICAL_TABLE_NAME: &str = "Dataset";
+pub const CANONICAL_TABLE_NAME: &str = "dataset";
 /// The column name of the primary key of the dataset
 pub const PK_NAME: &str = "canon";
 
@@ -35,8 +35,8 @@ pub use graph_database::*;
 pub mod sqlite_handler;
 pub use sqlite_handler::*;
 
-pub mod mysql_handler;
-pub use mysql_handler::*;
+pub mod postgre_handler;
+pub use postgre_handler::*;
 
 pub mod db_query_system;
 pub use db_query_system::*;
