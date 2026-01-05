@@ -1,8 +1,4 @@
-use sqlx::{
-    FromRow, Pool,
-    query::Query,
-    sqlite::{Sqlite, SqliteError},
-};
+use sqlx::{FromRow, Pool, query::Query, sqlite::Sqlite};
 
 use tokio_stream::Stream;
 
@@ -22,7 +18,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
 
         match query.execute(pool).await {
             Ok(_) => Ok(()),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -39,7 +35,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
 
         match query.fetch_all(pool).await {
             Ok(v) => Ok(v),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -56,7 +52,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
 
         match query.fetch_one(pool).await {
             Ok(v) => Ok(v),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -218,7 +214,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         format!("DROP TABLE {}", name.to_string())
     }
 
-    fn translate_error(error: sqlx::Error) -> GraphDbRuntimeError {
+    fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError {
         match &error {
             sqlx::Error::Database(database_error) => match database_error.kind() {
                 sqlx::error::ErrorKind::UniqueViolation
@@ -252,6 +248,11 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             },
             _ => GraphDbRuntimeError::UnknownError(error),
         }
+    }
+
+    fn translate_startup_error(error: sqlx::Error) -> super::GraphDbStartupError {
+        // TODO: Check correct error codes
+        super::GraphDbStartupError::DatabaseError(error)
     }
 }
 

@@ -1,4 +1,5 @@
 const DB_SQLITE_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
+
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
 
 use std::time::Duration;
@@ -7,7 +8,7 @@ use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{PgSqlGraphDB, SqlxLogLevels},
     parser::query_parser::QueryParser,
-    utils::{StdoutOutput, config_file::ConfigFile},
+    utils::{StdoutOutput, config_file::ConfigFile, table_handler::QueryTable},
     workplace::Workplace,
 };
 use log::{LevelFilter, info};
@@ -21,11 +22,11 @@ async fn main() {
         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
     });
 
-    let mut db = PgSqlGraphDB::connect_graph_database(DB_SQLITE_URL, log_levels)
+    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_SQLITE_URL, log_levels)
         .await
         .expect("no problem");
 
-    let geng = GengProcess::call_geng(9, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
 
     db.add_to_dataset(geng.get_reader(), 1500, None)
         .await
@@ -46,12 +47,18 @@ async fn main() {
     // .await
     // .expect("no issues");
 
+    let mut table =
+        QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
     wp.find_counterexamples(
-        QueryParser::parse_conj_query("max(ag: n,m), r > 0 => conj1 = 1").expect("correct"),
-        &mut StdoutOutput,
+        QueryParser::parse_conj_query("max(ag: n,m), r > 0 => conj1 = 1 ").expect("correct"),
+        &mut table,
     )
     .await
     .expect("correct wp");
+
+    db.clear_database().await.expect("no issues");
+
+    println!("{table}");
     db.close_connection().await;
 
     info!("Program ends");

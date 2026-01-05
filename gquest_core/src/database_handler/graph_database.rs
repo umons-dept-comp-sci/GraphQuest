@@ -21,22 +21,18 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
+pub trait GraphDb: Database + DbQuerySystem<Self> + Send {}
+
 #[derive(Debug)]
 /// Represents a graph database.
 /// As long as it is not dropped, the connection to the related database will be stay up.
 /// Can be cloned cheaply (since it will just clone the associated [`Pool`]).
-pub struct GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB> + Send,
-{
+pub struct GraphDatabase<DB: GraphDb> {
     pool: Pool<DB>,
 }
 
 // Note: We are not using derive since we don't have to force the DB to be clonable, only the pools.
-impl<DB> Clone for GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB>,
-{
+impl<DB: GraphDb> Clone for GraphDatabase<DB> {
     fn clone(&self) -> Self {
         Self {
             pool: self.pool.clone(),
@@ -45,7 +41,7 @@ where
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+impl<DB: GraphDb> GraphDatabase<DB>
 where
     DB: MigrateDatabase,
 {
@@ -72,7 +68,7 @@ where
                     debug!("Success creating the database {}", db_url);
                 }
                 Err(e) => {
-                    return Err(e.into());
+                    return Err(DB::translate_startup_error(e));
                 }
             }
         } else {
@@ -125,7 +121,7 @@ where
             let res = Self::connect_with_options(db_url, connection_options).await;
             match res {
                 Ok(p) => p,
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(DB::translate_startup_error(e)),
             }
         };
 
@@ -162,10 +158,7 @@ where
 
 // ______________________ ADD TABLES ____________
 
-impl<DB> GraphDatabase<DB>
-where
-    DB: Database + DbQuerySystem<DB>,
-{
+impl<DB: GraphDb> GraphDatabase<DB> {
     /// Adds the canonical table to the database.
     async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
         let query_str = DB::get_create_table_query(
@@ -227,15 +220,14 @@ where
 
 // ______________________ UTILS ______________________
 
-struct InputFn<'e, DB: Database + DbQuerySystem<DB>> {
+struct InputFn<'e, DB: GraphDb> {
     db: GraphDatabase<DB>,
     fetch: std::pin::Pin<
         Box<dyn Stream<Item = Result<<DB as Database>::Row, sqlx::Error>> + Send + 'e>,
     >,
 }
 
-impl<'e, DB: Database + DbQuerySystem<DB>> AsyncInvariantInput<GraphDbRuntimeError>
-    for InputFn<'e, DB>
+impl<'e, DB: GraphDb> AsyncInvariantInput<GraphDbRuntimeError> for InputFn<'e, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -264,12 +256,12 @@ where
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
         match res {
             Ok(row) => Some(Ok(self.db.read_row_val(&row))),
-            Err(e) => Some(Err(DB::translate_error(e))),
+            Err(e) => Some(Err(DB::translate_runtime_error(e))),
         }
     }
 }
 
-struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
+struct OutputFn<'b, 'o, DB: GraphDb> {
     db: GraphDatabase<DB>,
     signatures: &'b mut Vec<String>,
     batch_to_store: &'b mut Vec<Vec<f64>>,
@@ -278,7 +270,7 @@ struct OutputFn<'b, 'o, DB: Database + DbQuerySystem<DB>> {
     batch_size: usize,
     invariant_exec: InvariantsExecutable,
 }
-impl<'b, 'o, DB: Database + DbQuerySystem<DB>> AsyncInvariantOutput<GraphDbRuntimeError>
+impl<'b, 'o, DB: GraphDb> AsyncInvariantOutput<GraphDbRuntimeError>
     for OutputFn<'b, 'o, DB>
 where
     DB: Send,
@@ -340,7 +332,7 @@ where
 }
 
 // TODO: Remove useless import
-impl<DB: Database + DbQuerySystem<DB>> GraphDatabase<DB>
+impl<DB: GraphDb> GraphDatabase<DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -375,7 +367,7 @@ where
         while let Some(res_value) = fetch_handle.next().await {
             match res_value {
                 Ok(res) => results.push(res.0),
-                Err(e) => return Err(DB::translate_error(e)),
+                Err(e) => return Err(DB::translate_runtime_error(e)),
             }
         }
         Ok(results)
@@ -647,7 +639,7 @@ where
                 if added_signature {
                     match values.next() {
                         Some(value) => {
-                            builder.push_bind::<f64>(value.clone().into());
+                            builder.push_bind::<f64>(*value);
                         }
                         None => {
                             return Err(GraphDbRuntimeError::QueryCreationError(
@@ -886,7 +878,7 @@ where
         while let Some(result_row) = results.next().await {
             let row = match result_row {
                 Ok(row) => row,
-                Err(e) => return Err(DB::translate_error(e)),
+                Err(e) => return Err(DB::translate_runtime_error(e)),
             };
             // Fetch all header first
             if !added_headers {

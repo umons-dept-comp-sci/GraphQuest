@@ -1,8 +1,7 @@
 use log::error;
-use sqlx::{Database, Error};
 use thiserror::Error;
 
-use crate::{data_handler::invariant_execs::{InvariantExecutionError, InvariantsExecutable}, database_handler::ErrorTraduction};
+use crate::data_handler::invariant_execs::{InvariantExecutionError, InvariantsExecutable};
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
@@ -11,8 +10,10 @@ pub enum GraphDbStartupError {
     DatabaseAlreadyCreated { database_name: String },
     #[error("The given database was not found: \"{database_name}\"")]
     DatabaseNotFound { database_name: String },
-    #[error("Ran into a database error : \"{0}\"")]
-    DatabaseError(#[from] sqlx::Error),
+    #[error("Missing priviledges: \"{0}\"")]
+    MissingPrivilege(sqlx::Error),
+    #[error("Ran into a unknown database error : \"{0}\"")]
+    DatabaseError(sqlx::Error),
 }
 
 #[derive(Debug, Error)]

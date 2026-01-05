@@ -1,11 +1,14 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
 use crate::database_handler::{
-    ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError, SqlSelectQuery, SqlTable,
+    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError,
+    SqlSelectQuery, SqlTable,
 };
 
 /// An alias for [`GraphDatabase`] specialized for MySql
 pub type PgSqlGraphDB = GraphDatabase<Postgres>;
+
+impl GraphDb for Postgres {}
 
 impl DbQuerySystem<Postgres> for Postgres {
     async fn execute_query_no_return(
@@ -16,7 +19,7 @@ impl DbQuerySystem<Postgres> for Postgres {
 
         match query.execute(pool).await {
             Ok(_) => Ok(()),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -33,7 +36,7 @@ impl DbQuerySystem<Postgres> for Postgres {
 
         match query.fetch_all(pool).await {
             Ok(v) => Ok(v),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -50,7 +53,7 @@ impl DbQuerySystem<Postgres> for Postgres {
 
         match query.fetch_one(pool).await {
             Ok(v) => Ok(v),
-            Err(e) => Err(Self::translate_error(e)),
+            Err(e) => Err(Self::translate_runtime_error(e)),
         }
     }
 
@@ -224,8 +227,7 @@ WHERE schemaname != 'pg_catalog' AND
         )
     }
 
-    fn translate_error(error: sqlx::Error) -> GraphDbRuntimeError {
-        println!("{error:?}");
+    fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError {
         let pg_error: &PgDatabaseError = error
             .as_database_error()
             .expect("correct error")
@@ -235,9 +237,20 @@ WHERE schemaname != 'pg_catalog' AND
 
         match pg_error.code() {
             "42P07" => GraphDbRuntimeError::TableAlreadyCreatedError(error),
-            // 42501 => No permissions for a table
             // 42703 => Missing column
             _ => GraphDbRuntimeError::UnknownError(error),
+        }
+    }
+
+    fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError {
+        let pg_error: &PgDatabaseError = error
+            .as_database_error()
+            .expect("correct error")
+            .downcast_ref();
+
+        match pg_error.code() {
+            "42501" => GraphDbStartupError::MissingPrivilege(error),
+            _ => GraphDbStartupError::DatabaseError(error),
         }
     }
 }

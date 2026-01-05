@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use gquest_core::database_handler::GraphDatabase;
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
 
@@ -60,6 +61,12 @@ pub struct DatabasePath {
     #[clap(default_value = DEFAULT_URL)]
     pub url: String,
 }
+
+// impl DatabasePath {
+//     pub fn connect_db<DB>(&self) -> GraphDatabase<DB> where DB {
+
+//     }
+// }
 
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {

@@ -11,8 +11,7 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDbRuntimeError,
-        GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
+        ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries
     },
     utils::{SaveOutput, config_file::ConfigFile},
 };
@@ -30,14 +29,13 @@ pub enum WorkplaceError {
 }
 
 /// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
-pub struct Workplace<'a, DB: Database + DbQuerySystem<DB>> {
+pub struct Workplace<'a, DB: GraphDb> {
     pub db: &'a mut GraphDatabase<DB>,
     config: ConfigFile,
 }
 
-impl<'a, DB: Database + DbQuerySystem<DB>> Workplace<'a, DB>
+impl<'a, DB: GraphDb> Workplace<'a, DB>
 where
-    DB: Send,
     DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
