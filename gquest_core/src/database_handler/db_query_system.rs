@@ -308,6 +308,15 @@ impl SqlTableSelection {
         }
     }
 
+    /// Selects a simple table without joining anything to it and renames it.
+    pub fn new_rename(table: impl Into<SqlTable>, new_name: impl ToString) -> Self {
+        Self {
+            selected_table: table.into(),
+            join_clause: None,
+            rename_as: Some(new_name.to_string()),
+        }
+    }
+
     /// Selects a table and joins it with the given table name by using for each one the same common column name.
     pub fn new_join(
         table: impl Into<SqlTable>,

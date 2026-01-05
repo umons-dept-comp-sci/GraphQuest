@@ -66,7 +66,7 @@ impl ExtremalCounterQuery {
         self.conjecture_to_disprove.get_all_identifiers()
     }
 
-    pub fn get_invariant_input_selection(&self) -> SqlSelectQuery {
+    pub fn get_extremal_input_selection(&self) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
 
@@ -122,7 +122,7 @@ impl ExtremalCounterQuery {
         };
 
         let mut query = SqlSelectQuery {
-            select: vec![format!("{FULL_TABLE_NAME}.*")],
+            select: vec![format!("{FULL_TABLE_NAME}.{PK_NAME}")],
             from: vec![all_inv, extremal],
             where_clause: Some(all_eq_extremal_clause),
             group_by: Vec::new(),

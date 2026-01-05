@@ -696,7 +696,7 @@ where
     ///
     /// # Args :
     /// * When provided, only signatures contained inside the result of this query will be inputed to the invariant, further restricting the input space.
-    ///     * The [`PK_NAME`] column must be present in this query, else an error might happen.
+    ///     * The [`PK_NAME`] column must be the only one present in this query, else an error might happen.
     /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
     pub async fn compute_executable(
         &mut self,
@@ -725,71 +725,51 @@ where
             }
         }
 
-        /* Join dependencies if any */
-        let mut join_query = {
-            if let Some(dep) = &executable.dependencies
-                && !dep.is_empty()
-            {
-                let mut dep = dep.clone();
-                // Get dependencies
-                SqlSelectQuery::select_column_from_table(
-                    format!("{CANONICAL_TABLE_NAME}.*"),
-                    SqlTableSelection {
-                        selected_table: SqlSelectQuery::select_all_from_table(
-                            SqlTableSelection::new_join(
-                                dep[0].clone(),
-                                dep.split_off(1),
-                                PK_NAME,
-                                None,
-                            ),
-                        )
-                        .into(),
-                        join_clause: None,
-                        rename_as: Some(CANONICAL_TABLE_NAME.to_string()),
-                    },
-                )
-            } else {
-                SqlSelectQuery::select_column_from_table(
-                    format!("{CANONICAL_TABLE_NAME}.*"),
-                    CANONICAL_TABLE_NAME,
-                )
-            }
+        // If given, uses that additional querry to restrict the dataset
+        let mut dataset = if let Some(select_query) = add_query {
+            SqlSelectQuery::select_all_from_table(SqlTableSelection::new_rename(
+                select_query,
+                CANONICAL_TABLE_NAME,
+            ))
+        } else {
+            SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
         };
 
-        // If given, uses that additional querry to further restrict the input
-        if let Some(select_query) = add_query {
-            let additional_table = SqlTableSelection {
-                selected_table: select_query.into(),
-                join_clause: None,
-                rename_as: Some(TEMPORARY_TABLE_NAME.to_string()),
-            };
-            join_query.add_table(additional_table);
-            join_query.add_and(SqlComparison::Equal(
-                ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-                ArgType::Identifier(format!("{TEMPORARY_TABLE_NAME}.{PK_NAME}")),
-            ));
-        }
-
-        /* if table already exists, add a condition so that only gets value not present in the invariant table will be returned */
+        /* if an inv table already exists, adds a condition so that only gets values not present in it */
         // Remember that since all invariants are computed together from an executable we can simply check for one and it will apply to all.
         {
             let first_inv = executable.invariant_names.last().expect("at least one val");
             if self.is_table_added(first_inv).await? {
-                join_query.add_and(SqlCondition::not(SqlCondition::exists(SqlSelectQuery {
-                    select: vec![PK_NAME.to_string()],
-                    from: vec![first_inv.to_string().into()],
-                    group_by: vec![],
-                    where_clause: Some(
-                        SqlComparison::Equal(
+                dataset.add_and(SqlCondition::not(SqlCondition::exists(
+                    SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
+                        .set_where_clause(SqlComparison::Equal(
                             ArgType::Identifier(format!("{first_inv}.{PK_NAME}")),
                             ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-                        )
-                        .into(),
-                    ),
-                    limit: None,
-                })));
+                        )),
+                )));
             }
         }
+
+        // TODO: Add dataset selection
+
+        // All needed signatures are selected
+
+        /* Join query to fetch dependencies if any are required */
+        let join_query = {
+            if let Some(dep) = &executable.dependencies
+                && !dep.is_empty()
+            {
+                SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+                    dataset,
+                    dep.clone(),
+                    PK_NAME,
+                    Some(CANONICAL_TABLE_NAME.to_string()),
+                ))
+            } else {
+                dataset
+            }
+        };
+
         // build query
         let query_str = join_query.to_sql::<DB>();
 

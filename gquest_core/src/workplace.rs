@@ -274,7 +274,7 @@ where
             )?;
 
             // Get additional extremal condition :
-            let extremal_condition = conjecture.get_invariant_input_selection();
+            let extremal_condition = conjecture.get_extremal_input_selection();
             info!(
                 "Computing conjecture invariants : {conjecture_invariants:?} (skip if already done)"
             );
