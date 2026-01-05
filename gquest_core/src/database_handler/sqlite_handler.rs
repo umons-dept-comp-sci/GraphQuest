@@ -3,11 +3,14 @@ use sqlx::{FromRow, Pool, query::Query, sqlite::Sqlite};
 use tokio_stream::Stream;
 
 use crate::database_handler::{
-    ColumnType, DbQuerySystem, GraphDatabase, GraphDbRuntimeError, SqlSelectQuery, SqlTable,
+    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery,
+    SqlTable,
 };
 
 /// An alias for [`GraphDatabase`] specialized for Sqlite
 pub type SqliteGraphDB = GraphDatabase<Sqlite>;
+
+impl GraphDb for Sqlite {}
 
 impl DbQuerySystem<Sqlite> for Sqlite {
     async fn execute_query_no_return(

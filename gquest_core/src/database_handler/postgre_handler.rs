@@ -243,14 +243,15 @@ WHERE schemaname != 'pg_catalog' AND
     }
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError {
-        let pg_error: &PgDatabaseError = error
-            .as_database_error()
-            .expect("correct error")
-            .downcast_ref();
-
-        match pg_error.code() {
-            "42501" => GraphDbStartupError::MissingPrivilege(error),
-            _ => GraphDbStartupError::DatabaseError(error),
+        match error.as_database_error() {
+            Some(e) => {
+                let pg_error: &PgDatabaseError = e.downcast_ref();
+                match pg_error.code() {
+                    "42501" => GraphDbStartupError::MissingPrivilege(error),
+                    _ => GraphDbStartupError::DatabaseError(error),
+                }
+            }
+            None => GraphDbStartupError::DatabaseError(error),
         }
     }
 }

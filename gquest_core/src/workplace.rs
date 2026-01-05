@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::info;
-use sqlx::{Database, FromRow, migrate::MigrateDatabase};
+use sqlx::{FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 use tokio::{
     sync::Mutex,
@@ -11,7 +11,8 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
     database_handler::{
-        ClassSelection, DbQuerySystem, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries
+        ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
+        GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
     },
     utils::{SaveOutput, config_file::ConfigFile},
 };

@@ -1,5 +1,5 @@
 const DB_SQLITE_URL: &str = "sqlite:gquest_core/examples/use_case/resources/gquest.db";
-
+const DB_PSG_URL: &str = "postgresql://axel:031071103@localhost/gquest_test";
 const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json";
 
 use std::time::Duration;
@@ -22,7 +22,7 @@ async fn main() {
         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
     });
 
-    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_SQLITE_URL, log_levels)
+    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_PSG_URL, log_levels)
         .await
         .expect("no problem");
 
@@ -50,7 +50,7 @@ async fn main() {
     let mut table =
         QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
     wp.find_counterexamples(
-        QueryParser::parse_conj_query("max(ag: n,m), r > 0 => conj1 = 1 ").expect("correct"),
+        QueryParser::parse_conj_query("max(P_Gn: n,m) => is_Bmn = 1 ").expect("correct"),
         &mut table,
     )
     .await

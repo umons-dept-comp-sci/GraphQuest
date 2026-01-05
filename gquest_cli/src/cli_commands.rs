@@ -1,6 +1,5 @@
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use gquest_core::database_handler::GraphDatabase;
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
 

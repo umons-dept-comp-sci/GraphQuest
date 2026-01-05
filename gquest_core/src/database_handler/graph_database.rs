@@ -270,8 +270,7 @@ struct OutputFn<'b, 'o, DB: GraphDb> {
     batch_size: usize,
     invariant_exec: InvariantsExecutable,
 }
-impl<'b, 'o, DB: GraphDb> AsyncInvariantOutput<GraphDbRuntimeError>
-    for OutputFn<'b, 'o, DB>
+impl<'b, 'o, DB: GraphDb> AsyncInvariantOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
