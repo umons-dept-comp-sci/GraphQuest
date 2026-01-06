@@ -23,8 +23,8 @@ pub enum WorkplaceError {
     GraphDbStartupError(#[from] GraphDbStartupError),
     #[error("Encountered an error from the database during an execution : \"{0}\"")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
-    #[error("Encountered an error from an invariant executable : \"{0}\"")]
-    InvariantError(#[from] ModuleError),
+    #[error("Encountered an error from a module : \"{0}\"")]
+    ModuleError(#[from] ModuleError),
     #[error("One of the invariant thread did not end correctly: \"{0}\"")]
     JoinError(#[from] JoinError),
 }
@@ -66,8 +66,8 @@ where
 
     /// Executes all stored invariants using the given settings from the [`ConfigFile`].
     /// Does not impose any condition on the graph used for the computations.
-    pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
-        self.execute_invariant_execs(
+    pub async fn execute_all_modules(&mut self) -> Result<(), WorkplaceError> {
+        self.execute_invariant_modules(
             self.config.get_execs_ref().clone().try_into()?,
             None,
             vec![],
@@ -75,8 +75,8 @@ where
         .await
     }
 
-    /// Executes the executables stored inside the sorter using the given settings from the [`ConfigFile`].
-    pub async fn execute_invariant_execs(
+    /// Executes the modules stored inside the sorter using the given settings from the [`ConfigFile`].
+    pub async fn execute_invariant_modules(
         &mut self,
         sorter: ModuleSorter,
         add_condition: Option<SqlSelectQuery>,
@@ -89,7 +89,7 @@ where
                 "Execute all modules using at most {} threads",
                 self.config.get_nb_threads()
             );
-            self.execute_all_executables_multithread(sorted, add_condition, inv_to_skip)
+            self.execute_all_modules_multithread(sorted, add_condition, inv_to_skip)
                 .await
         } else {
             info!("Execute all modules using 1 thread");
@@ -121,7 +121,7 @@ where
         }
     }
 
-    async fn execute_all_executables_multithread(
+    async fn execute_all_modules_multithread(
         &mut self,
         sorted: ModuleIterator,
         add_condition: Option<SqlSelectQuery>,
@@ -191,14 +191,14 @@ where
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
         let mut invariants = condition.get_all_identifiers();
-        // This table is used but is not part of any executable
+        // This table is used but is not part of any module
         invariants.remove(VERTICES_TABLE_NAME);
 
         if !invariants.is_empty() {
             let invariant_necessary =
                 ModuleSorter::new_from(self.config.get_execs_ref(), &invariants)?;
             // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
+            self.execute_invariant_modules(invariant_necessary, None, vec![])
                 .await?;
         }
 
@@ -226,7 +226,7 @@ where
             let invariant_necessary =
                 ModuleSorter::new_from(self.config.get_execs_ref(), &extremal_inv)?;
             // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
+            self.execute_invariant_modules(invariant_necessary, None, vec![])
                 .await?;
         }
 
@@ -257,7 +257,7 @@ where
             let invariant_necessary =
                 ModuleSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
             // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
+            self.execute_invariant_modules(invariant_necessary, None, vec![])
                 .await?;
         }
         info!("Finished computing extremal graphs, moving on to counterexample search");
@@ -278,7 +278,7 @@ where
             info!(
                 "Computing conjecture invariants : {conjecture_invariants:?} (skip if already done)"
             );
-            self.execute_invariant_execs(
+            self.execute_invariant_modules(
                 invariant_necessary,
                 Some(extremal_condition),
                 Vec::from_iter(inv_to_compute), // No need to compute these already fully computed invariants
