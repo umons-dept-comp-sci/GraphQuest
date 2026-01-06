@@ -6,7 +6,7 @@ use std::{
 use gquest_core::data_handler::{
     data_loader::GengProcess,
     invariant_execs::{
-        AsyncInvariantInput, AsyncInvariantOutput, InvariantExecutionError, InvariantsExecutable,
+        AsyncModuleInput, AsyncModuleOutput, ModuleExecutionError, Module,
     },
 };
 
@@ -21,7 +21,7 @@ struct InputFn {
     reader: Lines<BufReader<ChildStdout>>,
 }
 
-impl AsyncInvariantInput<()> for InputFn {
+impl AsyncModuleInput<()> for InputFn {
     async fn call(&mut self) -> Option<Result<Vec<String>, ()>> {
         let v = self.reader.next()?.ok()?;
         Some(Ok([v].to_vec()))
@@ -32,7 +32,7 @@ struct OutputFn<'e> {
     output_buffer: &'e mut Vec<String>,
 }
 
-impl<'e> AsyncInvariantOutput<()> for OutputFn<'e> {
+impl<'e> AsyncModuleOutput<()> for OutputFn<'e> {
     async fn call(&mut self, values: Vec<String>) -> Result<(), ()> {
         self.output_buffer.push(values[1].clone());
         Ok(())
@@ -41,7 +41,7 @@ impl<'e> AsyncInvariantOutput<()> for OutputFn<'e> {
 
 struct NoOutputFn {}
 
-impl AsyncInvariantOutput<()> for NoOutputFn {
+impl AsyncModuleOutput<()> for NoOutputFn {
     async fn call(&mut self, _values: Vec<String>) -> Result<(), ()> {
         Ok(())
     }
@@ -49,7 +49,7 @@ impl AsyncInvariantOutput<()> for NoOutputFn {
 
 #[tokio::test]
 async fn execute_correct_inv() {
-    let identity = InvariantsExecutable::new_no_dep(
+    let identity = Module::new_no_dep(
         VALID_EXEC_IDENTITY.to_string(),
         ['x'.to_string()].to_vec(),
     )
@@ -71,7 +71,7 @@ async fn execute_correct_inv() {
     };
 
     identity
-        .execute_invariant(input, output, MAX_STDIN_SIZE)
+        .execute(input, output, MAX_STDIN_SIZE)
         .await
         .expect("ok");
 
@@ -80,7 +80,7 @@ async fn execute_correct_inv() {
 
 #[tokio::test]
 async fn execute_late_inv() {
-    let identity = InvariantsExecutable::new_no_dep(LATE_FLUSH_EXEC.to_string(), ['x'].to_vec())
+    let identity = Module::new_no_dep(LATE_FLUSH_EXEC.to_string(), ['x'].to_vec())
         .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
@@ -98,7 +98,7 @@ async fn execute_late_inv() {
     };
 
     identity
-        .execute_invariant(input, output, MAX_STDIN_SIZE)
+        .execute(input, output, MAX_STDIN_SIZE)
         .await
         .expect("ok");
 
@@ -108,38 +108,38 @@ async fn execute_late_inv() {
 #[tokio::test]
 async fn execute_crash_before() {
     let identity =
-        InvariantsExecutable::new_no_dep(CRASH_BEFORE_EXEC.to_string(), ['x'.to_string()].to_vec())
+        Module::new_no_dep(CRASH_BEFORE_EXEC.to_string(), ['x'.to_string()].to_vec())
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(5, &"".to_string(), (None, None)).expect("correct call");
     let reader = geng.get_reader().lines();
     let input = InputFn { reader };
     let error = identity
-        .execute_invariant(input, NoOutputFn {}, MAX_STDIN_SIZE)
+        .execute(input, NoOutputFn {}, MAX_STDIN_SIZE)
         .await;
 
     assert!(matches!(
         error,
-        Err(InvariantExecutionError::EarlyExit(_, _, _))
+        Err(ModuleExecutionError::EarlyExit(_, _, _))
     ))
 }
 
 #[tokio::test]
 async fn execute_crash_during() {
     let identity =
-        InvariantsExecutable::new_no_dep(CRASH_DURING_EXEC.to_string(), ['x'.to_string()].to_vec())
+        Module::new_no_dep(CRASH_DURING_EXEC.to_string(), ['x'.to_string()].to_vec())
             .expect("correct inv");
 
     let geng = GengProcess::call_geng(4, &"".to_string(), (None, None)).expect("correct call");
     let reader = geng.get_reader().lines();
     let input = InputFn { reader };
     let error = identity
-        .execute_invariant(input, NoOutputFn {}, MAX_STDIN_SIZE)
+        .execute(input, NoOutputFn {}, MAX_STDIN_SIZE)
         .await;
 
     assert!(matches!(
         error,
-        Err(InvariantExecutionError::EarlyExit(_, _, _))
+        Err(ModuleExecutionError::EarlyExit(_, _, _))
     ))
 }
 

@@ -9,7 +9,7 @@ use tokio::{
 };
 
 use crate::{
-    data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
+    data_handler::invariant_execs::{ModuleError, ModuleIterator, ModuleSorter},
     database_handler::{
         ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
         GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
@@ -24,7 +24,7 @@ pub enum WorkplaceError {
     #[error("Encountered an error from the database during an execution : \"{0}\"")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
     #[error("Encountered an error from an invariant executable : \"{0}\"")]
-    InvariantError(#[from] InvariantError),
+    InvariantError(#[from] ModuleError),
     #[error("One of the invariant thread did not end correctly: \"{0}\"")]
     JoinError(#[from] JoinError),
 }
@@ -78,7 +78,7 @@ where
     /// Executes the executables stored inside the sorter using the given settings from the [`ConfigFile`].
     pub async fn execute_invariant_execs(
         &mut self,
-        sorter: ExecutableSorter,
+        sorter: ModuleSorter,
         add_condition: Option<SqlSelectQuery>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
@@ -93,7 +93,7 @@ where
                 .await
         } else {
             info!("Execute all modules using 1 thread");
-            while let Some(next_inv) = sorted.next_invariant() {
+            while let Some(next_inv) = sorted.next_module() {
                 // Check if this invariant should be skipped
                 if !next_inv
                     .invariant_names
@@ -123,15 +123,15 @@ where
 
     async fn execute_all_executables_multithread(
         &mut self,
-        sorted: ExecutableIterator,
+        sorted: ModuleIterator,
         add_condition: Option<SqlSelectQuery>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
         let iter = Arc::new(Mutex::new(sorted));
 
         // Used to directly unlock the mutex after acquiring the next invariant
-        let get_next_inv = &mut async |iter_lock: &Arc<Mutex<ExecutableIterator>>| {
-            iter_lock.lock().await.next_invariant()
+        let get_next_inv = &mut async |iter_lock: &Arc<Mutex<ModuleIterator>>| {
+            iter_lock.lock().await.next_module()
         };
 
         let mut handles: JoinSet<Result<(), GraphDbRuntimeError>> = JoinSet::new();
@@ -196,7 +196,7 @@ where
 
         if !invariants.is_empty() {
             let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &invariants)?;
+                ModuleSorter::new_from(self.config.get_execs_ref(), &invariants)?;
             // Compute them
             self.execute_invariant_execs(invariant_necessary, None, vec![])
                 .await?;
@@ -224,7 +224,7 @@ where
 
         if !extremal_inv.is_empty() {
             let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &extremal_inv)?;
+                ModuleSorter::new_from(self.config.get_execs_ref(), &extremal_inv)?;
             // Compute them
             self.execute_invariant_execs(invariant_necessary, None, vec![])
                 .await?;
@@ -255,7 +255,7 @@ where
         );
         if !inv_to_compute.is_empty() {
             let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
+                ModuleSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
             // Compute them
             self.execute_invariant_execs(invariant_necessary, None, vec![])
                 .await?;
@@ -268,7 +268,7 @@ where
 
         if !conjecture_invariants.is_empty() {
             // This automatically adds the dependencies of the conjecture invariants
-            let invariant_necessary = ExecutableSorter::new_from(
+            let invariant_necessary = ModuleSorter::new_from(
                 self.config.get_execs_ref(),
                 &conjecture_invariants.difference(&inv_to_compute).collect(), // Remove already computed invariants
             )?;

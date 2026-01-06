@@ -16,29 +16,27 @@ use topo_sort::TopoSort;
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
 #[derive(Debug, Error)]
-pub enum InvariantExecutionError {
-    #[error("Failed to start executing the executable \"{0}\"")]
+pub enum ModuleExecutionError {
+    #[error("Failed to start executing the module \"{0}\"")]
     FailedExecution(String),
-    #[error("Failed to write to the stdin of the executable \"{1}\", reason \"{0}\"")]
+    #[error("Failed to write to the stdin of the module: \"{1}\", reason \"{0}\"")]
     FailedWriteStdin(io::Error, String),
     #[error(
-        "The executable \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" "
+        "The module \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" "
     )]
     EarlyExit(String, String, String),
-    #[error("The executable \"{0}\" returned \"{1}\" values instead of \"{2}\"")]
+    #[error("The module \"{0}\" returned \"{1}\" values instead of \"{2}\"")]
     UnexpectedOutput(String, usize, usize),
-    #[error("Tried to input \"{1}\" values instead of \"{2}\" to executable \"{0}\"")]
+    #[error("Tried to input \"{1}\" values instead of \"{2}\" to module \"{0}\"")]
     UnexpectedInput(String, usize, usize),
     #[error("The output function returned an error during the execution : \"{0}\"")]
-    // Drops some information about the error
     FailedOutput(String),
     #[error("The input function returned an error during the execution : \"{0}\"")]
-    // Drops some information about the error
     FailedInput(String),
 }
 
 #[derive(Debug, Error)]
-pub enum InvariantError {
+pub enum ModuleError {
     #[error("The given path \"{0}\" does not lead to a file")]
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
@@ -52,12 +50,12 @@ pub enum InvariantError {
     )]
     InvalidName(String),
     #[error(
-        "The given invariant \"{0}\" is not present, yet it is a dependency of the executable \"{1}\""
+        "The given invariant \"{0}\" is not present, yet it is a dependency of the module \"{1}\""
     )]
     MissingDependency(String, PathBuf),
-    #[error("The executable \"{0}\" depends on itself")]
+    #[error("The module \"{0}\" depends on itself")]
     DependsOnSelf(String),
-    #[error("Tried to add the following executable \"{0}\" twice")]
+    #[error("Tried to add the following module \"{0}\" twice")]
     AlreadyAddedExecutable(PathBuf),
     #[error("Tried to add an invariant with the name \"{0}\" twice")]
     AlreadyAddedInvariant(String),
@@ -65,9 +63,9 @@ pub enum InvariantError {
     DependencyCycle,
 }
 
-/// Represent an executable file that can be used to compute inveriants.
+/// Represent an executable file that can be used to compute graph invariants.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvariantsExecutable {
+pub struct Module {
     /// The *absolute* path to the file to execute.
     pub exec_path: PathBuf,
 
@@ -79,14 +77,14 @@ pub struct InvariantsExecutable {
     pub dependencies: Option<Vec<String>>,
 }
 
-/// Trait used to provide a stream of data to provided to an invariant
-pub trait AsyncInvariantInput<E> {
+/// Trait used to provide a stream of data to provided to a module
+pub trait AsyncModuleInput<E> {
     /// Returns the next values to feed to the invariant. None if everything was already given.
     fn call(&mut self) -> impl std::future::Future<Output = Option<Result<Vec<String>, E>>> + Send;
 }
 
 /// Trait used to save the data returned from the invariants.
-pub trait AsyncInvariantOutput<E> {
+pub trait AsyncModuleOutput<E> {
     /// Provides the invariant returned values.
     fn call(
         &mut self,
@@ -94,13 +92,13 @@ pub trait AsyncInvariantOutput<E> {
     ) -> impl std::future::Future<Output = Result<(), E>> + Send;
 }
 
-impl InvariantsExecutable {
+impl Module {
     /// Creates an invariant using the given parameters
     pub fn new(
         exec_path: impl Into<String>,
         names: Vec<impl Into<String>>,
         dependencies: Vec<impl Into<String>>,
-    ) -> Result<Self, InvariantError> {
+    ) -> Result<Self, ModuleError> {
         let invariant_names: Vec<String> = names.into_iter().map(|n| n.into()).collect();
 
         let dependencies: Option<Vec<String>> = {
@@ -114,7 +112,7 @@ impl InvariantsExecutable {
         let exec_path =
             Self::check_validity(exec_path.into(), &invariant_names, dependencies.as_deref())?;
 
-        let i = InvariantsExecutable {
+        let i = Module {
             exec_path,
             invariant_names,
             dependencies,
@@ -127,12 +125,12 @@ impl InvariantsExecutable {
     pub fn new_no_dep(
         exec_path: impl Into<String>,
         names: Vec<impl Into<String>>,
-    ) -> Result<Self, InvariantError> {
+    ) -> Result<Self, ModuleError> {
         let invariant_names: Vec<String> = names.into_iter().map(|n| n.into()).collect();
 
         let exec_path = Self::check_validity(exec_path.into(), &invariant_names, None)?;
 
-        let i = InvariantsExecutable {
+        let i = Module {
             exec_path,
             invariant_names,
             dependencies: None,
@@ -146,21 +144,21 @@ impl InvariantsExecutable {
         exec_path: String,
         names: &[String],
         dependencies: Option<&[String]>,
-    ) -> Result<PathBuf, InvariantError> {
+    ) -> Result<PathBuf, ModuleError> {
         let path = Self::get_path(exec_path)?;
         for name in names {
             Self::check_invariant_name_validity(name)?;
             if let Some(dependencies) = dependencies
                 && dependencies.contains(name)
             {
-                return Err(InvariantError::DependsOnSelf(name.to_string()));
+                return Err(ModuleError::DependsOnSelf(name.to_string()));
             }
         }
         Ok(path)
     }
 
     /// Checks if the given invariant path actually leads to the executable
-    fn get_path(exec_path: String) -> Result<PathBuf, InvariantError> {
+    fn get_path(exec_path: String) -> Result<PathBuf, ModuleError> {
         // Checks if the given file path exists
         let mut inv_path = Path::new(&exec_path);
         let curr_path = env::current_dir()?;
@@ -175,10 +173,10 @@ impl InvariantsExecutable {
         // and if the path doesn't lead to a file
         if let Ok(false) = inv_path.try_exists() {
             // Try to turn it into an absolute path
-            return Err(InvariantError::InvalidPath(inv_path.to_path_buf()));
+            return Err(ModuleError::InvalidPath(inv_path.to_path_buf()));
         }
         if !inv_path.is_executable() {
-            return Err(InvariantError::NotExecutable(inv_path.to_path_buf()));
+            return Err(ModuleError::NotExecutable(inv_path.to_path_buf()));
         }
         Ok(inv_path.to_path_buf())
     }
@@ -188,26 +186,26 @@ impl InvariantsExecutable {
     /// # Errors :
     /// * If the given name is not ascii
     /// * If the given name does not match with the following regex: [`INVARIANT_REGEX`]
-    pub fn check_invariant_name_validity(name: &String) -> Result<(), InvariantError> {
+    pub fn check_invariant_name_validity(name: &String) -> Result<(), ModuleError> {
         let re = Regex::new(INVARIANT_REGEX).expect("Regex should be okay");
         if !name.is_ascii() || !re.is_match(name) {
-            return Err(InvariantError::InvalidName(name.to_string()));
+            return Err(ModuleError::InvalidName(name.to_string()));
         }
         Ok(())
     }
 
-    /// Execute this executable by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
+    /// Execute this module by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
     /// # Errrors
     /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
-    pub async fn execute_invariant<T, F, E>(
+    pub async fn execute<T, F, E>(
         &self,
         mut input_function: T,
         mut output_function: F,
         batch_size: usize,
-    ) -> Result<(), InvariantExecutionError>
+    ) -> Result<(), ModuleExecutionError>
     where
-        T: AsyncInvariantInput<E>,
-        F: AsyncInvariantOutput<E>,
+        T: AsyncModuleInput<E>,
+        F: AsyncModuleOutput<E>,
         E: Debug,
     {
         debug!(
@@ -221,7 +219,7 @@ impl InvariantsExecutable {
             .spawn()
         {
             Ok(res) => res,
-            Err(e) => return Err(InvariantExecutionError::FailedExecution(e.to_string())),
+            Err(e) => return Err(ModuleExecutionError::FailedExecution(e.to_string())),
         };
 
         let mut stderr = call_res.stderr.take().expect("stdout to be open");
@@ -237,7 +235,7 @@ impl InvariantsExecutable {
             // For every value to send
             while let Some(val) = input_function.call().await {
                 if let Err(e) = val {
-                    return Err(InvariantExecutionError::FailedInput(format!("{e:?}")));
+                    return Err(ModuleExecutionError::FailedInput(format!("{e:?}")));
                 }
                 let val = val.unwrap();
 
@@ -248,7 +246,7 @@ impl InvariantsExecutable {
                 if let Some(dep) = &self.dependencies
                     && dep.len() + 1 != val.len()
                 {
-                    return Err(InvariantExecutionError::UnexpectedInput(
+                    return Err(ModuleExecutionError::UnexpectedInput(
                         self.exec_path.display().to_string(),
                         val.len(),
                         dep.len() + 1,
@@ -305,9 +303,9 @@ impl InvariantsExecutable {
         output_function: &mut T,
         stdout: &mut ChildStdout,
         stderr: &mut ChildStderr,
-    ) -> Result<(), InvariantExecutionError>
+    ) -> Result<(), ModuleExecutionError>
     where
-        T: AsyncInvariantOutput<E>,
+        T: AsyncModuleOutput<E>,
         E: Debug,
     {
         debug!(
@@ -327,14 +325,14 @@ impl InvariantsExecutable {
                 let vals: Vec<String> = s.split(' ').map(|v| v.to_string()).collect();
                 // Should return the signature and a value for each invariants
                 if vals.len() != self.invariant_names.len() + 1 {
-                    return Err(InvariantExecutionError::UnexpectedOutput(
+                    return Err(ModuleExecutionError::UnexpectedOutput(
                         self.exec_path.display().to_string(),
                         vals.len(),
                         self.invariant_names.len() + 1,
                     ));
                 }
                 if let Err(e) = output_function.call(vals).await {
-                    return Err(InvariantExecutionError::FailedOutput(format!("{e:?}")));
+                    return Err(ModuleExecutionError::FailedOutput(format!("{e:?}")));
                 }
             }
 
@@ -365,7 +363,7 @@ impl InvariantsExecutable {
         &self,
         child: &mut Child,
         stderr: &mut ChildStderr,
-    ) -> Result<(), InvariantExecutionError> {
+    ) -> Result<(), ModuleExecutionError> {
         if let Ok(Some(status)) = child.try_wait() {
             if status.success() {
                 return Ok(());
@@ -376,7 +374,7 @@ impl InvariantsExecutable {
                 c.push('\n');
                 err.push_str(&c);
             }
-            Err(InvariantExecutionError::EarlyExit(
+            Err(ModuleExecutionError::EarlyExit(
                 self.exec_path.display().to_string(),
                 status.to_string(),
                 err,
@@ -389,10 +387,10 @@ impl InvariantsExecutable {
     fn exec_stdin_io_call<T>(
         &self,
         to_call: &mut dyn FnMut() -> Result<T, io::Error>,
-    ) -> Result<T, InvariantExecutionError> {
+    ) -> Result<T, ModuleExecutionError> {
         match to_call() {
             Ok(t) => Ok(t),
-            Err(e) => Err(InvariantExecutionError::FailedWriteStdin(
+            Err(e) => Err(ModuleExecutionError::FailedWriteStdin(
                 e,
                 self.exec_path.display().to_string(),
             )),
@@ -405,15 +403,15 @@ impl InvariantsExecutable {
 /// * if an invariant was already added
 /// * if one of it's dependencies does not exists
 #[derive(Default, Clone, Debug)]
-pub struct ExecutableSorter {
+pub struct ModuleSorter {
     /// `Invariant name` -> `Linked Executable path`
     name_path_hashmap: IndexMap<String, PathBuf>,
-    /// `Executable path` -> `Executables`
-    path_exec_hashmap: IndexMap<PathBuf, InvariantsExecutable>,
+    /// `Executable path` -> `Module`
+    path_exec_hashmap: IndexMap<PathBuf, Module>,
 }
 
-impl ExecutableSorter {
-    /// Creates a new empty [`ExecutableSorter`]
+impl ModuleSorter {
+    /// Creates a new empty [`ModuleSorter`]
     pub fn new() -> Self {
         Self::default()
     }
@@ -422,9 +420,9 @@ impl ExecutableSorter {
     /// # Errors
     /// Returns an [`InvariantError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
     pub fn new_from(
-        all_invariants: &[InvariantsExecutable],
+        all_invariants: &[Module],
         inv_to_add: &HashSet<impl ToString>,
-    ) -> Result<Self, InvariantError> {
+    ) -> Result<Self, ModuleError> {
         let mut res = Self::new();
 
         // To ease the process, creates an hashmap : `name` -> `index of execs`
@@ -443,22 +441,22 @@ impl ExecutableSorter {
         Ok(res)
     }
 
-    /// Adds the given invariant executable using the given name.
+    /// Adds the given module using the given name.
     fn add_inv_from_name(
         &mut self,
-        all_invariants: &[InvariantsExecutable],
+        all_invariants: &[Module],
         name_index_map: &HashMap<&String, usize>,
         inv_to_add: &String,
-    ) -> Result<(), InvariantError> {
+    ) -> Result<(), ModuleError> {
         let Some(exec_index) = name_index_map.get(inv_to_add) else {
-            return Err(InvariantError::UnknownInvariant(inv_to_add.to_string()));
+            return Err(ModuleError::UnknownInvariant(inv_to_add.to_string()));
         };
 
         let exec = &all_invariants[*exec_index];
 
         // Try to add invariant if not already added
         if let Err(e) = self.add_inv_exec(exec.clone()) {
-            if let InvariantError::AlreadyAddedExecutable(_) = e {
+            if let ModuleError::AlreadyAddedExecutable(_) = e {
             } else {
                 return Err(e);
             }
@@ -486,15 +484,13 @@ impl ExecutableSorter {
     // }
 
     /// Adds an invariant executable to the sorter.
-    pub fn add_inv_exec(&mut self, inv: InvariantsExecutable) -> Result<(), InvariantError> {
+    pub fn add_inv_exec(&mut self, inv: Module) -> Result<(), ModuleError> {
         if self.path_exec_hashmap.contains_key(&inv.exec_path) {
-            return Err(InvariantError::AlreadyAddedExecutable(
-                inv.exec_path.clone(),
-            ));
+            return Err(ModuleError::AlreadyAddedExecutable(inv.exec_path.clone()));
         }
         for name in &inv.invariant_names {
             if self.name_path_hashmap.contains_key(name) {
-                return Err(InvariantError::AlreadyAddedInvariant(name.to_string()));
+                return Err(ModuleError::AlreadyAddedInvariant(name.to_string()));
             }
             self.name_path_hashmap
                 .insert(name.to_string(), inv.exec_path.clone());
@@ -504,10 +500,7 @@ impl ExecutableSorter {
     }
 
     /// Adds multiple invariant executables to the sorter.
-    pub fn add_inv_execs(
-        &mut self,
-        execs: Vec<InvariantsExecutable>,
-    ) -> Result<(), InvariantError> {
+    pub fn add_modules(&mut self, execs: Vec<Module>) -> Result<(), ModuleError> {
         for inv in execs {
             self.add_inv_exec(inv)?;
         }
@@ -525,11 +518,11 @@ impl ExecutableSorter {
         self.path_exec_hashmap.is_empty()
     }
 
-    /// Performs a topological sort with the stored [`InvariantsExecutable`]s
+    /// Performs a topological sort with the stored [`Module`]s
     /// # Errors
     /// * [`InvariantError::MissingDependency`] if one of the dependencies from one invariant is not present.
     /// * [`InvariantError::DependencyCycle`] if a cycle is found.
-    pub fn sort(mut self) -> Result<Vec<InvariantsExecutable>, InvariantError> {
+    pub fn sort(mut self) -> Result<Vec<Module>, ModuleError> {
         // Init the topological sort
         let mut topo_sort: TopoSort<PathBuf> =
             TopoSort::with_capacity(self.path_exec_hashmap.len());
@@ -546,7 +539,7 @@ impl ExecutableSorter {
                             dependencies.push(path.clone());
                         }
                         None => {
-                            return Err(InvariantError::MissingDependency(
+                            return Err(ModuleError::MissingDependency(
                                 dep.to_string(),
                                 exec.exec_path.clone(),
                             ));
@@ -561,7 +554,7 @@ impl ExecutableSorter {
         let ordered_paths = match topo_sort.into_vec_nodes() {
             topo_sort::SortResults::Full(items) => items,
             topo_sort::SortResults::Partial(_) => {
-                return Err(InvariantError::DependencyCycle);
+                return Err(ModuleError::DependencyCycle);
             }
         };
 
@@ -577,10 +570,10 @@ impl ExecutableSorter {
         Ok(res)
     }
 
-    /// Consumes the sorter and turns it into an [`ExecutableIterator`]
+    /// Consumes the sorter and turns it into an [`ModuleIterator`]
     /// # Errors
-    /// See the [`ExecutableSorter::sort`] method.
-    pub fn to_iter(self) -> Result<ExecutableIterator, InvariantError> {
+    /// See the [`ModuleSorter::sort`] method.
+    pub fn to_iter(self) -> Result<ModuleIterator, ModuleError> {
         let sorted_execs = self.sort()?;
 
         let mut res = ExecDepStore::default();
@@ -605,25 +598,25 @@ impl ExecutableSorter {
                 res.dep_left.push(0);
             }
 
-            res.executables.push(Some(exec));
+            res.modules.push(Some(exec));
             res.dep_indexes.push(vec![]);
         }
-        Ok(ExecutableIterator::new(res))
+        Ok(ModuleIterator::new(res))
     }
 }
 
 #[derive(Debug)]
-pub struct ExecutableIterator {
+pub struct ModuleIterator {
     store: ExecDepStore,
-    can_now_exec: Vec<InvariantsExecutable>,
+    can_now_exec: Vec<Module>,
     being_computed: IndexMap<PathBuf, usize>,
     left_to_exec: usize,
 }
 
-impl ExecutableIterator {
+impl ModuleIterator {
     fn new(store: ExecDepStore) -> Self {
         let mut res = Self {
-            left_to_exec: store.executables.len(),
+            left_to_exec: store.modules.len(),
             can_now_exec: vec![],
             being_computed: IndexMap::new(),
             store,
@@ -640,7 +633,7 @@ impl ExecutableIterator {
         self.left_to_exec == 0
     }
 
-    pub fn update_dependencies(&mut self, inv_exec: &InvariantsExecutable) {
+    pub fn update_dependencies(&mut self, inv_exec: &Module) {
         // Find the given invariant (if it is even present)
         if let Some(index) = self.being_computed.swap_remove(&inv_exec.exec_path) {
             for dep_index in &self.store.dep_indexes[index] {
@@ -655,16 +648,16 @@ impl ExecutableIterator {
 
     fn update_can_now_exec(&mut self) {
         // Get all processes that can now be executed
-        for i in (0..self.store.executables.len()).rev() {
-            if self.store.dep_left[i] == 0 && self.store.executables[i].is_some() {
-                let can_exec = self.store.executables[i].take().expect("present");
+        for i in (0..self.store.modules.len()).rev() {
+            if self.store.dep_left[i] == 0 && self.store.modules[i].is_some() {
+                let can_exec = self.store.modules[i].take().expect("present");
                 self.being_computed.insert(can_exec.exec_path.clone(), i);
                 self.can_now_exec.push(can_exec);
             }
         }
     }
 
-    pub fn next_invariant(&mut self) -> Option<InvariantsExecutable> {
+    pub fn next_module(&mut self) -> Option<Module> {
         // If an invariant is waiting
         if !self.can_now_exec.is_empty() {
             self.left_to_exec -= 1;
@@ -674,11 +667,11 @@ impl ExecutableIterator {
     }
 }
 
-impl Iterator for ExecutableIterator {
-    type Item = InvariantsExecutable;
+impl Iterator for ModuleIterator {
+    type Item = Module;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(inv) = self.next_invariant() {
+        if let Some(inv) = self.next_module() {
             self.update_dependencies(&inv);
             Some(inv)
         } else {
@@ -687,10 +680,10 @@ impl Iterator for ExecutableIterator {
     }
 }
 
-impl TryFrom<Vec<InvariantsExecutable>> for ExecutableSorter {
-    type Error = InvariantError;
+impl TryFrom<Vec<Module>> for ModuleSorter {
+    type Error = ModuleError;
 
-    fn try_from(values: Vec<InvariantsExecutable>) -> Result<Self, Self::Error> {
+    fn try_from(values: Vec<Module>) -> Result<Self, Self::Error> {
         let mut sorter = Self::new();
         for val in values {
             sorter.add_inv_exec(val)?;
@@ -700,10 +693,10 @@ impl TryFrom<Vec<InvariantsExecutable>> for ExecutableSorter {
     }
 }
 
-impl TryFrom<Vec<&InvariantsExecutable>> for ExecutableSorter {
-    type Error = InvariantError;
+impl TryFrom<Vec<&Module>> for ModuleSorter {
+    type Error = ModuleError;
 
-    fn try_from(values: Vec<&InvariantsExecutable>) -> Result<Self, Self::Error> {
+    fn try_from(values: Vec<&Module>) -> Result<Self, Self::Error> {
         let mut sorter = Self::new();
         for val in values {
             sorter.add_inv_exec(val.clone())?;
@@ -718,14 +711,14 @@ impl TryFrom<Vec<&InvariantsExecutable>> for ExecutableSorter {
 /// It is not meant to be used publically.
 struct ExecDepStore {
     /// The invariants sorted using a topological sort
-    executables: Vec<Option<InvariantsExecutable>>,
+    modules: Vec<Option<Module>>,
     /// The number of dependencies left for an invariants
     dep_left: Vec<usize>,
     /// The indexes of the executables that depend on this executable.
     dep_indexes: Vec<Vec<usize>>,
 }
 
-impl Display for InvariantsExecutable {
+impl Display for Module {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut inv_list = "{".to_string();
 

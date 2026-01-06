@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use gquest_core::{
     data_handler::data_loader::GengProcess,
-    database_handler::{PgSqlGraphDB, SqliteGraphDB, SqlxLogLevels},
+    database_handler::{SqliteGraphDB, SqlxLogLevels},
     parser::query_parser::QueryParser,
     utils::{config_file::ConfigFile, table_handler::QueryTable},
     workplace::Workplace,

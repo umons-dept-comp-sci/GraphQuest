@@ -1,5 +1,5 @@
 use gquest_core::{
-    data_handler::invariant_execs::InvariantsExecutable,
+    data_handler::invariant_execs::Module,
     utils::config_file::{ConfigFile, ConfigFileError},
 };
 use serde_json::json;
@@ -61,20 +61,20 @@ pub fn from_file_test() {
 }
 
 pub fn get_a_b_c_exec() -> (
-    InvariantsExecutable,
-    InvariantsExecutable,
-    InvariantsExecutable,
+    Module,
+    Module,
+    Module,
 ) {
-    let a = InvariantsExecutable::new_no_dep(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()])
+    let a = Module::new_no_dep(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()])
         .expect("Correct inv");
 
-    let b = InvariantsExecutable::new_no_dep(
+    let b = Module::new_no_dep(
         VALID_EXEC_B.to_string(),
         vec!["m".to_string(), "km".to_string(), "rm".to_string()],
     )
     .expect("Correct inv");
 
-    let c = InvariantsExecutable::new(
+    let c = Module::new(
         VALID_EXEC_C.to_string(),
         vec!["is_Bmn".to_string()],
         vec!["km".to_string(), "rm".to_string()],

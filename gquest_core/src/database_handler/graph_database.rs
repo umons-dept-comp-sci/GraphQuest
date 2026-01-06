@@ -7,7 +7,7 @@ use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool
 use tokio_stream::{Stream, StreamExt};
 
 use crate::data_handler::invariant_execs::{
-    AsyncInvariantInput, AsyncInvariantOutput, InvariantsExecutable,
+    AsyncModuleInput, AsyncModuleOutput, Module,
 };
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
 use crate::utils::SaveOutput;
@@ -227,7 +227,7 @@ struct InputFn<'e, DB: GraphDb> {
     >,
 }
 
-impl<'e, DB: GraphDb> AsyncInvariantInput<GraphDbRuntimeError> for InputFn<'e, DB>
+impl<'e, DB: GraphDb> AsyncModuleInput<GraphDbRuntimeError> for InputFn<'e, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -268,9 +268,9 @@ struct OutputFn<'b, 'o, DB: GraphDb> {
     count: &'b mut usize,
     optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
     batch_size: usize,
-    invariant_exec: InvariantsExecutable,
+    invariant_exec: Module,
 }
-impl<'b, 'o, DB: GraphDb> AsyncInvariantOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
+impl<'b, 'o, DB: GraphDb> AsyncModuleOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
 where
     DB: Send,
     DB: MigrateDatabase,
@@ -700,7 +700,7 @@ where
     /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
     pub async fn compute_executable(
         &mut self,
-        executable: &InvariantsExecutable,
+        executable: &Module,
         add_query: Option<SqlSelectQuery>,
         batch_size: usize,
         mut optional_obs: Option<&mut dyn Observer>,
@@ -803,7 +803,7 @@ where
             };
 
             executable
-                .execute_invariant(input, output, batch_size)
+                .execute(input, output, batch_size)
                 .await?;
         }
         if count != 0 {
@@ -822,7 +822,7 @@ where
         &mut self,
         signatures: &mut Vec<String>,
         batch_to_store: &mut [Vec<f64>],
-        executable: &InvariantsExecutable,
+        executable: &Module,
     ) -> Result<(), GraphDbRuntimeError> {
         for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
             // Check if table was created before

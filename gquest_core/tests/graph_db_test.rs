@@ -1,5 +1,5 @@
 use gquest_core::{
-    data_handler::{data_loader::GengProcess, invariant_execs::InvariantsExecutable},
+    data_handler::{data_loader::GengProcess, invariant_execs::Module},
     database_handler::{
         CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqlSelectQuery,
         SqliteGraphDB, VERTICES_TABLE_NAME,
@@ -232,7 +232,7 @@ async fn compute_executable_test() {
 
     // Get invariant :
     let identity =
-        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
@@ -276,7 +276,7 @@ async fn compute_executable_obs_test() {
 
     // Get invariant :
     let identity =
-        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let (expected, geng_reader) = get_geng_values();
@@ -312,7 +312,7 @@ async fn compute_executable_with_selection_test() {
 
     // Get invariant :
     let identity =
-        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let geng_reader = get_geng_values().1;
@@ -371,7 +371,7 @@ async fn compute_executable_no_duplicate() {
 
     // Get invariant :
     let identity =
-        InvariantsExecutable::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let (expected, geng_reader) = get_geng_values();
