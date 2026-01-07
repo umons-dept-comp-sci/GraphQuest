@@ -106,7 +106,7 @@ To correctly use one, $\texttt{gquest}$ needs the following informations :
 * `names` : The names of the invariants computed and returned by this program.
   * Each name must start with a letter (or \'\_\') while the rest can only contain letters, numbers and \'\_\'. This is in order to store it in a database without any troubles or having to change the name.
   * Based on the number of provided names $\texttt{gquest}$ will expect the same number of arguments to be returned **alongside** the graph signature.
-* `dependencies` : The names of the **invariants** that need to be passed as *inputs* to this executable alongside the graph canonical form (see this [section](#executable-sorter-) for more informations).
+* `dependencies` : The names of the **invariants** that need to be passed as *inputs* to this executable alongside graph signatures.
   <!-- * `^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$` in order to store it in a database without any troubles or having to change the name. -->
 
 
@@ -127,7 +127,7 @@ Configuration files are used to specify multiple modules in one file alongside s
 {
   "batch_size": 5000,
   "nb_threads": 10,
-  "executables": [
+  "modules": [
     {
       "path": "P_Gn.py",
       "names": [
@@ -184,7 +184,7 @@ Step 4 is really important since because the cli cannot access the content of th
 > Do not forget to remove any function printing debug content to the stdout, such as `print(..)` in Python. Because then this content will be interpreted as a returned value of the module by the CLI.
 
 > [!NOTE]
-> The programs always saves all data returned by the modules it called, even for invariants it did not really needed at the time. But it only calls a module if one of the values it computes is needed for a user query.
+> The programs always saves all data returned by the modules it called, even for invariants it did not really need at the time. But it only executes a module if one of the values it computes is needed for a user query.
  
 
 In the following sections, we will go over how the inputs and outputs need to be formated by all parties.
