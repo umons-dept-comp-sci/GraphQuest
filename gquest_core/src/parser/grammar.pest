@@ -2,10 +2,13 @@
 WHITESPACE = _{ " " | "\t" }
 
 // Combines all queries into one for ease of parse
-query = { (condition ~ EOI) | extremal_query | conj_query }
+query = { (condition ~ EOI) | extremal_query | conj_query | extremal_conj_query }
 
-// example : min(p_qn: n, m), d > 3 => conj1 = 0
-conj_query = { extremal_selection ~ implication ~ condition ~ EOI } 
+// example : min(p_qn: n, m), d > 3 => conj1 = 1
+extremal_conj_query = { extremal_selection ~ implication ~ condition ~ EOI } 
+
+// example : d > 3 => conj1 = 1
+conj_query = { condition ~ implication ~ condition ~ EOI } 
 
 
 extremal_query =  { extremal_selection ~ EOI }

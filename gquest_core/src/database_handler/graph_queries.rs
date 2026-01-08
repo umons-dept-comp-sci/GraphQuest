@@ -66,6 +66,7 @@ impl ExtremalCounterQuery {
         self.conjecture_to_disprove.get_all_identifiers()
     }
 
+    //FIXME: This function is too similar to another one
     pub fn get_extremal_input_selection(&self) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
@@ -365,6 +366,7 @@ pub fn select_all_graph_cond(cond: impl Into<SqlCondition>) -> SqlSelectQuery {
     .set_where_clause(cond)
 }
 
+/// Returns a query that can be used to fetch all extremal graphs
 pub fn select_all_extremal_graphs(
     selection: &ClassSelection,
     additional_condition: &Option<SqlCondition>,

@@ -13,6 +13,16 @@ def complete_split(n:int, k:int):
 
     return res
 
+memory = {}
 
 
-print(nx.to_graph6_bytes(complete_split(8, 4)).decode("utf-8") )
+# if __name__ == "__main__":
+#     for sig, ag in map(str.split, map(str.strip, sys.stdin)):
+#         G = nx.from_graph6_bytes(sig.encode("utf-8"))
+#         ag = float(ag)
+
+                
+        # print(sig, int(ag <= (2* r**2) - r), flush=True)
+
+
+# print(nx.to_graph6_bytes(complete_split(8, 4)).decode("utf-8") )

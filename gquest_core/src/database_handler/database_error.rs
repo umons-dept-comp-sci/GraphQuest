@@ -45,4 +45,6 @@ pub enum GraphDbRuntimeError {
     InvariantExecutionError(#[from] ModuleExecutionError),
     #[error("The given value is not a valid signature: \"{0}\"")]
     InvalidSignature(String),
+    #[error("Could not parse the following value as a float: \"{0}\"")]
+    InvalidReturnValue(String),
 }

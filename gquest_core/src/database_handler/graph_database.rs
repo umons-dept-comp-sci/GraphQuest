@@ -6,9 +6,7 @@ use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::invariant_execs::{
-    AsyncModuleInput, AsyncModuleOutput, Module,
-};
+use crate::data_handler::invariant_execs::{AsyncModuleInput, AsyncModuleOutput, Module};
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
 use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
@@ -303,11 +301,15 @@ where
         // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
         for (i, inv_values) in values.enumerate() {
             // Push into the related storing vector
-            self.batch_to_store.get_mut(i).expect("correct index").push(
-                inv_values
-                    .parse()
-                    .expect("value should be able to be turned into float"),
-            ); // TODO: Add better error here
+            let val = match inv_values.parse::<f64>() {
+                Ok(val) => val,
+                Err(_) => return Err(GraphDbRuntimeError::InvalidReturnValue(inv_values)),
+            };
+
+            self.batch_to_store
+                .get_mut(i)
+                .expect("correct index")
+                .push(val);
         }
 
         // Notify obs something happened
@@ -802,9 +804,7 @@ where
                 optional_obs: &mut optional_obs,
             };
 
-            executable
-                .execute(input, output, batch_size)
-                .await?;
+            executable.execute(input, output, batch_size).await?;
         }
         if count != 0 {
             let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data

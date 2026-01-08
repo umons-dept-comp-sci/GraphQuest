@@ -18,6 +18,8 @@ pub enum ParsedQuery {
     /// An extremal selection of graphs with an optional condition.
     Extremal((ClassSelection, Option<SqlCondition>)),
     /// A counter example query for a given conjecture.
+    Counter((SqlCondition, SqlCondition)),
+    /// A counter example query for a given extremal conjecture.
     ExtremalCounter(ExtremalCounterQuery),
 }
 
@@ -128,9 +130,12 @@ impl QueryParser {
                             inner_rule,
                         )?))
                     }
-                    Rule::conj_query => Ok(ParsedQuery::ExtremalCounter(
-                        Self::parse_conj_query_rule(inner_rule)?,
+                    Rule::extremal_conj_query => Ok(ParsedQuery::ExtremalCounter(
+                        Self::parse_extremal_conj_query_rule(inner_rule)?,
                     )),
+                    Rule::conj_query => Ok(ParsedQuery::Counter(Self::parse_conj_query_rule(
+                        inner_rule,
+                    )?)),
                     _ => unreachable!(),
                 }
             }
@@ -154,16 +159,18 @@ impl QueryParser {
 
     /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
     /// For example : `min(p_gn: n,m), d_nm >= 3 => conj1 = 1`
-    pub fn parse_conj_query(input: impl ToString) -> Result<ExtremalCounterQuery, ParsingError> {
+    pub fn parse_extr_conj_query(
+        input: impl ToString,
+    ) -> Result<ExtremalCounterQuery, ParsingError> {
         let input_str = input.to_string();
-        let input = match QueryParser::parse(Rule::conj_query, &input_str) {
+        let input = match QueryParser::parse(Rule::extremal_conj_query, &input_str) {
             Ok(mut input) => input.next().expect("one present"),
             Err(e) => {
                 return Err(get_parsing_error(e));
             }
         };
 
-        Self::parse_conj_query_rule(input)
+        Self::parse_extremal_conj_query_rule(input)
     }
 
     /// Parses an extremal query.
@@ -299,7 +306,9 @@ impl QueryParser {
         }
     }
 
-    fn parse_conj_query_rule(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
+    fn parse_extremal_conj_query_rule(
+        rule: Pair<'_, Rule>,
+    ) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
         let (selection, additional_condition) =
@@ -313,6 +322,20 @@ impl QueryParser {
             additional_condition,
             conjecture_to_disprove,
         })
+    }
+
+    fn parse_conj_query_rule(
+        rule: Pair<'_, Rule>,
+    ) -> Result<(SqlCondition, SqlCondition), ParsingError> {
+        let mut inner_rules = rule.into_inner();
+
+        let left_condition =
+            Self::parse_condition_rule(inner_rules.next().expect("extremal query present"));
+
+        let right_condition =
+            Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
+
+        Ok((left_condition, right_condition))
     }
 
     fn parse_extremal_query_rule(
@@ -492,7 +515,7 @@ mod tests {
     #[test]
     fn parse_conj_query() {
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1 = 1"),
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
@@ -502,7 +525,7 @@ mod tests {
         )) && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn) => conj1 = 1"),
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
@@ -510,12 +533,12 @@ mod tests {
             && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: p_gn) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: p_gn) => conj1 = 1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
         ));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
         ));
     }
