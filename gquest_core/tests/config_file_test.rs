@@ -60,11 +60,7 @@ pub fn from_file_test() {
     assert_eq!([a, b, c].to_vec(), config_file.get_execs_ref().clone())
 }
 
-pub fn get_a_b_c_exec() -> (
-    Module,
-    Module,
-    Module,
-) {
+pub fn get_a_b_c_exec() -> (Module, Module, Module) {
     let a = Module::new_no_dep(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()])
         .expect("Correct inv");
 

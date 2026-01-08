@@ -309,10 +309,32 @@ This can be translated to : *find the graphs with the minimum value for a given 
 One of the main feature of $\texttt{gquest}$ is the search of counter-examples for a given conjecture, which can be expressed using the following syntax :
 
 ```py
+condition_to_respect '=>' condition_to_disprove
+```
+
+Using this, $\texttt{gquest}$ will the graphs that respect the conditions on the left of the query and use them will try to find ones that disprove the given condition on the right.
+
+##### Example : 
+
+Le the following query be `inv1 >= 3 => inv2 = 1`.
+
+GraphQuest will :
+1. Compute every value of `inv1` (and if needed any dependencies they have) for all values contained in the dataset.
+2. Find the graphs that have a value of `inv1` superior or equal to 3. 
+3. Compute `inv2` only for those graphs (and the required dependencies if any).
+4. Try to find a graph for which the value of `inv2` will not be equal to 1. 
+
+
+
+#### Extremal counter-example search :
+
+Another feature is the search of counter-examples for a given **extremal** conjecture, which can be expressed using the following syntax :
+
+```py
 extremal_selection (',' optional_condition)? '=>' condition_to_disprove
 ```
 
-Using this, $\texttt{gquest}$ will find the extremal graphs that respect the conditions on the left of the query and using them will try to find ones that disprove the given condition on the right.
+Using this, $\texttt{gquest}$ will find the extremal graphs that respect the conditions on the left of the query and use them will try to find ones that disprove the given condition on the right.
 
 ##### Example : 
 

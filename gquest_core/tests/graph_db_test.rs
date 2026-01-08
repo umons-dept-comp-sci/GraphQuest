@@ -231,8 +231,7 @@ async fn compute_executable_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity =
-        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
@@ -275,8 +274,7 @@ async fn compute_executable_obs_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity =
-        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let (expected, geng_reader) = get_geng_values();
@@ -311,8 +309,7 @@ async fn compute_executable_with_selection_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity =
-        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let geng_reader = get_geng_values().1;
@@ -370,8 +367,7 @@ async fn compute_executable_no_duplicate() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity =
-        Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
 
     // Create dataset
     let (expected, geng_reader) = get_geng_values();

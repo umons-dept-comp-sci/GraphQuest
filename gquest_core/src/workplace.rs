@@ -12,7 +12,7 @@ use crate::{
     data_handler::invariant_execs::{ModuleError, ModuleIterator, ModuleSorter},
     database_handler::{
         ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
-        GraphDbStartupError, PK_NAME, SqlCondition, SqlSelectQuery, SqlTable, SqlTableSelection,
+        GraphDbStartupError, PK_NAME, SqlCondition, SqlSelectQuery, SqlTableSelection,
         VERTICES_TABLE_NAME, graph_queries,
     },
     utils::{SaveOutput, config_file::ConfigFile},

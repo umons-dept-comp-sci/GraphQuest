@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::{ModuleError, Module};
+use crate::data_handler::invariant_execs::{Module, ModuleError};
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {

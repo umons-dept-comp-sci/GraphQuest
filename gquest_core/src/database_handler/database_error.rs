@@ -1,7 +1,7 @@
 use log::error;
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::{ModuleExecutionError, Module};
+use crate::data_handler::invariant_execs::{Module, ModuleExecutionError};
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
