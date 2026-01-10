@@ -29,9 +29,11 @@ binary_op = { and_op | or_op }
 
 comparison = { primitif ~ comp_operator ~ primitif
 			 | "(" ~ condition ~ ")"
-			 | not_comparison }
+			 | not_comparison
+             | identifier }
 
-not_comparison = { not_op ~ "(" ~ condition ~ ")" }
+// !inv or !(inv = 1)
+not_comparison = { not_op ~ (identifier | "(" ~ condition ~ ")") }
 
 
 comp_operator = { equal 
