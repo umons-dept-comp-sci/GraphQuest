@@ -70,13 +70,48 @@
       ]
     },
     {
+      "path": "eci.py",
+      "names": [
+        "eci"
+      ]
+    },
+    {
       "path": "comp.py",
       "names": [
-        "eci",
         "comp"
       ],
       "dep": [
         "d_nm"
+      ]
+    },
+    {
+      "path": "is_planar.py",
+      "names": [
+        "is_planar"
+      ]
+    },
+    {
+      "path": "4_colorable.py",
+      "names": [
+        "four_colorable"
+      ]
+    },
+    {
+      "path": "max_degree.py",
+      "names": [
+        "max_degree"
+      ]
+    },
+    {
+      "path": "is_bipartite.py",
+      "names": [
+        "is_bipartite"
+      ]
+    },
+    {
+      "path": "clique_size.py",
+      "names": [
+        "max_clique"
       ]
     }
   ]

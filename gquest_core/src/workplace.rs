@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use log::info;
 use sqlx::{FromRow, migrate::MigrateDatabase};
@@ -9,10 +9,11 @@ use tokio::{
 };
 
 use crate::{
-    data_handler::invariant_execs::{ExecutableIterator, ExecutableSorter, InvariantError},
+    data_handler::invariant_execs::{ModuleError, ModuleIterator, ModuleSorter},
     database_handler::{
         ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
-        GraphDbStartupError, SqlCondition, SqlSelectQuery, VERTICES_TABLE_NAME, graph_queries,
+        GraphDbStartupError, PK_NAME, SqlCondition, SqlSelectQuery, SqlTableSelection,
+        VERTICES_TABLE_NAME, graph_queries,
     },
     utils::{SaveOutput, config_file::ConfigFile},
 };
@@ -23,8 +24,8 @@ pub enum WorkplaceError {
     GraphDbStartupError(#[from] GraphDbStartupError),
     #[error("Encountered an error from the database during an execution : \"{0}\"")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
-    #[error("Encountered an error from an invariant executable : \"{0}\"")]
-    InvariantError(#[from] InvariantError),
+    #[error("Encountered an error from a module : \"{0}\"")]
+    ModuleError(#[from] ModuleError),
     #[error("One of the invariant thread did not end correctly: \"{0}\"")]
     JoinError(#[from] JoinError),
 }
@@ -66,8 +67,8 @@ where
 
     /// Executes all stored invariants using the given settings from the [`ConfigFile`].
     /// Does not impose any condition on the graph used for the computations.
-    pub async fn execute_all_executables(&mut self) -> Result<(), WorkplaceError> {
-        self.execute_invariant_execs(
+    pub async fn execute_all_modules(&mut self) -> Result<(), WorkplaceError> {
+        self.execute_invariant_modules(
             self.config.get_execs_ref().clone().try_into()?,
             None,
             vec![],
@@ -75,10 +76,10 @@ where
         .await
     }
 
-    /// Executes the executables stored inside the sorter using the given settings from the [`ConfigFile`].
-    pub async fn execute_invariant_execs(
+    /// Executes the modules stored inside the sorter using the given settings from the [`ConfigFile`].
+    pub async fn execute_invariant_modules(
         &mut self,
-        sorter: ExecutableSorter,
+        sorter: ModuleSorter,
         add_condition: Option<SqlSelectQuery>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
@@ -89,11 +90,11 @@ where
                 "Execute all modules using at most {} threads",
                 self.config.get_nb_threads()
             );
-            self.execute_all_executables_multithread(sorted, add_condition, inv_to_skip)
+            self.execute_all_modules_multithread(sorted, add_condition, inv_to_skip)
                 .await
         } else {
             info!("Execute all modules using 1 thread");
-            while let Some(next_inv) = sorted.next_invariant() {
+            while let Some(next_inv) = sorted.next_module() {
                 // Check if this invariant should be skipped
                 if !next_inv
                     .invariant_names
@@ -121,17 +122,17 @@ where
         }
     }
 
-    async fn execute_all_executables_multithread(
+    async fn execute_all_modules_multithread(
         &mut self,
-        sorted: ExecutableIterator,
+        sorted: ModuleIterator,
         add_condition: Option<SqlSelectQuery>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
         let iter = Arc::new(Mutex::new(sorted));
 
         // Used to directly unlock the mutex after acquiring the next invariant
-        let get_next_inv = &mut async |iter_lock: &Arc<Mutex<ExecutableIterator>>| {
-            iter_lock.lock().await.next_invariant()
+        let get_next_inv = &mut async |iter_lock: &Arc<Mutex<ModuleIterator>>| {
+            iter_lock.lock().await.next_module()
         };
 
         let mut handles: JoinSet<Result<(), GraphDbRuntimeError>> = JoinSet::new();
@@ -190,17 +191,8 @@ where
         condition: SqlCondition,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
-        let mut invariants = condition.get_all_identifiers();
-        // This table is used but is not part of any executable
-        invariants.remove(VERTICES_TABLE_NAME);
-
-        if !invariants.is_empty() {
-            let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &invariants)?;
-            // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
-                .await?;
-        }
+        let invariants = condition.get_all_identifiers();
+        self.compute_invariants(invariants, vec![]).await?;
 
         let query = graph_queries::select_all_graph_cond(condition);
 
@@ -215,20 +207,9 @@ where
         additional_condition: Option<SqlCondition>,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
-        let mut extremal_inv =
-            graph_queries::get_extremal_invariants(&extremal, &additional_condition);
+        let extremal_inv = graph_queries::get_extremal_invariants(&extremal, &additional_condition);
 
-        // This table is used but is not part of any executable
-        extremal_inv.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
-        info!("Find extremal graphs of {:?}", extremal);
-
-        if !extremal_inv.is_empty() {
-            let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &extremal_inv)?;
-            // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
-                .await?;
-        }
+        self.compute_invariants(extremal_inv, vec![]).await?;
 
         // Get them
         let query = graph_queries::select_all_extremal_graphs(&extremal, &additional_condition);
@@ -238,28 +219,18 @@ where
         Ok(())
     }
 
-    /// Tries to find a counter example to a conjecture using this workplace.
-    pub async fn find_counterexamples<O: SaveOutput>(
+    /// Tries to find a counter example to a conjecture using this workplace and an extremal selection.
+    pub async fn find_counterexamples_extremal<O: SaveOutput>(
         &mut self,
         conjecture: ExtremalCounterQuery,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
         // Fully compute the necessary invariants (and their dependencies)
-        let mut inv_to_compute = conjecture.get_invariants_to_compute();
-        // This table is used but is not part of any executable
-        inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
-        info!("Find extremal graphs of {:?}", conjecture.selection);
-        info!(
-            "Fully compute the following invariants: {:?}",
-            inv_to_compute
-        );
-        if !inv_to_compute.is_empty() {
-            let invariant_necessary =
-                ExecutableSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
-            // Compute them
-            self.execute_invariant_execs(invariant_necessary, None, vec![])
-                .await?;
-        }
+        let inv_to_compute = conjecture.get_invariants_to_compute();
+
+        self.compute_invariants(inv_to_compute.clone(), vec![])
+            .await?;
+
         info!("Finished computing extremal graphs, moving on to counterexample search");
 
         // Only compute the necessary invariants in order to disprove the conjecture
@@ -268,17 +239,17 @@ where
 
         if !conjecture_invariants.is_empty() {
             // This automatically adds the dependencies of the conjecture invariants
-            let invariant_necessary = ExecutableSorter::new_from(
+            let invariant_necessary = ModuleSorter::new_from(
                 self.config.get_execs_ref(),
                 &conjecture_invariants.difference(&inv_to_compute).collect(), // Remove already computed invariants
             )?;
 
             // Get additional extremal condition :
-            let extremal_condition = conjecture.get_invariant_input_selection();
+            let extremal_condition = conjecture.get_extremal_input_selection();
             info!(
                 "Computing conjecture invariants : {conjecture_invariants:?} (skip if already done)"
             );
-            self.execute_invariant_execs(
+            self.execute_invariant_modules(
                 invariant_necessary,
                 Some(extremal_condition),
                 Vec::from_iter(inv_to_compute), // No need to compute these already fully computed invariants
@@ -290,6 +261,84 @@ where
         info!("Try to fetch counterexample graphs");
         // Return counter example query result
         let query: SqlSelectQuery = conjecture.into();
+
+        self.db.fetch_all_row_query(&query, output).await?;
+
+        Ok(())
+    }
+
+    async fn compute_invariants(
+        &mut self,
+        mut inv_to_compute: HashSet<String>,
+        inv_to_skip: Vec<String>,
+    ) -> Result<(), WorkplaceError> {
+        // This table is used but is not part of any executable
+        inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
+        info!("Computing the following invariants: {:?}", inv_to_compute);
+
+        if !inv_to_compute.is_empty() {
+            let invariant_necessary =
+                ModuleSorter::new_from(self.config.get_execs_ref(), &inv_to_compute)?;
+            // Compute them
+            self.execute_invariant_modules(invariant_necessary, None, inv_to_skip)
+                .await?;
+        }
+
+        info!("Finished computing invariants");
+
+        Ok(())
+    }
+
+    /// Tries to find a counter example to a conjecture using this workplace.
+    pub async fn find_counterexamples<O: SaveOutput>(
+        &mut self,
+        criterion: SqlCondition,
+        conjecture_to_disprove: SqlCondition,
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
+        // Fully compute the left invariants
+        let inv_to_compute = criterion.get_all_identifiers();
+
+        self.compute_invariants(inv_to_compute.clone(), vec![])
+            .await?;
+
+        info!("Finished finding invariants ");
+
+        // Only compute the necessary invariants in order to disprove the conjecture
+        let mut conjecture_invariants = conjecture_to_disprove.get_all_identifiers();
+        conjecture_invariants.remove(VERTICES_TABLE_NAME);
+
+        if !conjecture_invariants.is_empty() {
+            // This automatically adds the dependencies of the conjecture invariants
+            let invariant_necessary = ModuleSorter::new_from(
+                self.config.get_execs_ref(),
+                &conjecture_invariants.difference(&inv_to_compute).collect(), // Remove already computed invariants
+            )?;
+
+            // Get only graph respecting the criterion :
+            let extremal_condition = SqlSelectQuery::select_column_from_table(
+                PK_NAME,
+                SqlTableSelection::new(graph_queries::select_all_graph_cond(criterion.clone())),
+            );
+            info!(
+                "Computing conjecture invariants : {conjecture_invariants:?} (skip if already done)"
+            );
+            println!("{}", extremal_condition.to_sql::<DB>());
+            self.execute_invariant_modules(
+                invariant_necessary,
+                Some(extremal_condition),
+                Vec::from_iter(inv_to_compute), // No need to compute these already fully computed invariants
+            )
+            .await?;
+            info!("Finished computing conjecture invariants");
+        }
+
+        info!("Try to fetch counterexample graphs");
+
+        let query = graph_queries::select_all_graph_cond(SqlCondition::and(
+            criterion,
+            SqlCondition::not(conjecture_to_disprove),
+        ));
 
         self.db.fetch_all_row_query(&query, output).await?;
 

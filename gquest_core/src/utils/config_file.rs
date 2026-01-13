@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::{InvariantError, InvariantsExecutable};
+use crate::data_handler::invariant_execs::{Module, ModuleError};
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {
@@ -13,7 +13,7 @@ pub enum ConfigFileError {
     #[error("Could not read json file : `{0}`")]
     JsonError(#[from] serde_json::Error),
     #[error("Could not create one of the given invariant : `{0}`")]
-    InvariantError(#[from] InvariantError),
+    InvariantError(#[from] ModuleError),
     #[error("At least one invariant should be provided in the file")]
     NoInvariantError,
 }
@@ -52,7 +52,7 @@ pub struct ConfigFile {
     /// The maximum number of threads to use when computing invariants
     nb_threads: usize,
     /// The list of executables that should be executed by the program.
-    modules: Vec<InvariantsExecutable>,
+    modules: Vec<Module>,
 }
 
 impl ConfigFile {
@@ -84,7 +84,7 @@ impl ConfigFile {
         from_json_data(serde_json::from_value(value)?)
     }
 
-    pub fn get_execs_ref(&self) -> &Vec<InvariantsExecutable> {
+    pub fn get_execs_ref(&self) -> &Vec<Module> {
         &self.modules
     }
 
@@ -104,9 +104,9 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
 
     for exec in config_json.modules {
         if let Some(dep) = exec.dep {
-            executables.push(InvariantsExecutable::new(exec.path, exec.names, dep)?);
+            executables.push(Module::new(exec.path, exec.names, dep)?);
         } else {
-            executables.push(InvariantsExecutable::new_no_dep(exec.path, exec.names)?);
+            executables.push(Module::new_no_dep(exec.path, exec.names)?);
         }
     }
 

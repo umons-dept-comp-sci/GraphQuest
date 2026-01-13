@@ -134,7 +134,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             res.push('(');
             match &table.selected_table {
                 SqlTable::SqlQuery(sql_select_query) => {
-                    res.push_str(&Self::to_sql(sql_select_query));
+                    res.push_str(&format!("({})", &Self::to_sql(sql_select_query)));
                 }
                 SqlTable::TableName(name) => res.push_str(name),
             }

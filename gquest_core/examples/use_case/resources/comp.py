@@ -3,15 +3,8 @@
 import sys
 import networkx as nx
 from math import comb
+from eci import eci
 
-
-
-def eci(G: nx.Graph):
-    eccs = nx.eccentricity(G)
-    res = 0
-    for vertice in eccs.keys():
-        res += (eccs[vertice] *  G.degree(vertice))
-    return res
 
 def create_E_nm(n, m, d):
     res: nx.Graph = nx.path_graph(d + 1) # path P_{d+1}
@@ -48,6 +41,6 @@ if __name__ == "__main__":
         eci_e = eci(memory[(n,m)])
         
         if d>= 3 and eci_e == eci_g and not nx.is_isomorphic(G, memory[(n, m)]):
-            print(sig, eci_g, 0, flush=True)
+            print(sig, 0, flush=True)
         else:
-            print(sig, eci_g, int(eci_g <= eci_e), flush=True)
+            print(sig, int(eci_g <= eci_e), flush=True)

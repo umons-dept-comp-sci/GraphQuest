@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use gquest_core::{
     data_handler::data_loader::GengProcess,
-    database_handler::{PgSqlGraphDB, SqlxLogLevels},
+    database_handler::{SqliteGraphDB, SqlxLogLevels},
     parser::query_parser::QueryParser,
     utils::{config_file::ConfigFile, table_handler::QueryTable},
     workplace::Workplace,
@@ -21,11 +21,11 @@ async fn main() {
         log_slow_statement_level: Some((LevelFilter::Off, Duration::from_secs(1))),
     });
 
-    let mut db = PgSqlGraphDB::connect_create_graph_database(DB_SQLITE_URL, log_levels)
+    let mut db = SqliteGraphDB::connect_create_graph_database(DB_SQLITE_URL, log_levels)
         .await
         .expect("no problem");
 
-    let geng = GengProcess::call_geng(6, &"".to_string(), (None, None)).expect("correct call");
+    let geng = GengProcess::call_geng(8, &"".to_string(), (None, None)).expect("correct call");
 
     db.add_to_dataset(geng.get_reader(), 1500, None)
         .await
@@ -48,14 +48,14 @@ async fn main() {
 
     let mut table =
         QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
-    wp.find_counterexamples(
-        QueryParser::parse_conj_query("max(P_Gn: n,m) => is_Bmn = 1 ").expect("correct"),
+    wp.find_counterexamples_extremal(
+        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1").expect("correct"),
         &mut table,
     )
     .await
     .expect("correct wp");
 
-    db.clear_database().await.expect("no issues");
+    // db.clear_database().await.expect("no issues");
 
     println!("{table}");
     db.close_connection().await;

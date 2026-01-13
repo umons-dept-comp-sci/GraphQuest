@@ -54,7 +54,10 @@ async fn execute_query(
             workplace_extremal_query(db, output, selection, add_cond, config).await
         }
         ParsedQuery::ExtremalCounter(conj_query) => {
-            workplace_counterexample(db, output, conj_query, config).await
+            workplace_extremal_counterexample(db, output, conj_query, config).await
+        }
+        ParsedQuery::Counter((left_cond, right_cond)) => {
+            workplace_counterexample(db, output, left_cond, right_cond, config).await
         }
     }
 }
@@ -135,7 +138,7 @@ async fn workplace_extremal_query(
     Ok(())
 }
 
-async fn workplace_counterexample(
+async fn workplace_extremal_counterexample(
     db: &mut SqliteGraphDB,
     output: OutputChoice,
     conj_query: ExtremalCounterQuery,
@@ -149,10 +152,11 @@ async fn workplace_counterexample(
         OutputChoice::File { path, separator } => {
             // open csv file
             let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
-            wp.find_counterexamples(conj_query, &mut csv).await?;
+            wp.find_counterexamples_extremal(conj_query, &mut csv)
+                .await?;
         }
         OutputChoice::Stdout => {
-            wp.find_counterexamples(conj_query, &mut StdoutOutput)
+            wp.find_counterexamples_extremal(conj_query, &mut StdoutOutput)
                 .await?;
             info!("Finished executing query");
         }
@@ -163,7 +167,48 @@ async fn workplace_counterexample(
                 QueryTableOptions::Full
             };
             let mut table = QueryTable::new_no_header(options);
-            wp.find_counterexamples(conj_query, &mut table).await?;
+            wp.find_counterexamples_extremal(conj_query, &mut table)
+                .await?;
+            info!("Finished executing query");
+            println!("{table}");
+        }
+    };
+
+    Ok(())
+}
+
+async fn workplace_counterexample(
+    db: &mut SqliteGraphDB,
+    output: OutputChoice,
+    left_cond: SqlCondition,
+    right_cond: SqlCondition,
+    config: ConfigFile,
+) -> Result<(), CliError> {
+    info!("Opening config file");
+    let mut wp = Workplace::new(db, config);
+
+    info!("Executing query with workplace");
+    match output {
+        OutputChoice::File { path, separator } => {
+            // open csv file
+            let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
+            wp.find_counterexamples(left_cond, right_cond, &mut csv)
+                .await?;
+        }
+        OutputChoice::Stdout => {
+            wp.find_counterexamples(left_cond, right_cond, &mut StdoutOutput)
+                .await?;
+            info!("Finished executing query");
+        }
+        OutputChoice::Table { partial } => {
+            let options = if let Some(partial_input) = partial {
+                ArgParser::parse_partial_table(&partial_input)?
+            } else {
+                QueryTableOptions::Full
+            };
+            let mut table = QueryTable::new_no_header(options);
+            wp.find_counterexamples(left_cond, right_cond, &mut table)
+                .await?;
             info!("Finished executing query");
             println!("{table}");
         }
@@ -189,5 +234,3 @@ pub async fn summary(path: DatabasePath, partial: Option<String>) -> Result<(), 
 
     Ok(res?)
 }
-
-// ../../../target/release/gquest_cli query resources/conj_1/conj_1.json "max(ag: vertices), r >= 2 => conj1 != 0"

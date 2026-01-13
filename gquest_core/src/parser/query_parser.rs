@@ -18,6 +18,8 @@ pub enum ParsedQuery {
     /// An extremal selection of graphs with an optional condition.
     Extremal((ClassSelection, Option<SqlCondition>)),
     /// A counter example query for a given conjecture.
+    Counter((SqlCondition, SqlCondition)),
+    /// A counter example query for a given extremal conjecture.
     ExtremalCounter(ExtremalCounterQuery),
 }
 
@@ -128,9 +130,12 @@ impl QueryParser {
                             inner_rule,
                         )?))
                     }
-                    Rule::conj_query => Ok(ParsedQuery::ExtremalCounter(
-                        Self::parse_conj_query_rule(inner_rule)?,
+                    Rule::extremal_conj_query => Ok(ParsedQuery::ExtremalCounter(
+                        Self::parse_extremal_conj_query_rule(inner_rule)?,
                     )),
+                    Rule::conj_query => Ok(ParsedQuery::Counter(Self::parse_conj_query_rule(
+                        inner_rule,
+                    )?)),
                     _ => unreachable!(),
                 }
             }
@@ -154,16 +159,18 @@ impl QueryParser {
 
     /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
     /// For example : `min(p_gn: n,m), d_nm >= 3 => conj1 = 1`
-    pub fn parse_conj_query(input: impl ToString) -> Result<ExtremalCounterQuery, ParsingError> {
+    pub fn parse_extr_conj_query(
+        input: impl ToString,
+    ) -> Result<ExtremalCounterQuery, ParsingError> {
         let input_str = input.to_string();
-        let input = match QueryParser::parse(Rule::conj_query, &input_str) {
+        let input = match QueryParser::parse(Rule::extremal_conj_query, &input_str) {
             Ok(mut input) => input.next().expect("one present"),
             Err(e) => {
                 return Err(get_parsing_error(e));
             }
         };
 
-        Self::parse_conj_query_rule(input)
+        Self::parse_extremal_conj_query_rule(input)
     }
 
     /// Parses an extremal query.
@@ -188,31 +195,26 @@ impl QueryParser {
         if inner_rules.len() == 1 {
             // comparison
             let inner_rule = inner_rules.next().expect("one value");
-            Self::_parse_comparison(inner_rule)
+            Self::parse_comparison_rule(inner_rule)
         } else {
+            let inner = inner_rules.next().expect("comp present");
             // comparison ~ binary_op ~ condition
-            let mut comparison = None;
-            let mut binary_op = None;
-            let mut condition = None;
-            for inner_rule in inner_rules {
-                match &inner_rule.as_rule() {
-                    Rule::comparison => comparison = Some(Self::_parse_comparison(inner_rule)),
-                    Rule::binary_op => {
-                        binary_op = Some(inner_rule.into_inner().next().expect("one value"));
-                    }
-                    Rule::condition => condition = Some(Self::parse_condition_rule(inner_rule)),
-                    _ => unreachable!(),
-                }
-            }
-            create_condition(
-                comparison.expect("present"),
-                binary_op.expect("present"),
-                condition.expect("present"),
-            )
+            let comparison = Self::parse_comparison_rule(inner);
+
+            let binary_op = inner_rules
+                .next()
+                .expect("binary operator present")
+                .into_inner()
+                .next()
+                .expect("one sub rule value");
+
+            let condition =
+                Self::parse_condition_rule(inner_rules.next().expect("condition present"));
+            create_condition(comparison, binary_op, condition)
         }
     }
 
-    fn _parse_comparison(rule: Pair<'_, Rule>) -> SqlCondition {
+    fn parse_comparison_rule(rule: Pair<'_, Rule>) -> SqlCondition {
         let mut inner_rules = rule.into_inner();
         if inner_rules.len() == 1 {
             // either a "not_comparison" or a "condition".
@@ -220,40 +222,43 @@ impl QueryParser {
             match &inner_rule.as_rule() {
                 Rule::not_comparison => {
                     // made up of a condition
-                    // parse inner condition
-                    SqlCondition::not(Self::parse_condition_rule(
-                        inner_rule.into_inner().next().expect("at least one"),
-                    ))
+                    // parse inner condition or identifier
+                    let inner_rule = inner_rule.into_inner().next().expect("at least one");
+                    match inner_rule.as_rule() {
+                        // !inv is a shortcut for inv = 0 (reduces query sizes)
+                        Rule::identifier => SqlComparison::Equal(
+                            ArgType::identifier(inner_rule.as_str()),
+                            ArgType::value(0),
+                        )
+                        .into(),
+                        Rule::condition => {
+                            SqlCondition::not(Self::parse_condition_rule(inner_rule))
+                        }
+                        _ => {
+                            unreachable!()
+                        }
+                    }
                 }
                 Rule::condition => Self::parse_condition_rule(inner_rule),
+                Rule::identifier => SqlComparison::Equal(
+                    ArgType::identifier(inner_rule.as_str()),
+                    ArgType::value(1),
+                )
+                .into(),
                 _ => unreachable!(),
             }
         } else {
-            let mut prims = Vec::with_capacity(2);
-            let mut operator = None;
-            for rule in inner_rules {
-                // primitif - comp_operator - primitif
-                match &rule.as_rule() {
-                    Rule::primitif => {
-                        prims.push(create_primitif(
-                            rule.into_inner().next().expect("at least one val"),
-                        ));
-                    }
-                    Rule::comp_operator => {
-                        operator = Some(rule.into_inner().next().expect("one operator"));
-                    }
-                    _ => unreachable!(),
-                }
-            }
+            // primitif - comp_operator - primitif
+            let prim_1 = create_primitif(inner_rules.next().expect("prim1 present"));
+            let operator = inner_rules
+                .next()
+                .expect("operator present")
+                .into_inner()
+                .next()
+                .expect("one sub operator rule");
+            let prim_2 = create_primitif(inner_rules.next().expect("prim2 present"));
 
-            let prim_2 = prims.pop().expect("two values");
-            let prim_1 = prims.pop().expect("two values");
-
-            SqlCondition::Operation(create_comparison(
-                prim_1,
-                operator.expect("a value"),
-                prim_2,
-            ))
+            SqlCondition::Operation(create_comparison(prim_1, operator, prim_2))
         }
     }
 
@@ -279,7 +284,7 @@ impl QueryParser {
                     }
                 }
                 Rule::identifier => {
-                    let new_prim = create_primitif(inner_rule);
+                    let new_prim = ArgType::identifier(inner_rule.as_str());
                     if first_identifier.is_none() {
                         first_identifier = Some(new_prim)
                     } else {
@@ -299,7 +304,9 @@ impl QueryParser {
         }
     }
 
-    fn parse_conj_query_rule(rule: Pair<'_, Rule>) -> Result<ExtremalCounterQuery, ParsingError> {
+    fn parse_extremal_conj_query_rule(
+        rule: Pair<'_, Rule>,
+    ) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
         let (selection, additional_condition) =
@@ -313,6 +320,20 @@ impl QueryParser {
             additional_condition,
             conjecture_to_disprove,
         })
+    }
+
+    fn parse_conj_query_rule(
+        rule: Pair<'_, Rule>,
+    ) -> Result<(SqlCondition, SqlCondition), ParsingError> {
+        let mut inner_rules = rule.into_inner();
+
+        let left_condition =
+            Self::parse_condition_rule(inner_rules.next().expect("extremal query present"));
+
+        let right_condition =
+            Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
+
+        Ok((left_condition, right_condition))
     }
 
     fn parse_extremal_query_rule(
@@ -345,11 +366,15 @@ fn create_condition(
 }
 
 fn create_primitif(prim_rule: Pair<'_, Rule>) -> ArgType {
-    match &prim_rule.as_rule() {
-        Rule::identifier => ArgType::Identifier(prim_rule.as_str().to_string()),
+    let inner_rule = prim_rule
+        .into_inner()
+        .next()
+        .expect("at least one sub rule");
+    match &inner_rule.as_rule() {
+        Rule::identifier => ArgType::Identifier(inner_rule.as_str().to_string()),
         Rule::value => {
             // either a number of string value:
-            let inner_rule = prim_rule.into_inner().next().expect("at least one");
+            let inner_rule = inner_rule.into_inner().next().expect("at least one");
             match inner_rule.as_rule() {
                 Rule::number => ArgType::Value(inner_rule.as_str().trim().to_string()),
                 Rule::string => {
@@ -425,6 +450,13 @@ mod tests {
                 if *b1 == SqlCondition::Not(Box::new(SqlCondition::Operation(SqlComparison::Greater(ArgType::Identifier("a".to_string()), ArgType::Identifier("b".to_string()))))) &&
                     *b2 == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("c".to_string()), ArgType::Identifier("d".to_string())))
         ));
+
+        assert!(matches!(
+            QueryParser::parse_condition("!inv or a"),
+            Ok(SqlCondition::Or(b1, b2))
+                if *b1 == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("inv"), ArgType::value("0"))) &&
+                    *b2 == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("a".to_string()), ArgType::Value("1".to_string())))
+        ));
     }
 
     #[test]
@@ -492,7 +524,7 @@ mod tests {
     #[test]
     fn parse_conj_query() {
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1"),
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
@@ -502,7 +534,7 @@ mod tests {
         )) && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn) => conj1 = 1"),
             Ok(
                 ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
             )
@@ -510,12 +542,12 @@ mod tests {
             && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("conj1".to_string()), ArgType::Value("1".to_string())))));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: p_gn) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: p_gn) => conj1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
         ));
 
         assert!(matches!(
-            QueryParser::parse_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
+            QueryParser::parse_extr_conj_query("min(p_gn: g, d, g) => conj1 = 1"),
             Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
         ));
     }
@@ -542,7 +574,7 @@ mod tests {
         };
 
         assert!(
-            matches!(QueryParser::parse_query("x = 1"), Ok(crate::parser::query_parser::ParsedQuery::Condition(x)) if x == sql_cond )
+            matches!(QueryParser::parse_query("x"), Ok(crate::parser::query_parser::ParsedQuery::Condition(x)) if x == sql_cond )
         );
 
         assert!(
