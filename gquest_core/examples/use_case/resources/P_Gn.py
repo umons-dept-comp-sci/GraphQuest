@@ -20,9 +20,4 @@ if __name__ == "__main__":
     for sig in map(str.strip, sys.stdin):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
 
-        if flush_count >= max_flush_count-1:
-            print(sig, P(G), flush=True)
-            flush_count = 0
-        else:
-            print(sig, P(G), flush=False)
-            flush_count += 1
+        print(sig, P(G), flush=True)

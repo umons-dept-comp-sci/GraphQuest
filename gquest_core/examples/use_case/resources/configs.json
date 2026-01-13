@@ -101,6 +101,18 @@
       "names": [
         "max_degree"
       ]
+    },
+    {
+      "path": "is_bipartite.py",
+      "names": [
+        "is_bipartite"
+      ]
+    },
+    {
+      "path": "clique_size.py",
+      "names": [
+        "max_clique"
+      ]
     }
   ]
 }
