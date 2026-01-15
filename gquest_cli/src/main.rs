@@ -4,7 +4,7 @@ use gquest_cli::{
     cli_commands::{CliArg, Modes},
     command_handlers::{
         add_remove::{add_dataset, remove_dataset},
-        query::{query_database, summary},
+        query::{find_counter_database, query_database, summary},
     },
 };
 use log::error;
@@ -32,11 +32,8 @@ async fn main() {
             input_method,
             batch_size,
         } => add_dataset(path, input_method, batch_size).await,
-        Modes::Query {
-            output,
-            query,
-            config_file,
-        } => query_database(output, query, config_file, path).await,
+        Modes::Query { args } => query_database(path, args).await,
+        Modes::Counter { args } => find_counter_database(path, args).await,
         Modes::Remove { choice } => remove_dataset(path, choice).await,
         Modes::Summary { partial } => summary(path, partial).await,
     } {

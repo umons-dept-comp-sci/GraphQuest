@@ -22,6 +22,14 @@ pub enum CliError {
         column: usize,
         missing_tokens: Vec<String>,
     },
+    #[error(
+        "The given formular/query \"{formula}\" is correct but was not expected, use \"{correct_command}\" instead of \"{current_command}\""
+    )]
+    WrongQueryError {
+        formula: String,
+        correct_command: String,
+        current_command: String,
+    },
     #[error("Something went wrong when trying to import signatures -> {0}")]
     MethodErrorMethodError(#[from] MethodError),
     #[error("Something went wrong when starting the database -> {0}")]

@@ -20,7 +20,7 @@ pub struct CliArg {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
-    /// Add signatures to a database (and creates it if needed)
+    /// Adds signatures to a database (and creates it if needed)
     #[command(subcommand_value_name = "SOURCE", subcommand_help_heading = "Sources")]
     Add {
         #[command(subcommand, name = "SOURCE")]
@@ -34,19 +34,19 @@ pub enum Modes {
         #[command(subcommand, name = "TARGET")]
         choice: RemoveChoice,
     },
-    /// Explore the dataset
+    /// Explores the dataset.
     #[command(subcommand_value_name = "OUTPUT", subcommand_help_heading = "Outputs")]
     Query {
-        #[command(subcommand, name = "OUTPUT")]
-        output: Option<OutputChoice>,
-        /// The path to the config file to use
-        #[clap()]
-        config_file: String,
-        /// The query to ask the database
-        #[clap()]
-        query: String,
+        #[command(flatten)]
+        args: QueryArgs,
     },
-    /// Show the tables present in the database
+    /// Tries to find counter examples in the dataset.
+    #[command(subcommand_value_name = "OUTPUT", subcommand_help_heading = "Outputs")]
+    Counter {
+        #[command(flatten)]
+        args: QueryArgs,
+    },
+    /// Shows the tables present in the database
     Summary {
         /// [n:m] Only displays the n first and the m last rows. Can improve performances.
         #[clap(short)]
@@ -55,17 +55,23 @@ pub enum Modes {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct QueryArgs {
+    #[command(subcommand, name = "OUTPUT")]
+    pub output: Option<OutputChoice>,
+    /// The path to the config file to use
+    #[clap()]
+    pub config_file: String,
+    /// The query to ask the database
+    #[clap()]
+    pub query: String,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct DatabasePath {
     /// The url to the database to connect to
     #[clap(default_value = DEFAULT_URL)]
     pub url: String,
 }
-
-// impl DatabasePath {
-//     pub fn connect_db<DB>(&self) -> GraphDatabase<DB> where DB {
-
-//     }
-// }
 
 #[derive(Args, Debug, Clone)]
 pub struct GengArgs {

@@ -323,7 +323,6 @@ where
             info!(
                 "Computing conjecture invariants : {conjecture_invariants:?} (skip if already done)"
             );
-            println!("{}", extremal_condition.to_sql::<DB>());
             self.execute_invariant_modules(
                 invariant_necessary,
                 Some(extremal_condition),
