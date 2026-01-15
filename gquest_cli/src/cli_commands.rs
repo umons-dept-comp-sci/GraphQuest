@@ -2,6 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 
 const DEFAULT_URL: &str = "sqlite://gquest.db";
+const DEFAULT_CONFIGS: &str = "configs.json";
 
 #[derive(Parser)]
 #[command(
@@ -21,7 +22,11 @@ pub struct CliArg {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Modes {
     /// Adds signatures to a database (and creates it if needed)
-    #[command(subcommand_value_name = "SOURCE", subcommand_help_heading = "Sources")]
+    #[command(
+        alias = "a",
+        subcommand_value_name = "SOURCE",
+        subcommand_help_heading = "Sources"
+    )]
     Add {
         #[command(subcommand, name = "SOURCE")]
         input_method: DatasetChoice,
@@ -29,26 +34,39 @@ pub enum Modes {
         batch_size: BatchSizeArg,
     },
     /// Removes data from the database
-    #[command(subcommand_value_name = "TARGET", subcommand_help_heading = "Targets")]
+    #[command(
+        alias = "r",
+        subcommand_value_name = "TARGET",
+        subcommand_help_heading = "Targets"
+    )]
     Remove {
         #[command(subcommand, name = "TARGET")]
         choice: RemoveChoice,
     },
     /// Explores the dataset.
-    #[command(subcommand_value_name = "OUTPUT", subcommand_help_heading = "Outputs")]
+    #[command(
+        alias = "q",
+        subcommand_value_name = "OUTPUT",
+        subcommand_help_heading = "Outputs"
+    )]
     Query {
         #[command(flatten)]
         args: QueryArgs,
     },
     /// Tries to find counter examples in the dataset.
-    #[command(subcommand_value_name = "OUTPUT", subcommand_help_heading = "Outputs")]
+    #[command(
+        alias = "c",
+        subcommand_value_name = "OUTPUT",
+        subcommand_help_heading = "Outputs"
+    )]
     Counter {
         #[command(flatten)]
         args: QueryArgs,
     },
     /// Shows the tables present in the database
+    #[command(alias = "s")]
     Summary {
-        /// [n:m] Only displays the n first and the m last rows. Can improve performances.
+        /// [n:m] Only displays the n first and the m last rows. Can improve performances and visibility.
         #[clap(short)]
         partial: Option<String>,
     },
@@ -56,14 +74,14 @@ pub enum Modes {
 
 #[derive(Args, Debug, Clone)]
 pub struct QueryArgs {
-    #[command(subcommand, name = "OUTPUT")]
-    pub output: Option<OutputChoice>,
-    /// The path to the config file to use
-    #[clap()]
-    pub config_file: String,
     /// The query to ask the database
     #[clap()]
     pub query: String,
+    #[command(subcommand, name = "OUTPUT")]
+    pub output: Option<OutputChoice>,
+    /// The path to the config file to use
+    #[clap(default_value = DEFAULT_CONFIGS)]
+    pub config_file: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -85,16 +103,19 @@ pub struct GengArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DatasetChoice {
+    #[clap(alias = "g")]
     /// Generates graph signatures using the `geng` command from the nauty package
     Geng {
         #[command(flatten)]
         args: GengArgs,
     },
+    #[clap(alias = "f")]
     /// Imports graph signatures from a file
     File {
         /// The path to were the dataset to add is stored
         path: String,
     },
+    #[clap(alias = "p")]
     /// Imports graph signatures from a pipe
     Pipe {},
 }
@@ -114,17 +135,6 @@ pub struct BatchSizeArg {
     pub batch_size: usize,
 }
 
-#[derive(Debug, clap::Args, Clone)]
-#[group(required = true, multiple = false)]
-pub struct ComputeChoice {
-    /// The configuration file to use for this workplace.
-    #[clap(long, short)]
-    pub config_file: Option<String>,
-    /// The list of programs to call (each without any dependency).
-    #[clap(long, short, value_parser, num_args = 1.., value_delimiter = ' ')]
-    pub programs: Vec<String>,
-}
-
 #[derive(Subcommand, Debug, Clone)]
 pub enum OutputChoice {
     /// Stores the result as a `csv` file
@@ -140,7 +150,7 @@ pub enum OutputChoice {
     /// Prints the result as a pretty table (default)
     #[group(required = false, multiple = false)]
     Table {
-        /// [n:m] Only stores the n first and the m last rows. Can improve performances.
+        /// [n:m] Only stores the n first and the m last rows. Can improve performances and visibility.
         #[clap(short)]
         partial: Option<String>,
     },
