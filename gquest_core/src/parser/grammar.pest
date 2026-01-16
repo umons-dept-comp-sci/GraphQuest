@@ -49,9 +49,10 @@ comp_operator = { equal
 primary = _{ primitif | "(" ~ expr ~ ")" }
 atom = _{ atom_function? ~ primary }
 
-atom_function = _{ floor | ceil | abs | negation }
+atom_function = _{ floor | ceil | sqrt | abs | negation }
 floor = { "floor" }
 ceil  = { "ceil" }
+sqrt  = { "sqrt" }
 abs  = { "abs" }
 negation = { "-" }
 

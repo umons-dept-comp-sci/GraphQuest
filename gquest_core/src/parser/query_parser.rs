@@ -122,7 +122,11 @@ static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
             | Op::infix(Rule::floor_divide, Left)
             | Op::infix(Rule::modulo, Left))
         .op(Op::infix(Rule::exponent, Right))
-        .op(Op::prefix(Rule::negation) | Op::prefix(Rule::abs))
+        .op(Op::prefix(Rule::negation)
+            | Op::prefix(Rule::abs)
+            | Op::prefix(Rule::floor)
+            | Op::prefix(Rule::ceil)
+            | Op::prefix(Rule::sqrt))
     // .op(Op::prefix(unary_minus))
 });
 
@@ -411,8 +415,11 @@ impl QueryParser {
             })
             // Two values (functions) ex: `abs(x)`
             .map_prefix(|op, rhs| match op.as_rule() {
-                Rule::negation => MathExpression::Negation(Box::new(rhs)),
-                Rule::abs => MathExpression::Abs(Box::new(rhs)),
+                Rule::negation => MathExpression::negation(rhs),
+                Rule::abs => MathExpression::abs(rhs),
+                Rule::floor => MathExpression::floor(rhs),
+                Rule::sqrt => MathExpression::sqrt(rhs),
+                Rule::ceil => MathExpression::ceil(rhs),
                 _ => unreachable!(),
             })
             .parse(pairs)

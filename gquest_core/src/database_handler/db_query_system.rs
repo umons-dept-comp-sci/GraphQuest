@@ -216,6 +216,7 @@ pub enum MathExpression {
     Floor(Box<MathExpression>),
     Ceil(Box<MathExpression>),
     Abs(Box<MathExpression>),
+    Sqrt(Box<MathExpression>),
     // Bin operations
     BinOperation {
         left: Box<MathExpression>,
@@ -237,6 +238,10 @@ impl MathExpression {
     pub fn negation(expr: impl Into<MathExpression>) -> Self {
         Self::Negation(Box::new(expr.into()))
     }
+    pub fn sqrt(expr: impl Into<MathExpression>) -> Self {
+        Self::Sqrt(Box::new(expr.into()))
+    }
+    
     pub fn primitif(arg: impl Into<ArgType>) -> Self {
         Self::Primitif(arg.into())
     }
@@ -263,6 +268,7 @@ impl MathExpression {
             }
             MathExpression::Negation(math_expression)
             | MathExpression::Floor(math_expression)
+            | MathExpression::Sqrt(math_expression)
             | MathExpression::Ceil(math_expression)
             | MathExpression::Abs(math_expression) => {
                 res.extend(math_expression.get_all_identifiers());
@@ -287,6 +293,7 @@ impl MathExpression {
             MathExpression::Negation(math_expression)
             | MathExpression::Floor(math_expression)
             | MathExpression::Ceil(math_expression)
+            | MathExpression::Sqrt(math_expression)
             | MathExpression::Abs(math_expression) => {
                 math_expression.add_prefix_identifier(prefix);
             }
@@ -309,6 +316,7 @@ impl Display for MathExpression {
                 MathExpression::Floor(math_expression) => format!("floor({math_expression})"),
                 MathExpression::Ceil(math_expression) => format!("ceil({math_expression})"),
                 MathExpression::Abs(math_expression) => format!("abs({math_expression})"),
+                MathExpression::Sqrt(math_expression) => format!("sqrt({math_expression})"),
                 MathExpression::BinOperation { left, op, right } => match op {
                     ArithmOp::Add => format!("{left} + {right}"),
                     ArithmOp::Subtract => format!("{left} - {right}"),
