@@ -1,14 +1,17 @@
+use std::sync::LazyLock;
+
 use pest::{
     Parser,
     error::{Error, LineColLocation},
-    iterators::Pair,
+    iterators::{Pair, Pairs},
+    pratt_parser::PrattParser,
 };
 use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery, SqlComparison,
-    SqlCondition,
+    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery,
+    MathExpression, SqlComparison, SqlCondition,
 };
 
 /// Represents the available queries that can be parsed and submitted to the graph database.
@@ -107,6 +110,22 @@ fn get_parsing_error(error: Error<Rule>) -> ParsingError {
 /// Used to parse inputs for conjecture queries.
 pub struct QueryParser;
 
+static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
+    use pest::pratt_parser::{Assoc::*, Op};
+
+    // Precedence is defined lowest to highest
+    PrattParser::new()
+        // Addition and subtract have equal precedence
+        .op(Op::infix(Rule::add, Left) | Op::infix(Rule::subtract, Left))
+        .op(Op::infix(Rule::multiply, Left)
+            | Op::infix(Rule::divide, Left)
+            | Op::infix(Rule::floor_divide, Left)
+            | Op::infix(Rule::modulo, Left))
+        .op(Op::infix(Rule::exponent, Right))
+        .op(Op::prefix(Rule::negation) | Op::prefix(Rule::abs))
+    // .op(Op::prefix(unary_minus))
+});
+
 impl QueryParser {
     /// Parses a given query into one of the available queries. See [`ParsedQuery`] for more information.
     pub fn parse_query(input: impl ToString) -> Result<ParsedQuery, ParsingError> {
@@ -188,6 +207,13 @@ impl QueryParser {
         let inner_rule = input.into_inner().next().expect("one subrule");
 
         Self::parse_extremal_query_rule(inner_rule)
+    }
+
+    pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
+        match Self::parse(Rule::expr, &input.to_string()) {
+            Ok(rules) => Ok(Self::parse_expr_rule(rules)),
+            Err(e) => Err(get_parsing_error(e)),
+        }
     }
 
     fn parse_condition_rule(rule: Pair<'_, Rule>) -> SqlCondition {
@@ -351,6 +377,48 @@ impl QueryParser {
 
         Ok((selection, additional_condition))
     }
+
+    fn parse_expr_rule(pairs: Pairs<Rule>) -> MathExpression {
+        PRATT_PARSER
+            // One value
+            .map_primary(|primary| match primary.as_rule() {
+                Rule::primitif => MathExpression::Primitif(create_primitif(primary)),
+                Rule::expr => Self::parse_expr_rule(primary.into_inner()),
+                rule => unreachable!("Expr::parse expected atom, found {:?}", rule),
+            })
+            // Three values
+            .map_infix(|lhs, op, rhs| {
+                let op = match op.as_rule() {
+                    Rule::add => ArithmOp::Add,
+                    Rule::subtract => ArithmOp::Subtract,
+                    Rule::exponent => ArithmOp::Power,
+                    Rule::multiply => ArithmOp::Multiply,
+                    Rule::floor_divide => {
+                        // A floor divide is actually the floor functions called on a division
+                        return MathExpression::Floor(Box::new(MathExpression::BinOperation {
+                            left: Box::new(lhs),
+                            op: ArithmOp::Divide,
+                            right: Box::new(rhs),
+                        }));
+                    }
+                    Rule::divide => ArithmOp::Divide,
+                    Rule::modulo => ArithmOp::Modulo,
+                    rule => unreachable!("Expr::parse expected infix operation, found {:?}", rule),
+                };
+                MathExpression::BinOperation {
+                    left: Box::new(lhs),
+                    op,
+                    right: Box::new(rhs),
+                }
+            })
+            // Two values (functions) ex: `abs(x)`
+            .map_prefix(|op, rhs| match op.as_rule() {
+                Rule::negation => MathExpression::Negation(Box::new(rhs)),
+                Rule::abs => MathExpression::Abs(Box::new(rhs)),
+                _ => unreachable!(),
+            })
+            .parse(pairs)
+    }
 }
 
 fn create_condition(
@@ -376,7 +444,16 @@ fn create_primitif(prim_rule: Pair<'_, Rule>) -> ArgType {
             // either a number of string value:
             let inner_rule = inner_rule.into_inner().next().expect("at least one");
             match inner_rule.as_rule() {
-                Rule::number => ArgType::Value(inner_rule.as_str().trim().to_string()),
+                Rule::number => ArgType::Value({
+                    // This is done to be sure that numbers have a decimal part for divsions
+                    let float: f64 = inner_rule
+                        .as_str()
+                        .trim()
+                        .parse::<f64>()
+                        .expect("correct f64 value");
+
+                    format!("{:?}", float)
+                }),
                 Rule::string => {
                     let value = inner_rule.as_str().replace("\"", "");
                     ArgType::Value(value.trim().to_string())
@@ -584,5 +661,11 @@ mod tests {
         assert!(
             matches!(QueryParser::parse_query("min(p_gn: g, d), x = 1 => !(1 = p)"), Ok(crate::parser::query_parser::ParsedQuery::ExtremalCounter(val)) if val == conjecture )
         )
+    }
+
+    #[test]
+    fn parse_expression() {
+        let parse_expr = QueryParser::parse_expression("2 ** 2 + 1 // 2").expect("correct");
+        println!("{parse_expr}")
     }
 }

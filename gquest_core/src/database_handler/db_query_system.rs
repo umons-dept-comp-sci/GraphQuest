@@ -212,8 +212,59 @@ pub enum SqlComparison {
     NotEqual(ArgType, ArgType),
 }
 
-/// Used to correctly identify arguments in a comparison,
-/// otherwise it would be hard to guess if they refer to a value or to a column.
+#[derive(Debug)]
+pub enum MathExpression {
+    Primitif(ArgType),
+    // Unary op
+    Negation(Box<MathExpression>),
+    Floor(Box<MathExpression>),
+    Ceil(Box<MathExpression>),
+    Abs(Box<MathExpression>),
+    // Bin operations
+    BinOperation {
+        left: Box<MathExpression>,
+        op: ArithmOp,
+        right: Box<MathExpression>,
+    },
+}
+
+impl Display for MathExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", {
+            match self {
+                MathExpression::Primitif(arg_type) => arg_type.to_string(),
+                MathExpression::Negation(math_expression) => {
+                    format!("-({math_expression})")
+                }
+                MathExpression::Floor(math_expression) => format!("floor({math_expression})"),
+                MathExpression::Ceil(math_expression) => format!("ceil({math_expression})"),
+                MathExpression::Abs(math_expression) => format!("abs({math_expression})"),
+                MathExpression::BinOperation { left, op, right } => match op {
+                    ArithmOp::Add => format!("{left} + {right}"),
+                    ArithmOp::Subtract => format!("{left} - {right}"),
+                    ArithmOp::Multiply => format!("{left} * {right}"),
+                    ArithmOp::Divide => format!("{left} / {right}"),
+
+                    ArithmOp::Power => format!("power({left}, {right})"),
+                    ArithmOp::Modulo => format!("mod({left}, {right})"),
+                },
+            }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ArithmOp {
+    Add,
+    Subtract,
+    Power,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+/// Used to correctly identify arguments type,
+/// otherwise it would be hard to guess if they refer to a value or an identifier.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArgType {
     Value(String),
