@@ -91,18 +91,20 @@ impl ExtremalCounterQuery {
                 ArgType::Identifier(format!(
                     "{FULL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
-                )),
+                ))
+                .into(),
                 ArgType::Identifier(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
-                )),
+                ))
+                .into(),
             ),
             selection_set
                 .into_iter()
                 .map(|column| {
                     SqlComparison::Equal(
-                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")),
-                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
+                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
                     )
                 })
                 .collect(),
@@ -166,18 +168,20 @@ impl ExtremalCounterQuery {
 
         let all_eq_extremal_clause = SqlCondition::and_vec(
             SqlComparison::Equal(
-                ArgType::Identifier(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max)),
+                ArgType::Identifier(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max))
+                    .into(),
                 ArgType::Identifier(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     selection.invariant_to_max
-                )),
+                ))
+                .into(),
             ),
             selection_set
                 .into_iter()
                 .map(|column| {
                     SqlComparison::Equal(
-                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")),
-                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")),
+                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
+                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
                     )
                 })
                 .collect(),

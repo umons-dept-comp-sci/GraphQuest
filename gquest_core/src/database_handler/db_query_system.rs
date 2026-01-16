@@ -121,7 +121,7 @@ impl SqlCondition {
         }
     }
 
-    /// Searches recursively in the given condition for any column name.
+    /// Searches recursively in the given condition for any identifiers.
     pub fn get_all_identifiers(&self) -> HashSet<String> {
         let mut res: HashSet<String> = HashSet::new();
         match &self {
@@ -132,12 +132,8 @@ impl SqlCondition {
                 | SqlComparison::LessEqual(a, b)
                 | SqlComparison::Equal(a, b)
                 | SqlComparison::NotEqual(a, b) => {
-                    if let ArgType::Identifier(name) = a {
-                        res.insert(name.to_string());
-                    }
-                    if let ArgType::Identifier(name) = b {
-                        res.insert(name.to_string());
-                    }
+                    res.extend(a.get_all_identifiers());
+                    res.extend(b.get_all_identifiers());
                 }
             },
             SqlCondition::And(sql_condition, sql_condition1)
@@ -199,20 +195,20 @@ impl SqlCondition {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlComparison {
     /// `a > b`
-    Greater(ArgType, ArgType),
+    Greater(MathExpression, MathExpression),
     /// `a >= b`
-    GreaterEqual(ArgType, ArgType),
+    GreaterEqual(MathExpression, MathExpression),
     /// `a < b`
-    Less(ArgType, ArgType),
+    Less(MathExpression, MathExpression),
     /// `a <= b`
-    LessEqual(ArgType, ArgType),
+    LessEqual(MathExpression, MathExpression),
     /// `a = b`
-    Equal(ArgType, ArgType),
+    Equal(MathExpression, MathExpression),
     /// `a != b`
-    NotEqual(ArgType, ArgType),
+    NotEqual(MathExpression, MathExpression),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MathExpression {
     Primitif(ArgType),
     // Unary op
@@ -226,6 +222,80 @@ pub enum MathExpression {
         op: ArithmOp,
         right: Box<MathExpression>,
     },
+}
+
+impl MathExpression {
+    pub fn floor(expr: impl Into<MathExpression>) -> Self {
+        Self::Floor(Box::new(expr.into()))
+    }
+    pub fn ceil(expr: impl Into<MathExpression>) -> Self {
+        Self::Ceil(Box::new(expr.into()))
+    }
+    pub fn abs(expr: impl Into<MathExpression>) -> Self {
+        Self::Abs(Box::new(expr.into()))
+    }
+    pub fn negation(expr: impl Into<MathExpression>) -> Self {
+        Self::Negation(Box::new(expr.into()))
+    }
+    pub fn primitif(arg: impl Into<ArgType>) -> Self {
+        Self::Primitif(arg.into())
+    }
+    pub fn bin_operation(
+        left: impl Into<MathExpression>,
+        op: ArithmOp,
+        right: impl Into<MathExpression>,
+    ) -> Self {
+        Self::BinOperation {
+            left: Box::new(left.into()),
+            op,
+            right: Box::new(right.into()),
+        }
+    }
+
+    /// Searches recursively in the given math expression for any identifiers.
+    pub fn get_all_identifiers(&self) -> HashSet<String> {
+        let mut res: HashSet<String> = HashSet::new();
+        match self {
+            MathExpression::Primitif(arg_type) => {
+                if let ArgType::Identifier(id) = arg_type {
+                    res.insert(id.clone());
+                }
+            }
+            MathExpression::Negation(math_expression)
+            | MathExpression::Floor(math_expression)
+            | MathExpression::Ceil(math_expression)
+            | MathExpression::Abs(math_expression) => {
+                res.extend(math_expression.get_all_identifiers());
+            }
+            MathExpression::BinOperation { left, op: _, right } => {
+                res.extend(left.get_all_identifiers());
+                res.extend(right.get_all_identifiers());
+            }
+        };
+        res
+    }
+
+    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
+    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
+        let prefix = prefix.to_string();
+        match self {
+            MathExpression::Primitif(arg_type) => {
+                if let ArgType::Identifier(name) = arg_type {
+                    *name = format!("{prefix}{name}");
+                }
+            }
+            MathExpression::Negation(math_expression)
+            | MathExpression::Floor(math_expression)
+            | MathExpression::Ceil(math_expression)
+            | MathExpression::Abs(math_expression) => {
+                math_expression.add_prefix_identifier(prefix);
+            }
+            MathExpression::BinOperation { left, op: _, right } => {
+                left.add_prefix_identifier(&prefix);
+                right.add_prefix_identifier(prefix);
+            }
+        };
+    }
 }
 
 impl Display for MathExpression {
@@ -245,7 +315,7 @@ impl Display for MathExpression {
                     ArithmOp::Multiply => format!("{left} * {right}"),
                     ArithmOp::Divide => format!("{left} / {right}"),
 
-                    ArithmOp::Power => format!("power({left}, {right})"),
+                    ArithmOp::Power => format!("pow({left}, {right})"),
                     ArithmOp::Modulo => format!("mod({left}, {right})"),
                 },
             }
@@ -253,7 +323,7 @@ impl Display for MathExpression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArithmOp {
     Add,
     Subtract,
@@ -271,6 +341,12 @@ pub enum ArgType {
     Identifier(String),
 }
 
+impl From<ArgType> for MathExpression {
+    fn from(value: ArgType) -> Self {
+        MathExpression::Primitif(value)
+    }
+}
+
 impl ArgType {
     pub fn value(value: impl ToString) -> Self {
         ArgType::Value(value.to_string())
@@ -286,7 +362,7 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) => format!("\'{v}\'"),
+                ArgType::Value(v) => v.to_string(),
                 ArgType::Identifier(v) => v.to_string(),
             }
         )
@@ -317,22 +393,18 @@ impl From<SqlComparison> for SqlCondition {
 }
 
 impl SqlComparison {
-    /// Adds the given prefix to the [`ArgType::IdentifierName`] present inside this comparison.
+    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
     pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
         let prefix = prefix.to_string();
         match self {
-            SqlComparison::Greater(arg_type, arg_type1)
-            | SqlComparison::GreaterEqual(arg_type, arg_type1)
-            | SqlComparison::Less(arg_type, arg_type1)
-            | SqlComparison::LessEqual(arg_type, arg_type1)
-            | SqlComparison::Equal(arg_type, arg_type1)
-            | SqlComparison::NotEqual(arg_type, arg_type1) => {
-                if let ArgType::Identifier(name) = arg_type {
-                    *name = format!("{prefix}{name}");
-                }
-                if let ArgType::Identifier(name) = arg_type1 {
-                    *name = format!("{prefix}{name}");
-                }
+            SqlComparison::Greater(left, right)
+            | SqlComparison::GreaterEqual(left, right)
+            | SqlComparison::Less(left, right)
+            | SqlComparison::LessEqual(left, right)
+            | SqlComparison::Equal(left, right)
+            | SqlComparison::NotEqual(left, right) => {
+                left.add_prefix_identifier(&prefix);
+                right.add_prefix_identifier(prefix);
             }
         }
     }

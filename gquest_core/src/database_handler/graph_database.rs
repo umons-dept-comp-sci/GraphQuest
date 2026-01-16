@@ -745,15 +745,12 @@ where
                 dataset.add_and(SqlCondition::not(SqlCondition::exists(
                     SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
                         .set_where_clause(SqlComparison::Equal(
-                            ArgType::Identifier(format!("{first_inv}.{PK_NAME}")),
-                            ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+                            ArgType::Identifier(format!("{first_inv}.{PK_NAME}")).into(),
+                            ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
                         )),
                 )));
             }
         }
-
-        // TODO: Add dataset selection
-
         // All needed signatures are selected
 
         /* Join query to fetch dependencies if any are required */

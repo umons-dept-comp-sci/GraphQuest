@@ -30,7 +30,7 @@ binary_op = { and_op | or_op }
 comparison = { expr ~ comp_operator ~ expr
 			| "(" ~ condition ~ ")"
 			| not_comparison
-             | identifier }
+            | identifier }
 
 // !inv or !(inv = 1)
 // Special case of inv to not force parenthesis: !(x) == !x 
