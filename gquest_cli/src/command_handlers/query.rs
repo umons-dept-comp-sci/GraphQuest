@@ -31,7 +31,10 @@ pub async fn query_database(path: DatabasePath, query_args: QueryArgs) -> Result
     res
 }
 
-pub async fn find_counter_database(path: DatabasePath, query_args: QueryArgs) -> Result<(), CliError> {
+pub async fn find_counter_database(
+    path: DatabasePath,
+    query_args: QueryArgs,
+) -> Result<(), CliError> {
     let output = query_args
         .output
         .unwrap_or(OutputChoice::Table { partial: None });
