@@ -241,7 +241,7 @@ impl MathExpression {
     pub fn sqrt(expr: impl Into<MathExpression>) -> Self {
         Self::Sqrt(Box::new(expr.into()))
     }
-    
+
     pub fn primitif(arg: impl Into<ArgType>) -> Self {
         Self::Primitif(arg.into())
     }
