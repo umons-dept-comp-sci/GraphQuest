@@ -127,11 +127,11 @@ impl SqlCondition {
         match &self {
             SqlCondition::Operation(sql_comparison) => match sql_comparison {
                 SqlComparison::Greater(a, b)
-                | SqlComparison::GreaterEqual(a, b)
+                | SqlComparison::GreaterEqual(a, b, _)
                 | SqlComparison::Less(a, b)
-                | SqlComparison::LessEqual(a, b)
-                | SqlComparison::Equal(a, b)
-                | SqlComparison::NotEqual(a, b) => {
+                | SqlComparison::LessEqual(a, b, _)
+                | SqlComparison::Equal(a, b, _)
+                | SqlComparison::NotEqual(a, b, _) => {
                     res.extend(a.get_all_identifiers());
                     res.extend(b.get_all_identifiers());
                 }
@@ -196,16 +196,16 @@ impl SqlCondition {
 pub enum SqlComparison {
     /// `a > b`
     Greater(MathExpression, MathExpression),
-    /// `a >= b`
-    GreaterEqual(MathExpression, MathExpression),
+    /// `a >= b` / `a > b or |a - b| < epsilon`
+    GreaterEqual(MathExpression, MathExpression, Option<f64>),
     /// `a < b`
     Less(MathExpression, MathExpression),
-    /// `a <= b`
-    LessEqual(MathExpression, MathExpression),
-    /// `a = b`
-    Equal(MathExpression, MathExpression),
-    /// `a != b`
-    NotEqual(MathExpression, MathExpression),
+    /// `a <= b` / `a < b or |a - b| < epsilon`
+    LessEqual(MathExpression, MathExpression, Option<f64>),
+    /// `a = b` / `|a - b| < epsilon`
+    Equal(MathExpression, MathExpression, Option<f64>),
+    /// `a != b` / `|a - b| >= epsilon`
+    NotEqual(MathExpression, MathExpression, Option<f64>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -318,13 +318,12 @@ impl Display for MathExpression {
                 MathExpression::Abs(math_expression) => format!("abs({math_expression})"),
                 MathExpression::Sqrt(math_expression) => format!("sqrt({math_expression})"),
                 MathExpression::BinOperation { left, op, right } => match op {
-                    ArithmOp::Add => format!("{left} + {right}"),
-                    ArithmOp::Subtract => format!("{left} - {right}"),
-                    ArithmOp::Multiply => format!("{left} * {right}"),
-                    ArithmOp::Divide => format!("{left} / {right}"),
-
-                    ArithmOp::Power => format!("pow({left}, {right})"),
-                    ArithmOp::Modulo => format!("mod({left}, {right})"),
+                    ArithmOp::Add => format!("({left}) + ({right})"),
+                    ArithmOp::Subtract => format!("({left}) - ({right})"),
+                    ArithmOp::Multiply => format!("({left}) * ({right})"),
+                    ArithmOp::Divide => format!("({left}) / ({right})"),
+                    ArithmOp::Power => format!("pow(({left}), ({right}))"),
+                    ArithmOp::Modulo => format!("mod(({left}), ({right}))"),
                 },
             }
         })
@@ -384,11 +383,68 @@ impl Display for SqlComparison {
             "{}",
             match self {
                 SqlComparison::Greater(a, b) => format!("{a} > {b}"),
-                SqlComparison::GreaterEqual(a, b) => format!("{a} >= {b}"),
+                SqlComparison::GreaterEqual(a, b, epsilon) => match epsilon {
+                    Some(eps) => {
+                        // a > b or |a - b| < epsilon
+                        format!(
+                            "({}) OR ({})",
+                            SqlComparison::Greater(a.clone(), b.clone()),
+                            SqlComparison::Equal(a.clone(), b.clone(), Some(*eps))
+                        )
+                    }
+                    None => {
+                        format!("{a} >= {b}")
+                    }
+                },
                 SqlComparison::Less(a, b) => format!("{a} < {b}"),
-                SqlComparison::LessEqual(a, b) => format!("{a} <= {b}"),
-                SqlComparison::Equal(a, b) => format!("{a} = {b}"),
-                SqlComparison::NotEqual(a, b) => format!("{a} != {b}"),
+                SqlComparison::LessEqual(a, b, epsilon) => match epsilon {
+                    Some(eps) => {
+                        // a < b or |a - b| < epsilon
+                        format!(
+                            "({}) OR ({})",
+                            SqlComparison::Less(a.clone(), b.clone()),
+                            SqlComparison::Equal(a.clone(), b.clone(), Some(*eps))
+                        )
+                    }
+                    None => {
+                        format!("{a} <= {b}")
+                    }
+                },
+                SqlComparison::Equal(a, b, epsilon) => match epsilon {
+                    Some(eps) => {
+                        // |a - b| < eps
+                        SqlComparison::Less(
+                            MathExpression::abs(MathExpression::bin_operation(
+                                a.clone(),
+                                ArithmOp::Subtract,
+                                b.clone(),
+                            )),
+                            ArgType::value(eps).into(),
+                        )
+                        .to_string()
+                    }
+                    None => {
+                        format!("{a} = {b}")
+                    }
+                },
+                SqlComparison::NotEqual(a, b, epsilon) => match epsilon {
+                    Some(eps) => {
+                        // |a - b| >= eps
+                        SqlComparison::GreaterEqual(
+                            MathExpression::abs(MathExpression::bin_operation(
+                                a.clone(),
+                                ArithmOp::Subtract,
+                                b.clone(),
+                            )),
+                            ArgType::value(eps).into(),
+                            None,
+                        )
+                        .to_string()
+                    }
+                    None => {
+                        format!("{a} != {b}")
+                    }
+                },
             }
         )
     }
@@ -406,11 +462,11 @@ impl SqlComparison {
         let prefix = prefix.to_string();
         match self {
             SqlComparison::Greater(left, right)
-            | SqlComparison::GreaterEqual(left, right)
+            | SqlComparison::GreaterEqual(left, right, _)
             | SqlComparison::Less(left, right)
-            | SqlComparison::LessEqual(left, right)
-            | SqlComparison::Equal(left, right)
-            | SqlComparison::NotEqual(left, right) => {
+            | SqlComparison::LessEqual(left, right, _)
+            | SqlComparison::Equal(left, right, _)
+            | SqlComparison::NotEqual(left, right, _) => {
                 left.add_prefix_identifier(&prefix);
                 right.add_prefix_identifier(prefix);
             }

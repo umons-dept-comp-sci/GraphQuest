@@ -58,7 +58,7 @@ async fn execute_query(
     let config = ConfigFile::read_json_file(&config_file)?;
 
     // try to parse query:
-    let res = QueryParser::parse_query(formula.clone())?;
+    let res = QueryParser::parse_query(formula.clone(), *config.get_epsilon())?;
 
     let wrong_command_error = Err(CliError::WrongQueryError {
         formula,
@@ -88,7 +88,7 @@ async fn execute_counter(
     let config = ConfigFile::read_json_file(&config_file)?;
 
     // try to parse query:
-    let res = QueryParser::parse_query(formula.clone())?;
+    let res = QueryParser::parse_query(formula.clone(), *config.get_epsilon())?;
 
     let wrong_command_error = Err(CliError::WrongQueryError {
         formula,

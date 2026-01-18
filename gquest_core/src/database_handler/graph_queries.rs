@@ -98,6 +98,7 @@ impl ExtremalCounterQuery {
                     self.selection.invariant_to_max
                 ))
                 .into(),
+                None,
             ),
             selection_set
                 .into_iter()
@@ -105,6 +106,7 @@ impl ExtremalCounterQuery {
                     SqlComparison::Equal(
                         ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
                         ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
+                        None,
                     )
                 })
                 .collect(),
@@ -175,6 +177,7 @@ impl ExtremalCounterQuery {
                     selection.invariant_to_max
                 ))
                 .into(),
+                None,
             ),
             selection_set
                 .into_iter()
@@ -182,6 +185,7 @@ impl ExtremalCounterQuery {
                     SqlComparison::Equal(
                         ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
                         ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
+                        None,
                     )
                 })
                 .collect(),

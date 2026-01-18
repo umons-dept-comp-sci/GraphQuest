@@ -127,12 +127,14 @@ static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
             | Op::prefix(Rule::floor)
             | Op::prefix(Rule::ceil)
             | Op::prefix(Rule::sqrt))
-    // .op(Op::prefix(unary_minus))
 });
 
 impl QueryParser {
     /// Parses a given query into one of the available queries. See [`ParsedQuery`] for more information.
-    pub fn parse_query(input: impl ToString) -> Result<ParsedQuery, ParsingError> {
+    pub fn parse_query(
+        input: impl ToString,
+        epsilon: Option<f64>,
+    ) -> Result<ParsedQuery, ParsingError> {
         let input_str = input.to_string();
         let input = Self::parse(Rule::query, &input_str);
         match input {
@@ -145,19 +147,19 @@ impl QueryParser {
                 let inner_rule = rules.next().expect("always at least one subrule");
                 match inner_rule.as_rule() {
                     Rule::condition => Ok(ParsedQuery::Condition(Self::parse_condition_rule(
-                        inner_rule,
+                        inner_rule, epsilon,
                     ))),
                     Rule::extremal_query => {
                         let inner_rule = inner_rule.into_inner().next().expect("one subrule");
                         Ok(ParsedQuery::Extremal(Self::parse_extremal_query_rule(
-                            inner_rule,
+                            inner_rule, epsilon,
                         )?))
                     }
                     Rule::extremal_conj_query => Ok(ParsedQuery::ExtremalCounter(
-                        Self::parse_extremal_conj_query_rule(inner_rule)?,
+                        Self::parse_extremal_conj_query_rule(inner_rule, epsilon)?,
                     )),
                     Rule::conj_query => Ok(ParsedQuery::Counter(Self::parse_conj_query_rule(
-                        inner_rule,
+                        inner_rule, epsilon,
                     )?)),
                     _ => unreachable!(),
                 }
@@ -168,7 +170,10 @@ impl QueryParser {
 
     /// Parses a condition using a string value into an equivalent [`SqlCondition`].
     /// For example : `(a = 2 or not(x < y))`
-    pub fn parse_condition(input: impl ToString) -> Result<SqlCondition, ParsingError> {
+    pub fn parse_condition(
+        input: impl ToString,
+        epsilon: Option<f64>,
+    ) -> Result<SqlCondition, ParsingError> {
         let input = input.to_string();
         let input = match QueryParser::parse(Rule::condition, &input) {
             Ok(mut input) => input.next().expect("one present"),
@@ -177,13 +182,14 @@ impl QueryParser {
             }
         };
 
-        Ok(Self::parse_condition_rule(input))
+        Ok(Self::parse_condition_rule(input, epsilon))
     }
 
     /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
     /// For example : `min(p_gn: n,m), d_nm >= 3 => conj1 = 1`
     pub fn parse_extr_conj_query(
         input: impl ToString,
+        epsilon: Option<f64>,
     ) -> Result<ExtremalCounterQuery, ParsingError> {
         let input_str = input.to_string();
         let input = match QueryParser::parse(Rule::extremal_conj_query, &input_str) {
@@ -193,13 +199,14 @@ impl QueryParser {
             }
         };
 
-        Self::parse_extremal_conj_query_rule(input)
+        Self::parse_extremal_conj_query_rule(input, epsilon)
     }
 
     /// Parses an extremal query.
     /// For example : `min(p_gn: n,m), d_nm >= 3
     pub fn parse_extremal_query(
         input: impl ToString,
+        epsilon: Option<f64>,
     ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
         let input_str = input.to_string();
         let input = match QueryParser::parse(Rule::extremal_query, &input_str) {
@@ -210,7 +217,7 @@ impl QueryParser {
         };
         let inner_rule = input.into_inner().next().expect("one subrule");
 
-        Self::parse_extremal_query_rule(inner_rule)
+        Self::parse_extremal_query_rule(inner_rule, epsilon)
     }
 
     pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
@@ -220,16 +227,16 @@ impl QueryParser {
         }
     }
 
-    fn parse_condition_rule(rule: Pair<'_, Rule>) -> SqlCondition {
+    fn parse_condition_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> SqlCondition {
         let mut inner_rules = rule.into_inner();
         if inner_rules.len() == 1 {
             // comparison
             let inner_rule = inner_rules.next().expect("one value");
-            Self::parse_comparison_rule(inner_rule)
+            Self::parse_comparison_rule(inner_rule, epsilon)
         } else {
             let inner = inner_rules.next().expect("comp present");
             // comparison ~ binary_op ~ condition
-            let comparison = Self::parse_comparison_rule(inner);
+            let comparison = Self::parse_comparison_rule(inner, epsilon);
 
             let binary_op = inner_rules
                 .next()
@@ -239,12 +246,12 @@ impl QueryParser {
                 .expect("one sub rule value");
 
             let condition =
-                Self::parse_condition_rule(inner_rules.next().expect("condition present"));
+                Self::parse_condition_rule(inner_rules.next().expect("condition present"), epsilon);
             create_condition(comparison, binary_op, condition)
         }
     }
 
-    fn parse_comparison_rule(rule: Pair<'_, Rule>) -> SqlCondition {
+    fn parse_comparison_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> SqlCondition {
         let mut inner_rules = rule.into_inner();
         if inner_rules.len() == 1 {
             // either a "not_comparison" or a "condition".
@@ -259,20 +266,22 @@ impl QueryParser {
                         Rule::identifier => SqlComparison::Equal(
                             ArgType::identifier(inner_rule.as_str()).into(),
                             ArgType::value(0).into(),
+                            None,
                         )
                         .into(),
                         Rule::condition => {
-                            SqlCondition::not(Self::parse_condition_rule(inner_rule))
+                            SqlCondition::not(Self::parse_condition_rule(inner_rule, epsilon))
                         }
                         _ => {
                             unreachable!()
                         }
                     }
                 }
-                Rule::condition => Self::parse_condition_rule(inner_rule),
+                Rule::condition => Self::parse_condition_rule(inner_rule, epsilon),
                 Rule::identifier => SqlComparison::Equal(
                     ArgType::identifier(inner_rule.as_str()).into(),
                     ArgType::value(1).into(),
+                    None,
                 )
                 .into(),
                 _ => unreachable!(),
@@ -290,7 +299,7 @@ impl QueryParser {
             let prim_2 =
                 Self::parse_expr_rule(inner_rules.next().expect("prim2 present").into_inner());
 
-            SqlCondition::Operation(create_comparison(prim_1, operator, prim_2))
+            SqlCondition::Operation(create_comparison(prim_1, operator, prim_2, epsilon))
         }
     }
 
@@ -338,14 +347,17 @@ impl QueryParser {
 
     fn parse_extremal_conj_query_rule(
         rule: Pair<'_, Rule>,
+        epsilon: Option<f64>,
     ) -> Result<ExtremalCounterQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
-        let (selection, additional_condition) =
-            Self::parse_extremal_query_rule(inner_rules.next().expect("extremal query present"))?;
+        let (selection, additional_condition) = Self::parse_extremal_query_rule(
+            inner_rules.next().expect("extremal query present"),
+            epsilon,
+        )?;
 
         let conjecture_to_disprove =
-            Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
+            Self::parse_condition_rule(inner_rules.next().expect("extramal present"), epsilon);
 
         Ok(ExtremalCounterQuery {
             selection,
@@ -356,26 +368,31 @@ impl QueryParser {
 
     fn parse_conj_query_rule(
         rule: Pair<'_, Rule>,
+        epsilon: Option<f64>,
     ) -> Result<(SqlCondition, SqlCondition), ParsingError> {
         let mut inner_rules = rule.into_inner();
 
-        let left_condition =
-            Self::parse_condition_rule(inner_rules.next().expect("extremal query present"));
+        let left_condition = Self::parse_condition_rule(
+            inner_rules.next().expect("extremal query present"),
+            epsilon,
+        );
 
         let right_condition =
-            Self::parse_condition_rule(inner_rules.next().expect("extramal present"));
+            Self::parse_condition_rule(inner_rules.next().expect("extramal present"), epsilon);
 
         Ok((left_condition, right_condition))
     }
 
     fn parse_extremal_query_rule(
         rule: Pair<'_, Rule>,
+        epsilon: Option<f64>,
     ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
         let mut inner_rules = rule.into_inner();
         let selection = Self::parse_extremal(inner_rules.next().expect("extramal present"))?;
         let additional_condition = if inner_rules.len() == 1 {
             Some(Self::parse_condition_rule(
                 inner_rules.next().expect("condition present"),
+                epsilon,
             ))
         } else {
             None
@@ -474,14 +491,15 @@ fn create_comparison(
     prim_1: MathExpression,
     binary_op_rule: Pair<'_, Rule>,
     prim_2: MathExpression,
+    epsilon: Option<f64>,
 ) -> SqlComparison {
     match binary_op_rule.as_rule() {
-        Rule::equal => SqlComparison::Equal(prim_1, prim_2),
-        Rule::not_equal => SqlComparison::NotEqual(prim_1, prim_2),
+        Rule::equal => SqlComparison::Equal(prim_1, prim_2, epsilon),
+        Rule::not_equal => SqlComparison::NotEqual(prim_1, prim_2, epsilon),
         Rule::less => SqlComparison::Less(prim_1, prim_2),
-        Rule::less_equal => SqlComparison::LessEqual(prim_1, prim_2),
+        Rule::less_equal => SqlComparison::LessEqual(prim_1, prim_2, epsilon),
         Rule::greater => SqlComparison::Greater(prim_1, prim_2),
-        Rule::greater_equal => SqlComparison::GreaterEqual(prim_1, prim_2),
+        Rule::greater_equal => SqlComparison::GreaterEqual(prim_1, prim_2, epsilon),
         _ => unreachable!(),
     }
 }

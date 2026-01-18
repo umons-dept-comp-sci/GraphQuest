@@ -747,6 +747,7 @@ where
                         .set_where_clause(SqlComparison::Equal(
                             ArgType::Identifier(format!("{first_inv}.{PK_NAME}")).into(),
                             ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
+                            None,
                         )),
                 )));
             }

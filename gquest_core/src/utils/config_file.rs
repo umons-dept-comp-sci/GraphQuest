@@ -35,6 +35,8 @@ struct ExecutableJson {
 /// Private struct simply used to not directly create a config file.
 #[derive(Serialize, Deserialize)]
 struct ConfigJsonFile {
+    /// The precision to use when checking if two numbers are equal or not. By default set to 0.
+    epsilon: Option<f64>,
     /// The number of data being sent between the executables and the databases
     batch_size: Option<usize>,
     /// The maximum number of threads to use to use when computing invariants
@@ -47,6 +49,8 @@ struct ConfigJsonFile {
 /// Contains the necessary data to initialise a workplace.
 /// Important to mention that at least one invariant will be present and checked for any instantiation errors.
 pub struct ConfigFile {
+    /// The precision to use when checking if two numbers are equal or not. By default set to 0.
+    epsilon: Option<f64>,
     /// The number of data being sent between the executables and the databases
     batch_size: usize,
     /// The maximum number of threads to use when computing invariants
@@ -94,6 +98,9 @@ impl ConfigFile {
     pub fn get_nb_threads(&self) -> usize {
         self.nb_threads
     }
+    pub fn get_epsilon(&self) -> &Option<f64> {
+        &self.epsilon
+    }
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
@@ -111,6 +118,7 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
     }
 
     Ok(ConfigFile {
+        epsilon: config_json.epsilon,
         modules: executables,
         nb_threads: config_json.nb_threads.unwrap_or(1),
         batch_size: config_json.batch_size.unwrap_or(1000),

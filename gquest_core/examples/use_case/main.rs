@@ -49,7 +49,8 @@ async fn main() {
     let mut table =
         QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
     wp.find_counterexamples_extremal(
-        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1").expect("correct"),
+        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1", None)
+            .expect("correct"),
         &mut table,
     )
     .await
