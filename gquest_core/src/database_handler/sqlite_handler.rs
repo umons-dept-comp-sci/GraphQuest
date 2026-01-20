@@ -2,13 +2,18 @@ use sqlx::{FromRow, Pool, query::Query, sqlite::Sqlite};
 
 use tokio_stream::Stream;
 
-use crate::database_handler::{
-    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery,
-    SqlTable,
+use crate::{
+    database_handler::{
+        ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery,
+        SqlTable,
+    },
+    workplace::Workplace,
 };
 
 /// An alias for [`GraphDatabase`] specialized for Sqlite
 pub type SqliteGraphDB = GraphDatabase<Sqlite>;
+/// An alias for a [`Workplace`] specialized for Postgres
+pub type SqliteWorkplace<'s> = Workplace<'s, Sqlite>;
 
 impl GraphDb for Sqlite {}
 

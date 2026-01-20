@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use log::info;
-use sqlx::{FromRow, migrate::MigrateDatabase};
+use sqlx::{ColumnIndex, Decode, FromRow, Type};
 use thiserror::Error;
 use tokio::{
     sync::Mutex,
@@ -38,27 +38,23 @@ pub struct Workplace<'a, DB: GraphDb> {
 
 impl<'a, DB: GraphDb> Workplace<'a, DB>
 where
-    DB: MigrateDatabase,
     // Allow column indexing using usize
-    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
+    usize: Send + Unpin + ColumnIndex<DB::Row>,
     // Allow decoding/encoding
     f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
     for<'q> String: sqlx::Decode<'q, DB>,
-    for<'q> i64: sqlx::Decode<'q, DB>,
-    for<'q> f64: sqlx::Decode<'q, DB>,
-    for<'q> f32: sqlx::Decode<'q, DB>,
-    for<'q> i32: sqlx::Decode<'q, DB>,
+    for<'q> i64: Decode<'q, DB>,
+    for<'q> f64: Decode<'q, DB>,
+    for<'q> f32: Decode<'q, DB>,
+    for<'q> i32: Decode<'q, DB>,
     // Type of values
     String: sqlx::Type<DB>,
-    i64: sqlx::Type<DB>,
-    f64: sqlx::Type<DB>,
-    f32: sqlx::Type<DB>,
+    i64: Type<DB>,
+    f64: Type<DB>,
+    f32: Type<DB>,
     // Return values
-    (i64,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
     (i32,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-    (String,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-    (String, f64): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
 {
     /// Creates a new [`Workplace`].
     pub fn new(db: &'a mut GraphDatabase<DB>, config: ConfigFile) -> Self {

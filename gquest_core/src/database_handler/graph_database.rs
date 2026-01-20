@@ -19,11 +19,12 @@ pub struct SqlxLogLevels {
     pub log_slow_statement_level: Option<(log::LevelFilter, Duration)>,
 }
 
-pub trait GraphDb: Database + DbQuerySystem<Self> + Send {}
+/// Trait used to encapsulate other traits a database should implement.
+pub trait GraphDb: Database + DbQuerySystem<Self> + Send + MigrateDatabase {}
 
 #[derive(Debug)]
 /// Represents a graph database.
-/// As long as it is not dropped, the connection to the related database will be stay up.
+/// As long as it is not dropped, the connection to the related database will be up.
 /// Can be cloned cheaply (since it will just clone the associated [`Pool`]).
 pub struct GraphDatabase<DB: GraphDb> {
     pool: Pool<DB>,
@@ -39,10 +40,7 @@ impl<DB: GraphDb> Clone for GraphDatabase<DB> {
 }
 
 /// The GraphDatabase trait is used to facilitate the communication with databases for the user.
-impl<DB: GraphDb> GraphDatabase<DB>
-where
-    DB: MigrateDatabase,
-{
+impl<DB: GraphDb> GraphDatabase<DB> {
     /// Creates the database that will be storing the project.
     /// Returns an in instance of a [GraphDatabase].
     ///
@@ -227,28 +225,23 @@ struct InputFn<'e, DB: GraphDb> {
 
 impl<'e, DB: GraphDb> AsyncModuleInput<GraphDbRuntimeError> for InputFn<'e, DB>
 where
-    DB: Send,
-    DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
-    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
+    f64: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
-    for<'a> i32: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
     for<'a> f32: sqlx::Decode<'a, DB>,
+    for<'a> i32: sqlx::Decode<'a, DB>,
     // Type of values
     String: sqlx::Type<DB>,
     i64: sqlx::Type<DB>,
     f64: sqlx::Type<DB>,
     f32: sqlx::Type<DB>,
     // Return values
-    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self) -> Option<Result<Vec<String>, GraphDbRuntimeError>> {
         let res: Result<<DB as Database>::Row, sqlx::Error> = self.fetch.next().await?;
@@ -270,13 +263,11 @@ struct OutputFn<'b, 'o, DB: GraphDb> {
 }
 impl<'b, 'o, DB: GraphDb> AsyncModuleOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
 where
-    DB: Send,
-    DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
-    f64: sqlx::Encode<'static, DB>,
     String: sqlx::Encode<'static, DB>,
+    f64: sqlx::Encode<'static, DB>,
     for<'a> String: sqlx::Decode<'a, DB>,
     for<'a> i64: sqlx::Decode<'a, DB>,
     for<'a> f64: sqlx::Decode<'a, DB>,
@@ -288,10 +279,7 @@ where
     f64: sqlx::Type<DB>,
     f32: sqlx::Type<DB>,
     // Return values
-    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self, values: Vec<String>) -> Result<(), GraphDbRuntimeError> {
         let mut values = values.into_iter();
@@ -335,8 +323,6 @@ where
 // TODO: Remove useless import
 impl<DB: GraphDb> GraphDatabase<DB>
 where
-    DB: Send,
-    DB: MigrateDatabase,
     // Allow column indexing using usize
     usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
     // Allow decoding/encoding
@@ -353,10 +339,7 @@ where
     f64: sqlx::Type<DB>,
     f32: sqlx::Type<DB>,
     // Return values
-    (i64,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
     (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
-    (String, f64): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     /// Returns all the table name stored inside the database
     pub async fn get_all_table_names(&self) -> Result<Vec<String>, GraphDbRuntimeError> {
@@ -374,7 +357,7 @@ where
         Ok(results)
     }
 
-    /// Checks if the given table was added.=
+    /// Checks if the given table was added.
     pub async fn is_table_added(
         &self,
         table_name: impl ToString,
@@ -458,7 +441,7 @@ where
         Ok(())
     }
 
-    pub fn read_row_val(&self, row: &DB::Row) -> Vec<String> {
+    fn read_row_val(&self, row: &DB::Row) -> Vec<String> {
         Self::read_row_values(row)
     }
 
