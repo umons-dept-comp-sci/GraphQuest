@@ -177,7 +177,7 @@ impl SqlCondition {
             };
 
         match self {
-            SqlCondition::Operation(sql_comparison) => sql_comparison.to_string(),
+            SqlCondition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
             SqlCondition::And(a, b) => format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
             SqlCondition::Or(a, b) => format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
             SqlCondition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
@@ -305,31 +305,6 @@ impl MathExpression {
     }
 }
 
-impl Display for MathExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", {
-            match self {
-                MathExpression::Primitif(arg_type) => arg_type.to_string(),
-                MathExpression::Negation(math_expression) => {
-                    format!("-({math_expression})")
-                }
-                MathExpression::Floor(math_expression) => format!("floor({math_expression})"),
-                MathExpression::Ceil(math_expression) => format!("ceil({math_expression})"),
-                MathExpression::Abs(math_expression) => format!("abs({math_expression})"),
-                MathExpression::Sqrt(math_expression) => format!("sqrt({math_expression})"),
-                MathExpression::BinOperation { left, op, right } => match op {
-                    ArithmOp::Add => format!("({left}) + ({right})"),
-                    ArithmOp::Subtract => format!("({left}) - ({right})"),
-                    ArithmOp::Multiply => format!("({left}) * ({right})"),
-                    ArithmOp::Divide => format!("({left}) / ({right})"),
-                    ArithmOp::Power => format!("pow(({left}), ({right}))"),
-                    ArithmOp::Modulo => format!("mod(({left}), ({right}))"),
-                },
-            }
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArithmOp {
     Add,
@@ -376,80 +351,6 @@ impl Display for ArgType {
     }
 }
 
-impl Display for SqlComparison {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SqlComparison::Greater(a, b) => format!("{a} > {b}"),
-                SqlComparison::GreaterEqual(a, b, epsilon) => match epsilon {
-                    Some(eps) => {
-                        // a > b or |a - b| < epsilon
-                        format!(
-                            "({}) OR ({})",
-                            SqlComparison::Greater(a.clone(), b.clone()),
-                            SqlComparison::Equal(a.clone(), b.clone(), Some(*eps))
-                        )
-                    }
-                    None => {
-                        format!("{a} >= {b}")
-                    }
-                },
-                SqlComparison::Less(a, b) => format!("{a} < {b}"),
-                SqlComparison::LessEqual(a, b, epsilon) => match epsilon {
-                    Some(eps) => {
-                        // a < b or |a - b| < epsilon
-                        format!(
-                            "({}) OR ({})",
-                            SqlComparison::Less(a.clone(), b.clone()),
-                            SqlComparison::Equal(a.clone(), b.clone(), Some(*eps))
-                        )
-                    }
-                    None => {
-                        format!("{a} <= {b}")
-                    }
-                },
-                SqlComparison::Equal(a, b, epsilon) => match epsilon {
-                    Some(eps) => {
-                        // |a - b| < eps
-                        SqlComparison::Less(
-                            MathExpression::abs(MathExpression::bin_operation(
-                                a.clone(),
-                                ArithmOp::Subtract,
-                                b.clone(),
-                            )),
-                            ArgType::value(eps).into(),
-                        )
-                        .to_string()
-                    }
-                    None => {
-                        format!("{a} = {b}")
-                    }
-                },
-                SqlComparison::NotEqual(a, b, epsilon) => match epsilon {
-                    Some(eps) => {
-                        // |a - b| >= eps
-                        SqlComparison::GreaterEqual(
-                            MathExpression::abs(MathExpression::bin_operation(
-                                a.clone(),
-                                ArithmOp::Subtract,
-                                b.clone(),
-                            )),
-                            ArgType::value(eps).into(),
-                            None,
-                        )
-                        .to_string()
-                    }
-                    None => {
-                        format!("{a} != {b}")
-                    }
-                },
-            }
-        )
-    }
-}
-
 impl From<SqlComparison> for SqlCondition {
     fn from(val: SqlComparison) -> Self {
         SqlCondition::Operation(val)
@@ -470,6 +371,101 @@ impl SqlComparison {
                 left.add_prefix_identifier(&prefix);
                 right.add_prefix_identifier(prefix);
             }
+        }
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        match self {
+            SqlComparison::Greater(a, b) => format!(
+                "{} > {}",
+                DB::translate_math_expr(a),
+                DB::translate_math_expr(b)
+            ),
+            SqlComparison::GreaterEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // a > b or |a - b| < epsilon
+                    format!(
+                        "({}) OR ({})",
+                        SqlComparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
+                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    )
+                }
+                None => {
+                    format!(
+                        "{} >= {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::Less(a, b) => format!(
+                "{} < {}",
+                DB::translate_math_expr(a),
+                DB::translate_math_expr(b)
+            ),
+            SqlComparison::LessEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // a < b or |a - b| < epsilon
+                    format!(
+                        "({}) OR ({})",
+                        SqlComparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
+                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    )
+                }
+                None => {
+                    format!(
+                        "{} <= {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::Equal(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // |a - b| < eps
+                    SqlComparison::Less(
+                        MathExpression::abs(MathExpression::bin_operation(
+                            a.clone(),
+                            ArithmOp::Subtract,
+                            b.clone(),
+                        )),
+                        ArgType::value(eps).into(),
+                    )
+                    .to_sql::<DB>()
+                }
+                None => {
+                    format!(
+                        "{} = {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::NotEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // |a - b| >= eps
+                    SqlComparison::GreaterEqual(
+                        MathExpression::abs(MathExpression::bin_operation(
+                            a.clone(),
+                            ArithmOp::Subtract,
+                            b.clone(),
+                        )),
+                        ArgType::value(eps).into(),
+                        None,
+                    )
+                    .to_sql::<DB>()
+                }
+                None => {
+                    format!(
+                        "{} != {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
         }
     }
 }
@@ -741,6 +737,40 @@ where
     fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError;
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
+
+    fn translate_math_expr(expr: &MathExpression) -> String {
+        match expr {
+            MathExpression::Primitif(arg_type) => arg_type.to_string(),
+            MathExpression::Negation(math_expression) => {
+                format!("-({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Floor(math_expression) => {
+                format!("floor({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Ceil(math_expression) => {
+                format!("ceil({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Abs(math_expression) => {
+                format!("abs({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Sqrt(math_expression) => {
+                format!("sqrt({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::BinOperation { left, op, right } => {
+                let left = Self::translate_math_expr(left);
+                let right = Self::translate_math_expr(right);
+
+                match op {
+                    ArithmOp::Add => format!("({}) + ({})", left, right),
+                    ArithmOp::Subtract => format!("({}) - ({})", left, right),
+                    ArithmOp::Multiply => format!("({}) * ({})", left, right),
+                    ArithmOp::Divide => format!("({}) / ({})", left, right),
+                    ArithmOp::Power => format!("pow(({}), ({}))", left, right),
+                    ArithmOp::Modulo => format!("mod(({}), ({}))", left, right),
+                }
+            }
+        }
+    }
 }
 
 pub trait ErrorTraduction<DB>

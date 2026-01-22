@@ -1,8 +1,8 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
 use crate::database_handler::{
-    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError,
-    SqlSelectQuery, SqlTable,
+    ArithmOp, ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError,
+    GraphDbStartupError, MathExpression, SqlSelectQuery, SqlTable,
 };
 
 /// An alias for a [`GraphDatabase`] specialized for Postgres
@@ -253,6 +253,43 @@ WHERE schemaname != 'pg_catalog' AND
                 }
             }
             None => GraphDbStartupError::DatabaseError(error),
+        }
+    }
+
+    fn translate_math_expr(expr: &MathExpression) -> String {
+        match expr {
+            MathExpression::Primitif(arg_type) => arg_type.to_string(),
+            MathExpression::Negation(math_expression) => {
+                format!("-({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Floor(math_expression) => {
+                format!("floor({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Ceil(math_expression) => {
+                format!("ceil({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Abs(math_expression) => {
+                format!("abs({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Sqrt(math_expression) => {
+                format!("sqrt({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::BinOperation { left, op, right } => {
+                let left = Self::translate_math_expr(left);
+                let right = Self::translate_math_expr(right);
+
+                match op {
+                    ArithmOp::Add => format!("({}) + ({})", left, right),
+                    ArithmOp::Subtract => format!("({}) - ({})", left, right),
+                    ArithmOp::Multiply => format!("({}) * ({})", left, right),
+                    ArithmOp::Divide => format!("({}) / ({})", left, right),
+                    ArithmOp::Power => format!("pow(({}), ({}))", left, right),
+                    ArithmOp::Modulo => format!(
+                        "mod(CAST(({}) AS numeric), CAST(({}) AS numeric))", // The mod function is the one forcing us to re-implement this function
+                        left, right
+                    ),
+                }
+            }
         }
     }
 }
