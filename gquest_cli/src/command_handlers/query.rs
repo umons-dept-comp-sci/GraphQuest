@@ -1,5 +1,5 @@
 use gquest_core::{
-    database_handler::{ClassSelection, ExtremalCounterQuery, SqlCondition, SqliteGraphDB},
+    database_handler::{AllowedGraphDb, ClassSelection, ExtremalCounterQuery, SqlCondition},
     parser::query_parser::{ParsedQuery, QueryParser},
     utils::{
         StdoutOutput,
@@ -23,9 +23,15 @@ pub async fn query_database(path: DatabasePath, query_args: QueryArgs) -> Result
         .unwrap_or(OutputChoice::Table { partial: None });
     // open database :
     info!("Opening database");
-    let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
+
+    info!("Opening configuration file");
+    let config = ConfigFile::read_json_file(&query_args.config_file)?;
+    let epsilon = *config.get_epsilon();
+    let mut wp = Workplace::new(db.clone(), config);
+
     // Store the result, then close the database even if we encountered an error
-    let res = execute_query(&mut db, output, query_args.query, query_args.config_file).await;
+    let res = execute_query(&mut wp, output, query_args.query, epsilon).await;
     info!("Closing database");
     db.close_connection().await;
     res
@@ -38,27 +44,30 @@ pub async fn find_counter_database(
     let output = query_args
         .output
         .unwrap_or(OutputChoice::Table { partial: None });
-    // open database :
+
     info!("Opening database");
-    let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
+
+    info!("Opening configuration file");
+    let config = ConfigFile::read_json_file(&query_args.config_file)?;
+    let epsilon = *config.get_epsilon();
+    let mut wp = Workplace::new(db.clone(), config);
+
     // Store the result, then close the database even if we encountered an error
-    let res = execute_counter(&mut db, output, query_args.query, query_args.config_file).await;
+    let res = execute_counter(&mut wp, output, query_args.query, epsilon).await;
     info!("Closing database");
     db.close_connection().await;
     res
 }
 
 async fn execute_query(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     formula: String,
-    config_file: String,
+    epsilon: Option<f64>,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let config = ConfigFile::read_json_file(&config_file)?;
-
     // try to parse query:
-    let res = QueryParser::parse_query(formula.clone(), *config.get_epsilon())?;
+    let res = QueryParser::parse_query(formula.clone(), epsilon)?;
 
     let wrong_command_error = Err(CliError::WrongQueryError {
         formula,
@@ -68,10 +77,10 @@ async fn execute_query(
 
     match res {
         ParsedQuery::Condition(sql_condition) => {
-            workplace_condition_query(db, output, sql_condition, config).await
+            workplace_condition_query(wp, output, sql_condition).await
         }
         ParsedQuery::Extremal((selection, add_cond)) => {
-            workplace_extremal_query(db, output, selection, add_cond, config).await
+            workplace_extremal_query(wp, output, selection, add_cond).await
         }
         ParsedQuery::ExtremalCounter(_conj_query) => wrong_command_error,
         ParsedQuery::Counter((_left_cond, _right_cond)) => wrong_command_error,
@@ -79,16 +88,13 @@ async fn execute_query(
 }
 
 async fn execute_counter(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     formula: String,
-    config_file: String,
+    epsilon: Option<f64>,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let config = ConfigFile::read_json_file(&config_file)?;
-
     // try to parse query:
-    let res = QueryParser::parse_query(formula.clone(), *config.get_epsilon())?;
+    let res = QueryParser::parse_query(formula.clone(), epsilon)?;
 
     let wrong_command_error = Err(CliError::WrongQueryError {
         formula,
@@ -97,26 +103,24 @@ async fn execute_counter(
     });
 
     match res {
-        ParsedQuery::Condition(_sql_condition) => wrong_command_error,
+        ParsedQuery::Condition(sql_condition) => {
+            workplace_condition_query(wp, output, SqlCondition::not(sql_condition)).await
+        }
         ParsedQuery::Extremal((_selection, _add_cond)) => wrong_command_error,
         ParsedQuery::ExtremalCounter(conj_query) => {
-            workplace_extremal_counterexample(db, output, conj_query, config).await
+            workplace_extremal_counterexample(wp, output, conj_query).await
         }
         ParsedQuery::Counter((left_cond, right_cond)) => {
-            workplace_counterexample(db, output, left_cond, right_cond, config).await
+            workplace_counterexample(wp, output, left_cond, right_cond).await
         }
     }
 }
 
 async fn workplace_condition_query(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     cond: SqlCondition,
-    config: ConfigFile,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let mut wp = Workplace::new(db, config);
-
     info!("Executing query with workplace");
     match output {
         OutputChoice::File { path, separator } => {
@@ -145,15 +149,11 @@ async fn workplace_condition_query(
 }
 
 async fn workplace_extremal_query(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     selection: ClassSelection,
     add_cond: Option<SqlCondition>,
-    config: ConfigFile,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let mut wp = Workplace::new(db, config);
-
     info!("Executing query with workplace");
     match output {
         OutputChoice::File { path, separator } => {
@@ -185,14 +185,10 @@ async fn workplace_extremal_query(
 }
 
 async fn workplace_extremal_counterexample(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     conj_query: ExtremalCounterQuery,
-    config: ConfigFile,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let mut wp = Workplace::new(db, config);
-
     info!("Executing query with workplace");
     match output {
         OutputChoice::File { path, separator } => {
@@ -224,15 +220,11 @@ async fn workplace_extremal_counterexample(
 }
 
 async fn workplace_counterexample(
-    db: &mut SqliteGraphDB,
+    wp: &mut Workplace,
     output: OutputChoice,
     left_cond: SqlCondition,
     right_cond: SqlCondition,
-    config: ConfigFile,
 ) -> Result<(), CliError> {
-    info!("Opening config file");
-    let mut wp = Workplace::new(db, config);
-
     info!("Executing query with workplace");
     match output {
         OutputChoice::File { path, separator } => {
@@ -266,15 +258,18 @@ async fn workplace_counterexample(
 pub async fn summary(path: DatabasePath, partial: Option<String>) -> Result<(), CliError> {
     // open database :
     info!("Opening database");
-    let db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    let mut db = AllowedGraphDb::connect_from_url(path.url, None).await?;
 
     let table_opt = if let Some(partial) = partial {
         ArgParser::parse_partial_table(&partial)?
     } else {
         QueryTableOptions::Full
     };
+    let res = match &mut db {
+        AllowedGraphDb::Sqlite(sqlite_db) => sqlite_db.print_all_tables(table_opt).await,
+        AllowedGraphDb::Postgres(pgsql_db) => pgsql_db.print_all_tables(table_opt).await,
+    };
 
-    let res = db.print_all_tables(table_opt).await;
     info!("Closing database");
     db.close_connection().await;
 

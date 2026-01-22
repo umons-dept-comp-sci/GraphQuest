@@ -1,17 +1,12 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
-use crate::{
-    database_handler::{
-        ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError,
-        GraphDbStartupError, SqlSelectQuery, SqlTable,
-    },
-    workplace::Workplace,
+use crate::database_handler::{
+    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError,
+    SqlSelectQuery, SqlTable,
 };
 
 /// An alias for a [`GraphDatabase`] specialized for Postgres
 pub type PgSqlGraphDB = GraphDatabase<Postgres>;
-/// An alias for a [`Workplace`] specialized for Postgres
-pub type PgSqlWorkplace<'p> = Workplace<'p, Postgres>;
 
 impl GraphDb for Postgres {}
 
@@ -248,6 +243,7 @@ WHERE schemaname != 'pg_catalog' AND
     }
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError {
+        println!("error : {error}");
         match error.as_database_error() {
             Some(e) => {
                 let pg_error: &PgDatabaseError = e.downcast_ref();
