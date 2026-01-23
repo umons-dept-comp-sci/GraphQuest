@@ -21,6 +21,8 @@ pub enum ModuleExecutionError {
     FailedExecution(String),
     #[error("Failed to write to the stdin of the module: \"{1}\", reason \"{0}\"")]
     FailedWriteStdin(io::Error, String),
+    #[error("Failed to open the {0} of module \"{1}\"")]
+    ClosedStream(String, String),
     #[error(
         "The module \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" "
     )]
@@ -41,7 +43,7 @@ pub enum ModuleError {
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
     NotExecutable(PathBuf),
-    #[error("The given invariant name \"{0}\" is not part of any of the given executables")]
+    #[error("The given invariant name \"{0}\" is not part of any of the given modules")]
     UnknownInvariant(String),
     #[error("Encountered an IoError : \"{0}\"")]
     IoError(#[from] io::Error),
@@ -56,7 +58,7 @@ pub enum ModuleError {
     #[error("The module \"{0}\" depends on itself")]
     DependsOnSelf(String),
     #[error("Tried to add the following module \"{0}\" twice")]
-    AlreadyAddedExecutable(PathBuf),
+    AlreadyAddedModule(PathBuf),
     #[error("Tried to add an invariant with the name \"{0}\" twice")]
     AlreadyAddedInvariant(String),
     #[error("Encountered a dependency cycle, thus making the invariant computation impossible")]
@@ -157,7 +159,7 @@ impl Module {
         Ok(path)
     }
 
-    /// Checks if the given invariant path actually leads to the executable
+    /// Checks if the given invariant path actually leads to the module
     fn get_path(exec_path: String) -> Result<PathBuf, ModuleError> {
         // Checks if the given file path exists
         let mut inv_path = Path::new(&exec_path);
@@ -196,7 +198,7 @@ impl Module {
 
     /// Execute this module by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
     /// # Errrors
-    /// Returns an [`InvariantExecutionError`] if something goes wrong during the execution of the process.
+    /// Returns an [`ModuleExecutionError`] if something goes wrong during the execution of the process.
     pub async fn execute<T, F, E>(
         &self,
         mut input_function: T,
@@ -208,10 +210,7 @@ impl Module {
         F: AsyncModuleOutput<E>,
         E: Debug,
     {
-        debug!(
-            "Start executable : {}",
-            self.exec_path.as_os_str().display()
-        );
+        debug!("Starts module : {}", self.exec_path.as_os_str().display());
         let mut call_res = match Command::new(self.exec_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
@@ -222,8 +221,19 @@ impl Module {
             Err(e) => return Err(ModuleExecutionError::FailedExecution(e.to_string())),
         };
 
-        let mut stderr = call_res.stderr.take().expect("stdout to be open");
-        let mut stdout = call_res.stdout.take().expect("stdout to be open");
+        let Some(mut stderr) = call_res.stderr.take() else {
+            return Err(ModuleExecutionError::ClosedStream(
+                "stderr".to_string(),
+                self.exec_path.display().to_string(),
+            ));
+        };
+
+        let Some(mut stdout) = call_res.stdout.take() else {
+            return Err(ModuleExecutionError::ClosedStream(
+                "stdout".to_string(),
+                self.exec_path.display().to_string(),
+            ));
+        };
 
         let mut waiting_in_stdin = 0;
 
@@ -231,7 +241,13 @@ impl Module {
         // waiting for the child process to exit.
         // Otherwise a deadlock might appear because the child didn't flush in time.
         {
-            let mut stdin = call_res.stdin.take().expect("stdin to be open");
+            let Some(mut stdin) = call_res.stdin.take() else {
+                return Err(ModuleExecutionError::ClosedStream(
+                    "stdin".to_string(),
+                    self.exec_path.display().to_string(),
+                ));
+            };
+
             // For every value to send
             while let Some(val) = input_function.call().await {
                 if let Err(e) = val {
@@ -358,7 +374,7 @@ impl Module {
     /// Checks if the child is closed or not.
     /// # Errors :
     /// If the program was closed and an error code is returned, then a
-    ///  [`InvariantExecutionError::EarlyExit`] with the error read from the `stderr` will be returned.
+    ///  [`ModuleExecutionError::EarlyExit`] with the error read from the `stderr` will be returned.
     fn check_child_state(
         &self,
         child: &mut Child,
@@ -398,7 +414,7 @@ impl Module {
     }
 }
 
-/// Stores [`InvariantsExecutable`]s in order to prepare a topology sort.
+/// Stores [`Module`]s in order to prepare a topology sort.
 /// Such as by checking :
 /// * if an invariant was already added
 /// * if one of it's dependencies does not exists
@@ -418,7 +434,7 @@ impl ModuleSorter {
 
     /// Using the given invariant names, only adds the executables that computes them from the given array of executables.
     /// # Errors
-    /// Returns an [`InvariantError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
+    /// Returns an [`ModuleError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
     pub fn new_from(
         all_invariants: &[Module],
         inv_to_add: &HashSet<impl ToString>,
@@ -456,7 +472,7 @@ impl ModuleSorter {
 
         // Try to add invariant if not already added
         if let Err(e) = self.add_inv_exec(exec.clone()) {
-            if let ModuleError::AlreadyAddedExecutable(_) = e {
+            if let ModuleError::AlreadyAddedModule(_) = e {
             } else {
                 return Err(e);
             }
@@ -472,21 +488,10 @@ impl ModuleSorter {
         Ok(())
     }
 
-    // /// Removes the given invariant with this name (if it was present).
-    // pub fn remove_inv_from_name(&mut self, name: &String) {
-    //     let path = self.name_path_hashmap.shift_remove(name);
-    //     if let Some(path) = path {
-    //         // If no invariant is left for this path, remove it
-    //         if self.name_path_hashmap.iter().all(|(_, p)| p != &path) {
-    //             self.path_exec_hashmap.shift_remove(&path);
-    //         }
-    //     }
-    // }
-
     /// Adds an invariant executable to the sorter.
     pub fn add_inv_exec(&mut self, inv: Module) -> Result<(), ModuleError> {
         if self.path_exec_hashmap.contains_key(&inv.exec_path) {
-            return Err(ModuleError::AlreadyAddedExecutable(inv.exec_path.clone()));
+            return Err(ModuleError::AlreadyAddedModule(inv.exec_path.clone()));
         }
         for name in &inv.invariant_names {
             if self.name_path_hashmap.contains_key(name) {
@@ -520,8 +525,8 @@ impl ModuleSorter {
 
     /// Performs a topological sort with the stored [`Module`]s
     /// # Errors
-    /// * [`InvariantError::MissingDependency`] if one of the dependencies from one invariant is not present.
-    /// * [`InvariantError::DependencyCycle`] if a cycle is found.
+    /// * [`ModuleError::MissingDependency`] if one of the dependencies from one invariant is not present.
+    /// * [`ModuleError::DependencyCycle`] if a cycle is found.
     pub fn sort(mut self) -> Result<Vec<Module>, ModuleError> {
         // Init the topological sort
         let mut topo_sort: TopoSort<PathBuf> =
@@ -707,7 +712,7 @@ impl TryFrom<Vec<&Module>> for ModuleSorter {
 }
 
 #[derive(Debug, Default)]
-/// Used to facilitate the creation of a [`ExecutableManager`] instance.
+/// Used to facilitate the creation of a [`ModuleIterator`] instance.
 /// It is not meant to be used publically.
 struct ExecDepStore {
     /// The invariants sorted using a topological sort

@@ -80,7 +80,7 @@ impl Workplace {
                     .all(|name| inv_to_skip.contains(name))
                 {
                     info!("Doing invariants \"{:?}\"", next_inv.invariant_names);
-                    compute_executable(
+                    compute_module(
                         &mut self.db,
                         &next_inv,
                         add_condition.clone(),
@@ -137,7 +137,7 @@ impl Workplace {
                     let iter_clone = iter.clone();
                     // A thread will compute the given invariant then end
                     handles.spawn(async move {
-                        compute_executable(
+                        compute_module(
                             &mut db_clone,
                             &next_inv,
                             add_condition_clone,
@@ -256,7 +256,7 @@ impl Workplace {
         mut inv_to_compute: HashSet<String>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
-        // This table is used but is not part of any executable
+        // This table is used but is not part of any module
         inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
         info!("Computing the following invariants: {:?}", inv_to_compute);
 
@@ -341,7 +341,7 @@ impl Workplace {
     }
 }
 
-async fn compute_executable(
+async fn compute_module(
     allowed_db: &mut AllowedGraphDb,
     module: &Module,
     add_query: Option<SqlSelectQuery>,
@@ -351,12 +351,12 @@ async fn compute_executable(
     match allowed_db {
         AllowedGraphDb::Sqlite(sqlite_db) => {
             sqlite_db
-                .compute_executable(module, add_query, batch_size, optional_obs)
+                .compute_module(module, add_query, batch_size, optional_obs)
                 .await?;
         }
         AllowedGraphDb::Postgres(pg_db) => {
             pg_db
-                .compute_executable(module, add_query, batch_size, optional_obs)
+                .compute_module(module, add_query, batch_size, optional_obs)
                 .await?;
         }
     }

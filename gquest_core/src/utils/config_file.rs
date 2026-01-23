@@ -8,8 +8,8 @@ use crate::data_handler::invariant_execs::{Module, ModuleError};
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {
-    #[error("Could not open config file : `{0}`")]
-    FileError(#[from] io::Error),
+    #[error("Could not open config file at \"{1}\" because : `{0}`")]
+    FileError(io::Error, String),
     #[error("Could not read json file : `{0}`")]
     JsonError(#[from] serde_json::Error),
     #[error("Could not create one of the given invariant : `{0}`")]
@@ -20,7 +20,7 @@ pub enum ConfigFileError {
 
 /// Private struct simply used to not directly create an executable.
 #[derive(Serialize, Deserialize)]
-struct ExecutableJson {
+struct ModuleJson {
     /// The path to the file to execute.
     pub path: String,
 
@@ -42,7 +42,7 @@ struct ConfigJsonFile {
     /// The maximum number of threads to use to use when computing invariants
     nb_threads: Option<usize>,
     /// The list of executables that should be executed by the program.
-    modules: Vec<ExecutableJson>,
+    modules: Vec<ModuleJson>,
 }
 
 #[derive(Debug)]
@@ -67,7 +67,12 @@ impl ConfigFile {
     ///     * In this case check if the fields name and content are aligned with the struct fields.
     pub fn read_json_file(path: &String) -> Result<Self, ConfigFileError> {
         let p = Path::new(&path);
-        let f = File::open(p)?;
+        let f = match File::open(p) {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(ConfigFileError::FileError(e, path.to_string()));
+            }
+        };
         let mut config_json: ConfigJsonFile = serde_json::from_reader(f)?;
 
         if let Some(parent_path) = p.parent() {

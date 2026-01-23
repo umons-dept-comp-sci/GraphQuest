@@ -235,7 +235,7 @@ async fn compute_executable_test() {
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
-        db_test.compute_executable(&identity, None, 100, None).await,
+        db_test.compute_module(&identity, None, 100, None).await,
         Err(GraphDbRuntimeError::DatasetNotInitialisedError(_))
     ));
 
@@ -249,7 +249,7 @@ async fn compute_executable_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, None, 100, None)
+        .compute_module(&identity, None, 100, None)
         .await
         .expect("No errors");
 
@@ -292,7 +292,7 @@ async fn compute_executable_obs_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, None, 100, Some(&mut obs))
+        .compute_module(&identity, None, 100, Some(&mut obs))
         .await
         .expect("No errors");
 
@@ -325,7 +325,7 @@ async fn compute_executable_with_selection_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, Some(query), 100, None)
+        .compute_module(&identity, Some(query), 100, None)
         .await
         .expect("No errors");
 
@@ -344,7 +344,7 @@ async fn compute_executable_with_selection_test() {
 
     assert!(
         (db_test
-            .compute_executable(&identity, Some(query), 100, None)
+            .compute_module(&identity, Some(query), 100, None)
             .await)
             .is_err()
     );
@@ -379,7 +379,7 @@ async fn compute_executable_no_duplicate() {
 
     // Then execute without any troubles
     db_test
-        .compute_executable(&identity, Some(query), 100, Some(&mut obs))
+        .compute_module(&identity, Some(query), 100, Some(&mut obs))
         .await
         .expect("No errors");
 
@@ -389,7 +389,7 @@ async fn compute_executable_no_duplicate() {
 
     // Compute the rest, which SHOULD NOT include the five first computed values
     db_test
-        .compute_executable(&identity, None, 100, Some(&mut obs))
+        .compute_module(&identity, None, 100, Some(&mut obs))
         .await
         .expect("No errors");
 

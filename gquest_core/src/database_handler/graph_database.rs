@@ -683,7 +683,7 @@ where
     /// * When provided, only signatures contained inside the result of this query will be inputed to the invariant, further restricting the input space.
     ///     * The [`PK_NAME`] column must be the only one present in this query, else an error might happen.
     /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
-    pub async fn compute_executable(
+    pub async fn compute_module(
         &mut self,
         executable: &Module,
         add_query: Option<SqlSelectQuery>,
