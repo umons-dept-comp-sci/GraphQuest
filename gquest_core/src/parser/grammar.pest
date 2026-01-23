@@ -22,28 +22,55 @@ extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ ident
 extremal_func = { max_func | min_func }
 
 condition = { comparison ~ binary_op ~ condition
-             | comparison }
+            | comparison }
 
 binary_op = { and_op | or_op }
 
 
-comparison = { primitif ~ comp_operator ~ primitif
-			 | "(" ~ condition ~ ")"
-			 | not_comparison
-             | identifier }
+comparison = { expr ~ comp_operator ~ expr
+			| "(" ~ condition ~ ")"
+			| not_comparison
+            | identifier }
 
 // !inv or !(inv = 1)
+// Special case of inv to not force parenthesis: !(x) == !x 
 not_comparison = { not_op ~ (identifier | "(" ~ condition ~ ")") }
 
-
 comp_operator = { equal 
-		   | not_equal 
+		  | not_equal 
            | less_equal 
            | less 
            | greater_equal 
            | greater }
 
-primitif = { value | identifier }
+// _________ MATH _________
+
+
+primary = _{ primitif | "(" ~ expr ~ ")" }
+atom = _{ atom_function? ~ primary }
+
+atom_function = _{ floor | ceil | sqrt | abs | negation }
+floor = { "floor" }
+ceil  = { "ceil" }
+sqrt  = { "sqrt" }
+abs  = { "abs" }
+negation = { "-" }
+
+bin_op = _{ add | subtract | exponent | multiply | floor_divide | divide | modulo }
+	add = { "+" }
+	subtract = { "-" }
+	exponent = { "**" | "^" }
+	multiply = { "*" }
+	floor_divide = { "//" }
+	divide = { "/" }
+	modulo = { "%" }
+
+expr = { atom ~ (bin_op ~ atom)* }
+
+// _________ OTHERS _________
+
+primitif = { identifier | value }
+
 // Either a number (-1.212) or a string value ("a value")
 value = { number | string }
 
@@ -53,7 +80,7 @@ identifier = @{ ASCII_ALPHA ~ valid_ascii* }
 string = { double_quotes ~ valid_ascii+ ~ double_quotes }
 double_quotes = _{ "\"" }
 
-number = { "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+number = {  ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 valid_ascii = _{ ASCII_ALPHANUMERIC | "_" }
 
 max_func = { "max" }

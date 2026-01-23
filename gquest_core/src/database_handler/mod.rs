@@ -27,12 +27,15 @@ pub const TABLE_NAME_MAX_SIZE: usize = 250;
 // const ITERATION_BEFORE_NOTIFY: u8 = 10;
 
 pub mod database_error;
+use std::io::BufRead;
+
 pub use database_error::*;
 
 pub mod graph_database;
 pub use graph_database::*;
 
 pub mod sqlite_handler;
+use log::info;
 pub use sqlite_handler::*;
 
 pub mod postgre_handler;
@@ -43,3 +46,97 @@ pub use db_query_system::*;
 
 pub mod graph_queries;
 pub use graph_queries::*;
+
+use crate::utils::subject::Observer;
+
+#[derive(Clone)]
+/// Encapsulates all compatible [`GraphDb`].
+pub enum AllowedGraphDb {
+    Sqlite(SqliteGraphDB),
+    Postgres(PgSqlGraphDB),
+}
+
+impl AllowedGraphDb {
+    /// Attemps to connect to a database using the correct system based on the given URL content.
+    /// If the given database does not exists, then it will be created.
+    pub async fn connect_create_from_url(
+        url: impl Into<String>,
+        connection_options: Option<SqlxLogLevels>,
+    ) -> Result<Self, GraphDbStartupError> {
+        let url = url.into();
+        if url.contains("sqlite") {
+            Ok(Self::Sqlite(
+                SqliteGraphDB::connect_create_graph_database(url, connection_options).await?,
+            ))
+        } else if url.contains("postgresql") {
+            Ok(Self::Postgres(
+                PgSqlGraphDB::connect_create_graph_database(url, connection_options).await?,
+            ))
+        } else {
+            Err(GraphDbStartupError::UnknownDatabaseSystem { url })
+        }
+    }
+
+    /// Attemps to connect to an existing database using the correct system based on the given URL content.
+    pub async fn connect_from_url(
+        url: impl Into<String>,
+        connection_options: Option<SqlxLogLevels>,
+    ) -> Result<Self, GraphDbStartupError> {
+        let url = url.into();
+        if url.contains("sqlite") {
+            info!("Attempting to connect to an Sqlite database");
+            Ok(Self::Sqlite(
+                SqliteGraphDB::connect_graph_database(url, connection_options).await?,
+            ))
+        } else if url.contains("postgresql") {
+            info!("Attempting to connect to a PostgreSQL database");
+            Ok(Self::Postgres(
+                PgSqlGraphDB::connect_graph_database(url, connection_options).await?,
+            ))
+        } else {
+            Err(GraphDbStartupError::UnknownDatabaseSystem { url })
+        }
+    }
+
+    /// Closes the connection to the given database.
+    pub async fn close_connection(self) {
+        match self {
+            AllowedGraphDb::Sqlite(graph_database) => graph_database.close_connection().await,
+            AllowedGraphDb::Postgres(graph_database) => graph_database.close_connection().await,
+        }
+    }
+
+    /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
+    /// sSee [`GraphDatabase::add_to_dataset`] for more informations.
+    pub async fn add_to_dataset(
+        &mut self,
+        reader: impl BufRead,
+        batch_size: usize,
+        optional_obs: Option<&mut dyn Observer>,
+    ) -> Result<(), GraphDbRuntimeError> {
+        match self {
+            AllowedGraphDb::Sqlite(graph_database) => {
+                graph_database
+                    .add_to_dataset(reader, batch_size, optional_obs)
+                    .await
+            }
+            AllowedGraphDb::Postgres(graph_database) => {
+                graph_database
+                    .add_to_dataset(reader, batch_size, optional_obs)
+                    .await
+            }
+        }
+    }
+}
+
+impl From<SqliteGraphDB> for AllowedGraphDb {
+    fn from(value: SqliteGraphDB) -> Self {
+        Self::Sqlite(value)
+    }
+}
+
+impl From<PgSqlGraphDB> for AllowedGraphDb {
+    fn from(value: PgSqlGraphDB) -> Self {
+        Self::Postgres(value)
+    }
+}

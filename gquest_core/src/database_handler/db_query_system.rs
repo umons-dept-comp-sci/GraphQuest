@@ -121,23 +121,19 @@ impl SqlCondition {
         }
     }
 
-    /// Searches recursively in the given condition for any column name.
+    /// Searches recursively in the given condition for any identifiers.
     pub fn get_all_identifiers(&self) -> HashSet<String> {
         let mut res: HashSet<String> = HashSet::new();
         match &self {
             SqlCondition::Operation(sql_comparison) => match sql_comparison {
                 SqlComparison::Greater(a, b)
-                | SqlComparison::GreaterEqual(a, b)
+                | SqlComparison::GreaterEqual(a, b, _)
                 | SqlComparison::Less(a, b)
-                | SqlComparison::LessEqual(a, b)
-                | SqlComparison::Equal(a, b)
-                | SqlComparison::NotEqual(a, b) => {
-                    if let ArgType::Identifier(name) = a {
-                        res.insert(name.to_string());
-                    }
-                    if let ArgType::Identifier(name) = b {
-                        res.insert(name.to_string());
-                    }
+                | SqlComparison::LessEqual(a, b, _)
+                | SqlComparison::Equal(a, b, _)
+                | SqlComparison::NotEqual(a, b, _) => {
+                    res.extend(a.get_all_identifiers());
+                    res.extend(b.get_all_identifiers());
                 }
             },
             SqlCondition::And(sql_condition, sql_condition1)
@@ -181,7 +177,7 @@ impl SqlCondition {
             };
 
         match self {
-            SqlCondition::Operation(sql_comparison) => sql_comparison.to_string(),
+            SqlCondition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
             SqlCondition::And(a, b) => format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
             SqlCondition::Or(a, b) => format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
             SqlCondition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
@@ -199,25 +195,138 @@ impl SqlCondition {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlComparison {
     /// `a > b`
-    Greater(ArgType, ArgType),
-    /// `a >= b`
-    GreaterEqual(ArgType, ArgType),
+    Greater(MathExpression, MathExpression),
+    /// `a >= b` / `a > b or |a - b| < epsilon`
+    GreaterEqual(MathExpression, MathExpression, Option<f64>),
     /// `a < b`
-    Less(ArgType, ArgType),
-    /// `a <= b`
-    LessEqual(ArgType, ArgType),
-    /// `a = b`
-    Equal(ArgType, ArgType),
-    /// `a != b`
-    NotEqual(ArgType, ArgType),
+    Less(MathExpression, MathExpression),
+    /// `a <= b` / `a < b or |a - b| < epsilon`
+    LessEqual(MathExpression, MathExpression, Option<f64>),
+    /// `a = b` / `|a - b| < epsilon`
+    Equal(MathExpression, MathExpression, Option<f64>),
+    /// `a != b` / `|a - b| >= epsilon`
+    NotEqual(MathExpression, MathExpression, Option<f64>),
 }
 
-/// Used to correctly identify arguments in a comparison,
-/// otherwise it would be hard to guess if they refer to a value or to a column.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MathExpression {
+    Primitif(ArgType),
+    // Unary op
+    Negation(Box<MathExpression>),
+    Floor(Box<MathExpression>),
+    Ceil(Box<MathExpression>),
+    Abs(Box<MathExpression>),
+    Sqrt(Box<MathExpression>),
+    // Bin operations
+    BinOperation {
+        left: Box<MathExpression>,
+        op: ArithmOp,
+        right: Box<MathExpression>,
+    },
+}
+
+impl MathExpression {
+    pub fn floor(expr: impl Into<MathExpression>) -> Self {
+        Self::Floor(Box::new(expr.into()))
+    }
+    pub fn ceil(expr: impl Into<MathExpression>) -> Self {
+        Self::Ceil(Box::new(expr.into()))
+    }
+    pub fn abs(expr: impl Into<MathExpression>) -> Self {
+        Self::Abs(Box::new(expr.into()))
+    }
+    pub fn negation(expr: impl Into<MathExpression>) -> Self {
+        Self::Negation(Box::new(expr.into()))
+    }
+    pub fn sqrt(expr: impl Into<MathExpression>) -> Self {
+        Self::Sqrt(Box::new(expr.into()))
+    }
+
+    pub fn primitif(arg: impl Into<ArgType>) -> Self {
+        Self::Primitif(arg.into())
+    }
+    pub fn bin_operation(
+        left: impl Into<MathExpression>,
+        op: ArithmOp,
+        right: impl Into<MathExpression>,
+    ) -> Self {
+        Self::BinOperation {
+            left: Box::new(left.into()),
+            op,
+            right: Box::new(right.into()),
+        }
+    }
+
+    /// Searches recursively in the given math expression for any identifiers.
+    pub fn get_all_identifiers(&self) -> HashSet<String> {
+        let mut res: HashSet<String> = HashSet::new();
+        match self {
+            MathExpression::Primitif(arg_type) => {
+                if let ArgType::Identifier(id) = arg_type {
+                    res.insert(id.clone());
+                }
+            }
+            MathExpression::Negation(math_expression)
+            | MathExpression::Floor(math_expression)
+            | MathExpression::Sqrt(math_expression)
+            | MathExpression::Ceil(math_expression)
+            | MathExpression::Abs(math_expression) => {
+                res.extend(math_expression.get_all_identifiers());
+            }
+            MathExpression::BinOperation { left, op: _, right } => {
+                res.extend(left.get_all_identifiers());
+                res.extend(right.get_all_identifiers());
+            }
+        };
+        res
+    }
+
+    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
+    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
+        let prefix = prefix.to_string();
+        match self {
+            MathExpression::Primitif(arg_type) => {
+                if let ArgType::Identifier(name) = arg_type {
+                    *name = format!("{prefix}{name}");
+                }
+            }
+            MathExpression::Negation(math_expression)
+            | MathExpression::Floor(math_expression)
+            | MathExpression::Ceil(math_expression)
+            | MathExpression::Sqrt(math_expression)
+            | MathExpression::Abs(math_expression) => {
+                math_expression.add_prefix_identifier(prefix);
+            }
+            MathExpression::BinOperation { left, op: _, right } => {
+                left.add_prefix_identifier(&prefix);
+                right.add_prefix_identifier(prefix);
+            }
+        };
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArithmOp {
+    Add,
+    Subtract,
+    Power,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+/// Used to correctly identify arguments type,
+/// otherwise it would be hard to guess if they refer to a value or an identifier.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArgType {
     Value(String),
     Identifier(String),
+}
+
+impl From<ArgType> for MathExpression {
+    fn from(value: ArgType) -> Self {
+        MathExpression::Primitif(value)
+    }
 }
 
 impl ArgType {
@@ -235,25 +344,8 @@ impl Display for ArgType {
             f,
             "{}",
             match self {
-                ArgType::Value(v) => format!("\'{v}\'"),
+                ArgType::Value(v) => v.to_string(),
                 ArgType::Identifier(v) => v.to_string(),
-            }
-        )
-    }
-}
-
-impl Display for SqlComparison {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SqlComparison::Greater(a, b) => format!("{a} > {b}"),
-                SqlComparison::GreaterEqual(a, b) => format!("{a} >= {b}"),
-                SqlComparison::Less(a, b) => format!("{a} < {b}"),
-                SqlComparison::LessEqual(a, b) => format!("{a} <= {b}"),
-                SqlComparison::Equal(a, b) => format!("{a} = {b}"),
-                SqlComparison::NotEqual(a, b) => format!("{a} != {b}"),
             }
         )
     }
@@ -266,23 +358,114 @@ impl From<SqlComparison> for SqlCondition {
 }
 
 impl SqlComparison {
-    /// Adds the given prefix to the [`ArgType::IdentifierName`] present inside this comparison.
+    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
     pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
         let prefix = prefix.to_string();
         match self {
-            SqlComparison::Greater(arg_type, arg_type1)
-            | SqlComparison::GreaterEqual(arg_type, arg_type1)
-            | SqlComparison::Less(arg_type, arg_type1)
-            | SqlComparison::LessEqual(arg_type, arg_type1)
-            | SqlComparison::Equal(arg_type, arg_type1)
-            | SqlComparison::NotEqual(arg_type, arg_type1) => {
-                if let ArgType::Identifier(name) = arg_type {
-                    *name = format!("{prefix}{name}");
-                }
-                if let ArgType::Identifier(name) = arg_type1 {
-                    *name = format!("{prefix}{name}");
-                }
+            SqlComparison::Greater(left, right)
+            | SqlComparison::GreaterEqual(left, right, _)
+            | SqlComparison::Less(left, right)
+            | SqlComparison::LessEqual(left, right, _)
+            | SqlComparison::Equal(left, right, _)
+            | SqlComparison::NotEqual(left, right, _) => {
+                left.add_prefix_identifier(&prefix);
+                right.add_prefix_identifier(prefix);
             }
+        }
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        match self {
+            SqlComparison::Greater(a, b) => format!(
+                "{} > {}",
+                DB::translate_math_expr(a),
+                DB::translate_math_expr(b)
+            ),
+            SqlComparison::GreaterEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // a > b or |a - b| < epsilon
+                    format!(
+                        "({}) OR ({})",
+                        SqlComparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
+                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    )
+                }
+                None => {
+                    format!(
+                        "{} >= {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::Less(a, b) => format!(
+                "{} < {}",
+                DB::translate_math_expr(a),
+                DB::translate_math_expr(b)
+            ),
+            SqlComparison::LessEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // a < b or |a - b| < epsilon
+                    format!(
+                        "({}) OR ({})",
+                        SqlComparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
+                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    )
+                }
+                None => {
+                    format!(
+                        "{} <= {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::Equal(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // |a - b| < eps
+                    SqlComparison::Less(
+                        MathExpression::abs(MathExpression::bin_operation(
+                            a.clone(),
+                            ArithmOp::Subtract,
+                            b.clone(),
+                        )),
+                        ArgType::value(eps).into(),
+                    )
+                    .to_sql::<DB>()
+                }
+                None => {
+                    format!(
+                        "{} = {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
+            SqlComparison::NotEqual(a, b, epsilon) => match epsilon {
+                Some(eps) => {
+                    // |a - b| >= eps
+                    SqlComparison::GreaterEqual(
+                        MathExpression::abs(MathExpression::bin_operation(
+                            a.clone(),
+                            ArithmOp::Subtract,
+                            b.clone(),
+                        )),
+                        ArgType::value(eps).into(),
+                        None,
+                    )
+                    .to_sql::<DB>()
+                }
+                None => {
+                    format!(
+                        "{} != {}",
+                        DB::translate_math_expr(a),
+                        DB::translate_math_expr(b)
+                    )
+                }
+            },
         }
     }
 }
@@ -554,6 +737,40 @@ where
     fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError;
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
+
+    fn translate_math_expr(expr: &MathExpression) -> String {
+        match expr {
+            MathExpression::Primitif(arg_type) => arg_type.to_string(),
+            MathExpression::Negation(math_expression) => {
+                format!("-({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Floor(math_expression) => {
+                format!("floor({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Ceil(math_expression) => {
+                format!("ceil({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Abs(math_expression) => {
+                format!("abs({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::Sqrt(math_expression) => {
+                format!("sqrt({})", Self::translate_math_expr(math_expression))
+            }
+            MathExpression::BinOperation { left, op, right } => {
+                let left = Self::translate_math_expr(left);
+                let right = Self::translate_math_expr(right);
+
+                match op {
+                    ArithmOp::Add => format!("({}) + ({})", left, right),
+                    ArithmOp::Subtract => format!("({}) - ({})", left, right),
+                    ArithmOp::Multiply => format!("({}) * ({})", left, right),
+                    ArithmOp::Divide => format!("({}) / ({})", left, right),
+                    ArithmOp::Power => format!("pow(({}), ({}))", left, right),
+                    ArithmOp::Modulo => format!("mod(({}), ({}))", left, right),
+                }
+            }
+        }
+    }
 }
 
 pub trait ErrorTraduction<DB>

@@ -1,7 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
 use log::info;
-use sqlx::{FromRow, migrate::MigrateDatabase};
 use thiserror::Error;
 use tokio::{
     sync::Mutex,
@@ -9,13 +8,13 @@ use tokio::{
 };
 
 use crate::{
-    data_handler::invariant_execs::{ModuleError, ModuleIterator, ModuleSorter},
+    data_handler::invariant_execs::{Module, ModuleError, ModuleIterator, ModuleSorter},
     database_handler::{
-        ClassSelection, ExtremalCounterQuery, GraphDatabase, GraphDb, GraphDbRuntimeError,
+        AllowedGraphDb, ClassSelection, ExtremalCounterQuery, GraphDbRuntimeError,
         GraphDbStartupError, PK_NAME, SqlCondition, SqlSelectQuery, SqlTableSelection,
         VERTICES_TABLE_NAME, graph_queries,
     },
-    utils::{SaveOutput, config_file::ConfigFile},
+    utils::{SaveOutput, config_file::ConfigFile, subject::Observer},
 };
 
 #[derive(Debug, Error)]
@@ -31,37 +30,16 @@ pub enum WorkplaceError {
 }
 
 /// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
-pub struct Workplace<'a, DB: GraphDb> {
-    pub db: &'a mut GraphDatabase<DB>,
+pub struct Workplace {
+    pub db: AllowedGraphDb,
     config: ConfigFile,
 }
 
-impl<'a, DB: GraphDb> Workplace<'a, DB>
-where
-    DB: MigrateDatabase,
-    // Allow column indexing using usize
-    usize: Send + Unpin + sqlx::ColumnIndex<DB::Row>,
-    // Allow decoding/encoding
-    f64: sqlx::Encode<'static, DB>,
-    String: sqlx::Encode<'static, DB>,
-    for<'q> String: sqlx::Decode<'q, DB>,
-    for<'q> i64: sqlx::Decode<'q, DB>,
-    for<'q> f64: sqlx::Decode<'q, DB>,
-    for<'q> f32: sqlx::Decode<'q, DB>,
-    for<'q> i32: sqlx::Decode<'q, DB>,
-    // Type of values
-    String: sqlx::Type<DB>,
-    i64: sqlx::Type<DB>,
-    f64: sqlx::Type<DB>,
-    f32: sqlx::Type<DB>,
-    // Return values
-    (i64,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-    (i32,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-    (String,): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-    (String, f64): Send + Unpin + for<'q> FromRow<'q, DB::Row>,
-{
+impl Workplace {
     /// Creates a new [`Workplace`].
-    pub fn new(db: &'a mut GraphDatabase<DB>, config: ConfigFile) -> Self {
+    pub fn new(db: impl Into<AllowedGraphDb>, config: ConfigFile) -> Self {
+        let db = db.into();
+
         Self { db, config }
     }
 
@@ -102,14 +80,15 @@ where
                     .all(|name| inv_to_skip.contains(name))
                 {
                     info!("Doing invariants \"{:?}\"", next_inv.invariant_names);
-                    self.db
-                        .compute_executable(
-                            &next_inv,
-                            add_condition.clone(),
-                            self.config.get_batch_size(),
-                            None,
-                        )
-                        .await?;
+                    compute_module(
+                        &mut self.db,
+                        &next_inv,
+                        add_condition.clone(),
+                        self.config.get_batch_size(),
+                        None,
+                    )
+                    .await?;
+
                     info!(
                         "Finished doing invariants \"{:?}\"",
                         next_inv.invariant_names
@@ -158,9 +137,14 @@ where
                     let iter_clone = iter.clone();
                     // A thread will compute the given invariant then end
                     handles.spawn(async move {
-                        db_clone
-                            .compute_executable(&next_inv, add_condition_clone, batch_size, None)
-                            .await?;
+                        compute_module(
+                            &mut db_clone,
+                            &next_inv,
+                            add_condition_clone,
+                            batch_size,
+                            None,
+                        )
+                        .await?;
                         // Update the graph so that the main thread can compute new invariants
                         iter_clone.lock().await.update_dependencies(&next_inv);
                         info!(
@@ -196,7 +180,7 @@ where
 
         let query = graph_queries::select_all_graph_cond(condition);
 
-        self.db.fetch_all_row_query(&query, output).await?;
+        self.fetch_all_row_query(&query, output).await?;
 
         Ok(())
     }
@@ -214,7 +198,7 @@ where
         // Get them
         let query = graph_queries::select_all_extremal_graphs(&extremal, &additional_condition);
 
-        self.db.fetch_all_row_query(&query, output).await?;
+        self.fetch_all_row_query(&query, output).await?;
 
         Ok(())
     }
@@ -262,7 +246,7 @@ where
         // Return counter example query result
         let query: SqlSelectQuery = conjecture.into();
 
-        self.db.fetch_all_row_query(&query, output).await?;
+        self.fetch_all_row_query(&query, output).await?;
 
         Ok(())
     }
@@ -272,7 +256,7 @@ where
         mut inv_to_compute: HashSet<String>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
-        // This table is used but is not part of any executable
+        // This table is used but is not part of any module
         inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
         info!("Computing the following invariants: {:?}", inv_to_compute);
 
@@ -339,8 +323,42 @@ where
             SqlCondition::not(conjecture_to_disprove),
         ));
 
-        self.db.fetch_all_row_query(&query, output).await?;
+        self.fetch_all_row_query(&query, output).await?;
 
         Ok(())
     }
+
+    async fn fetch_all_row_query<O: SaveOutput>(
+        &self,
+        query: &SqlSelectQuery,
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
+        match &self.db {
+            AllowedGraphDb::Sqlite(sqlite_db) => sqlite_db.fetch_all_row_query(query, output).await,
+            AllowedGraphDb::Postgres(pg_db) => pg_db.fetch_all_row_query(query, output).await,
+        }?;
+        Ok(())
+    }
+}
+
+async fn compute_module(
+    allowed_db: &mut AllowedGraphDb,
+    module: &Module,
+    add_query: Option<SqlSelectQuery>,
+    batch_size: usize,
+    optional_obs: Option<&mut dyn Observer>,
+) -> Result<(), GraphDbRuntimeError> {
+    match allowed_db {
+        AllowedGraphDb::Sqlite(sqlite_db) => {
+            sqlite_db
+                .compute_module(module, add_query, batch_size, optional_obs)
+                .await?;
+        }
+        AllowedGraphDb::Postgres(pg_db) => {
+            pg_db
+                .compute_module(module, add_query, batch_size, optional_obs)
+                .await?;
+        }
+    }
+    Ok(())
 }

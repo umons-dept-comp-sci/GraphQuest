@@ -33,23 +33,13 @@ async fn main() {
 
     let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let mut wp = Workplace::new(&mut db, config);
-
-    // wp.find_graphs_condition(
-    //     SqlComparison::Equal(
-    //         ArgType::Identifier("P_Gn".to_string()),
-    //         ArgType::Value("720".to_string()),
-    //     )
-    //     .into(),
-    //     &mut StdoutOutput,
-    // )
-    // .await
-    // .expect("no issues");
+    let mut wp = Workplace::new(db.clone(), config);
 
     let mut table =
         QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
     wp.find_counterexamples_extremal(
-        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1").expect("correct"),
+        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1", None)
+            .expect("correct"),
         &mut table,
     )
     .await

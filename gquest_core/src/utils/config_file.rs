@@ -8,8 +8,8 @@ use crate::data_handler::invariant_execs::{Module, ModuleError};
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {
-    #[error("Could not open config file : `{0}`")]
-    FileError(#[from] io::Error),
+    #[error("Could not open config file at \"{1}\" because : `{0}`")]
+    FileError(io::Error, String),
     #[error("Could not read json file : `{0}`")]
     JsonError(#[from] serde_json::Error),
     #[error("Could not create one of the given invariant : `{0}`")]
@@ -20,7 +20,7 @@ pub enum ConfigFileError {
 
 /// Private struct simply used to not directly create an executable.
 #[derive(Serialize, Deserialize)]
-struct ExecutableJson {
+struct ModuleJson {
     /// The path to the file to execute.
     pub path: String,
 
@@ -35,18 +35,22 @@ struct ExecutableJson {
 /// Private struct simply used to not directly create a config file.
 #[derive(Serialize, Deserialize)]
 struct ConfigJsonFile {
+    /// The precision to use when checking if two numbers are equal or not. By default set to 0.
+    epsilon: Option<f64>,
     /// The number of data being sent between the executables and the databases
     batch_size: Option<usize>,
     /// The maximum number of threads to use to use when computing invariants
     nb_threads: Option<usize>,
     /// The list of executables that should be executed by the program.
-    modules: Vec<ExecutableJson>,
+    modules: Vec<ModuleJson>,
 }
 
 #[derive(Debug)]
 /// Contains the necessary data to initialise a workplace.
 /// Important to mention that at least one invariant will be present and checked for any instantiation errors.
 pub struct ConfigFile {
+    /// The precision to use when checking if two numbers are equal or not. By default set to 0.
+    epsilon: Option<f64>,
     /// The number of data being sent between the executables and the databases
     batch_size: usize,
     /// The maximum number of threads to use when computing invariants
@@ -63,7 +67,12 @@ impl ConfigFile {
     ///     * In this case check if the fields name and content are aligned with the struct fields.
     pub fn read_json_file(path: &String) -> Result<Self, ConfigFileError> {
         let p = Path::new(&path);
-        let f = File::open(p)?;
+        let f = match File::open(p) {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(ConfigFileError::FileError(e, path.to_string()));
+            }
+        };
         let mut config_json: ConfigJsonFile = serde_json::from_reader(f)?;
 
         if let Some(parent_path) = p.parent() {
@@ -94,6 +103,9 @@ impl ConfigFile {
     pub fn get_nb_threads(&self) -> usize {
         self.nb_threads
     }
+    pub fn get_epsilon(&self) -> &Option<f64> {
+        &self.epsilon
+    }
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
@@ -111,6 +123,7 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
     }
 
     Ok(ConfigFile {
+        epsilon: config_json.epsilon,
         modules: executables,
         nb_threads: config_json.nb_threads.unwrap_or(1),
         batch_size: config_json.batch_size.unwrap_or(1000),

@@ -6,6 +6,8 @@ use crate::data_handler::invariant_execs::{Module, ModuleExecutionError};
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
 pub enum GraphDbStartupError {
+    #[error("The given url seems to be from an unsupported database system : \"{url}\"")]
+    UnknownDatabaseSystem { url: String },
     #[error("The given database is already created \"{database_name}\"")]
     DatabaseAlreadyCreated { database_name: String },
     #[error("The given database was not found: \"{database_name}\"")]

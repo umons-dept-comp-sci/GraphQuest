@@ -1,8 +1,8 @@
 use gquest_core::{
     data_handler::data_loader::{GengProcess, read_file, read_pipe_signatures},
-    database_handler::SqliteGraphDB,
+    database_handler::AllowedGraphDb,
 };
-use log::{error, info};
+use log::info;
 
 use crate::{
     CliError,
@@ -18,13 +18,8 @@ pub async fn add_dataset(
     batch_size: BatchSizeArg,
 ) -> Result<(), CliError> {
     info!("Creating/connecting database at path : {:?}", path.url);
-    let mut db = match SqliteGraphDB::connect_create_graph_database(path.url, None).await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("Error creating/connecting to the given db: {e}");
-            return Ok(());
-        }
-    };
+    let mut db = AllowedGraphDb::connect_create_from_url(path.url, None).await?;
+
     info!("Importing given dataset");
     let mut pb = GquestProgressBar::new(
         crate::progress_bar::ProgressBarType::Reading,
@@ -87,18 +82,21 @@ pub async fn remove_dataset(
     remove_choice: RemoveChoice,
 ) -> Result<(), CliError> {
     info!("Opening database");
-    let mut db = SqliteGraphDB::connect_graph_database(path.url, None).await?;
+    let mut db = AllowedGraphDb::connect_from_url(path.url, None).await?;
 
     match remove_choice {
-        RemoveChoice::Dataset => {
-            db.remove_dataset().await?;
-        }
-        RemoveChoice::All => {
-            db.clear_database().await?;
-        }
-        RemoveChoice::Invariants => {
-            db.clear_invariants().await?;
-        }
+        RemoveChoice::Dataset => match &mut db {
+            AllowedGraphDb::Sqlite(graph_database) => graph_database.remove_dataset().await,
+            AllowedGraphDb::Postgres(graph_database) => graph_database.remove_dataset().await,
+        }?,
+        RemoveChoice::All => match &mut db {
+            AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_database().await,
+            AllowedGraphDb::Postgres(graph_database) => graph_database.clear_database().await,
+        }?,
+        RemoveChoice::Invariants => match &mut db {
+            AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_invariants().await,
+            AllowedGraphDb::Postgres(graph_database) => graph_database.clear_invariants().await,
+        }?,
     }
     info!("Closing database");
     db.close_connection().await;
