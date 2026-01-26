@@ -407,7 +407,7 @@ async fn remove_all_created_df() {
 }
 
 fn get_geng_values() -> (Vec<String>, std::io::BufReader<ChildStdout>) {
-    let geng = GengProcess::call_geng(GENG_VERTICE_COUNT, &"".to_string(), (None, None))
+    let geng = GengProcess::call_geng(None, GENG_VERTICE_COUNT, &"".to_string(), (None, None))
         .expect("correct call");
     let mut res: String = String::default();
     geng.get_reader().read_to_string(&mut res).expect("correct");
@@ -416,7 +416,7 @@ fn get_geng_values() -> (Vec<String>, std::io::BufReader<ChildStdout>) {
         .map(|f| f.to_string())
         .collect();
 
-    let geng = GengProcess::call_geng(GENG_VERTICE_COUNT, &"".to_string(), (None, None))
+    let geng = GengProcess::call_geng(None, GENG_VERTICE_COUNT, &"".to_string(), (None, None))
         .expect("correct call");
     let reader: std::io::BufReader<ChildStdout> = geng.get_reader();
 

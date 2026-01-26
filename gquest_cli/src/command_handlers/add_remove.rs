@@ -34,6 +34,7 @@ pub async fn add_dataset(
             for order in ArgParser::parse_order(&args.order)? {
                 pb.set_message(format!("Doing order: {order}"));
                 let geng_call = GengProcess::call_geng(
+                    Some(args.command_name.to_string()),
                     order,
                     &args.params.clone().unwrap_or_default(),
                     (None, None),

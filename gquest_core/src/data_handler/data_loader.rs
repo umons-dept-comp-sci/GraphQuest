@@ -12,8 +12,8 @@ pub enum MethodError {
     File(String),
     #[error("Error while trying to create the geng query: {0}")]
     GengCreation(String),
-    #[error("Error while trying to execute the geng query, are you sure geng is installed ?")]
-    GengExecution,
+    #[error("Could not execute geng with the command \"{0}\" : {1}")]
+    GengExecution(String, std::io::Error),
 }
 
 /// Encapsulates a child process of a call to the `geng` program.
@@ -24,10 +24,13 @@ pub struct GengProcess {
 impl GengProcess {
     /// Creates and stores a `geng` process using a set of graph settings.
     pub fn call_geng(
+        geng_command: Option<String>,
         nb_of_vertices: u32,
         graph_settings: &String,
         edges_born: (Option<u32>, Option<u32>),
     ) -> Result<Self, MethodError> {
+        let geng_command = geng_command.unwrap_or("geng".to_string());
+
         let mut args: Vec<String> = vec![];
 
         if !graph_settings.is_empty() {
@@ -56,7 +59,7 @@ impl GengProcess {
             }
         }
 
-        let call_res = match Command::new("geng")
+        let call_res = match Command::new(&geng_command)
             .args(args)
             .arg("-q")
             .arg("-l") // Canonical form
@@ -64,7 +67,7 @@ impl GengProcess {
             .spawn()
         {
             Ok(res) => res,
-            Err(_) => return Err(MethodError::GengExecution),
+            Err(e) => return Err(MethodError::GengExecution(geng_command, e)),
         };
 
         Ok(Self { child: call_res })

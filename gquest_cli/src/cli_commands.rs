@@ -97,6 +97,9 @@ pub struct GengArgs {
     /// Either an order list (ex: "1,2,5") or range list (ex: "1:4, 6:10") with inclusive bounds.
     #[clap(name("(order | range) list"))]
     pub order: String,
+    /// The command to use to call the geng program. Can sometimes be `nauty-geng` instead.
+    #[clap(default_value = "geng")]
+    pub command_name: String,
     /// The addition parameters to give to geng
     pub params: Option<String>,
 }
