@@ -116,7 +116,8 @@ To correctly use one, $\texttt{gquest}$ needs the following informations :
 Configuration files are used to specify multiple modules in one file alongside some other helpful settings. These files are written using the json format and are made up of three name-value fields :
 1. The optional batch size. It is similar to what was explained prior but for queries. Set to 1000 by default.
 2. The optional maximum number of threads to use when computing invariants. Set to 1 by default.
-3. The list of modules, each is also an object made up of three name-value pairs :
+3. The optional epsilon which changes how queries handle equality.
+4. The list of modules, each is also an object made up of three name-value pairs :
    1. A path to the executable.
    2. A list with the names of the returned invariants.
    3. The optional list with the names of the dependencies to provide to this module.
@@ -127,6 +128,7 @@ Configuration files are used to specify multiple modules in one file alongside s
 {
   "batch_size": 5000,
   "nb_threads": 10,
+  "epsilon": 0.1,
   "modules": [
     {
       "path": "P_Gn.py",
@@ -209,20 +211,41 @@ signature inv_1 ... inv_n
 > [!TIP]
 > Let $n$ the total number of lines of data sent, flush the stdout, after writing $m$ lines (with $m \leq n$).
 
+## Expressions :
 
-<!-- While running, if the program needs the value from another (already) computed invariant then instead of writing the previously mentionned format in it's stdout, it can return :
-```bash
-query inv_name signature_0 ... signature_n
-```
+Expressions come in two forms :
 
-For example :
-```bash
-size D]w ... DUw
-``` -->
+| **Operations :** | **Syntax :**      |
+| ---------------- | ----------------- |
+| Addition         | x + y             |
+| Multiplication   | x * y             |
+| Subtraction      | x - y             |
+| Power            | x ** y `\|` x ^ y |
+| Modulo           | x % y             |
+| Division         | x / y             |
+| Floor division   | x // y            |
+
+| **Unary functions :** | **Syntax :** |
+| --------------------- | ------------ |
+| Floor                 | floor(x)     |
+| Ceil                  | ceil(x)      |
+| Absolute              | abs(x)       |
+| Square Root           | sqrt(x)      |
+| Negation              | -x           |
+
+Where `x` and `y` represent either :
+* A value or an identifier
+* Another expression.
+
+> [!NOTE]
+> Parenthesis are also supported and operations respect the classical operator priority.
+
+
 
 ## Queries :
 
-Now that the concepts of modules and configuration files were introduced, we now have everything we need to query the database.
+
+GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing). All of the following query syntaxes are considered valid and can be executed by $\texttt{gquest}$.
 
 ```bash
 gquest query [OPTIONS] <CONFIG_FILE> <QUERY> [OUTPUT]
@@ -234,18 +257,12 @@ To correctly run a query, we need to provide :
 * The output either as a "*file*", to the "*stdout*" or in a pretty "*table*".
 
 
-### Syntax :
-
-GraphQuest uses a simplistic condition syntax in order to allow you to write most simple queries (note that whitespace character are ignored during parsing). All of the following query syntaxes are considered valid and can be executed by $\texttt{gquest}$.
-
-
 #### Comparisons : 
-
 
 ```py
 a operator b 
 ```
-With `a` and `b` either a number, string value or even an invariant name.
+Where `a` and `b` are either epressions or values.
 And the `operator` being one of the symbol in the following table :
 
 | Operator :           | Equal | Not Equal | Less  | Less or Equal | Greater | Greater or Equal |
@@ -262,7 +279,7 @@ This can be translated to : Keep graph whose value of `inv` is equal to `"a"`.
 #### Conditions :
 
 ```py
-(condtion operator condition) | (condition) | (negation '(' condition ')')
+(condition operator condition) | (condition) | (negation '(' condition ')')
 ```
 
 | Operator :           | **And** | **Or** | **Negation** |
@@ -304,7 +321,11 @@ This can be translated to : *find the graphs with the minimum value for a given 
 > If you know a bit of SQL think of it as a selection query using the MIN function combined with a GROUP BY clause. 
 
 
-#### Counter-example search :
+## Counter-example queries :
+
+```bash
+gquest counter [OPTIONS] <CONFIG_FILE> <QUERY> [OUTPUT]
+```
 
 One of the main feature of $\texttt{gquest}$ is the search of counter-examples for a given conjecture, which can be expressed using the following syntax :
 
@@ -355,10 +376,10 @@ GraphQuest will :
 ## Examples :
 
 ```bash
-gquest add geng 1:4, 6:8 "c"
+gquest add geng 1:8 "c"
 ```
 
 
 ```bash
-gquest query "path_to_config.json" "min(P_Gn: m,n), n>=3 => is_Bmn = 1" -v
+gquest counter "min(P_Gn: m,n), n>=3 => is_Bmn = 1" "path_to_config.json" -v
 ```
