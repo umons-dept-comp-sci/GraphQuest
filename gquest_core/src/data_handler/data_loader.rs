@@ -81,7 +81,7 @@ impl GengProcess {
 
     /// Wait and closes the process
     pub fn wait_close(mut self) {
-        self.child.wait().unwrap();
+        self.child.wait().expect("no errors");
     }
 }
 

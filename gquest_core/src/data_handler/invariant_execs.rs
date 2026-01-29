@@ -250,10 +250,12 @@ impl Module {
 
             // For every value to send
             while let Some(val) = input_function.call().await {
-                if let Err(e) = val {
-                    return Err(ModuleExecutionError::FailedInput(format!("{e:?}")));
-                }
-                let val = val.unwrap();
+                let val = match val {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Err(ModuleExecutionError::FailedInput(format!("{e:?}")));
+                    }
+                };
 
                 // Check if the child closed or not during the execution
                 self.check_child_state(&mut call_res, &mut stderr)?;

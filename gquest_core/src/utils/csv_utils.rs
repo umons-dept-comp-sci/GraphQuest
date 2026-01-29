@@ -37,7 +37,7 @@ impl CsvFile {
         // Write the column names
         res.file
             .write_all(as_line(&column_names, res.separator).as_bytes())
-            .unwrap();
+            .expect("No problem after writing bytes");
 
         Ok(res)
     }

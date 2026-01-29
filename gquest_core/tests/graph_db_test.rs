@@ -43,7 +43,7 @@ impl Observer for CustomObs {
 async fn connect_db_test_success() {
     let test = SqliteGraphDB::connect_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues");
     test.close_connection().await;
 }
 
@@ -69,7 +69,9 @@ async fn create_db_test() {
     ));
 
     // Drop the created db
-    Sqlite::drop_database(PHYSICAL_DB_URL).await.unwrap();
+    Sqlite::drop_database(PHYSICAL_DB_URL)
+        .await
+        .expect("no issues dropping database");
 }
 
 #[tokio::test]
@@ -77,7 +79,7 @@ async fn print_all_db_table_test() {
     // remove_all_created_df().await;
     let _test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues dropping database");
 
     // test.print_all_tables().await.expect("No errors");
 }
@@ -86,7 +88,7 @@ async fn print_all_db_table_test() {
 async fn add_to_dataset_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
     let (expected, geng_reader) = get_geng_values();
 
     test.add_to_dataset(geng_reader, 1000, None)
@@ -110,7 +112,7 @@ async fn add_to_dataset_obs_test() {
 
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
     let (expected, geng_reader) = get_geng_values();
 
     test.add_to_dataset(geng_reader, 1000, Some(&mut obs))
@@ -125,7 +127,7 @@ async fn add_to_dataset_obs_test() {
 async fn is_table_added_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
 
     let (_, geng_reader) = get_geng_values();
 
@@ -146,7 +148,7 @@ async fn is_table_added_test() {
 async fn remove_dataset_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
 
     let (_, geng_reader) = get_geng_values();
 
@@ -174,7 +176,7 @@ async fn remove_dataset_test() {
 async fn clear_database_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
 
     let (_, geng_reader) = get_geng_values();
 
@@ -209,7 +211,7 @@ async fn clear_database_test() {
 async fn get_size_of_table_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
-        .unwrap();
+        .expect("no issues connecting to db");
     let (expected, geng_reader) = get_geng_values();
 
     test.add_to_dataset(geng_reader, 1000, None)
