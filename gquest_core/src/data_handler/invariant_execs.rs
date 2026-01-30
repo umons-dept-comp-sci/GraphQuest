@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use is_executable::IsExecutable;
-use log::{debug, error};
+use log::debug;
 use regex::Regex;
 use std::{
     collections::{HashMap, HashSet},

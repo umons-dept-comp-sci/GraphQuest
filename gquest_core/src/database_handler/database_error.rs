@@ -1,4 +1,3 @@
-use log::error;
 use thiserror::Error;
 
 use crate::data_handler::invariant_execs::{Module, ModuleExecutionError};
