@@ -1,6 +1,7 @@
 {
   "batch_size": 5000,
   "nb_threads": 10,
+  "epsilon": 0.000001,
   "modules": [
     {
       "path": "P_Gn.py",
@@ -97,6 +98,12 @@
       ]
     },
     {
+      "path": "chromatic_nb.py",
+      "names": [
+        "chromatic_number"
+      ]
+    },
+    {
       "path": "max_degree.py",
       "names": [
         "max_degree"
@@ -112,6 +119,15 @@
       "path": "clique_size.py",
       "names": [
         "max_clique"
+      ]
+    },
+    {
+      "path": "rust_module/conj_res",
+      "names": [
+        "conj_res"
+      ],
+      "dep": [
+        "ag", "r"
       ]
     }
   ]

@@ -18,14 +18,20 @@ pub trait ToSql {
 /// # Errors
 /// The given [`SqlCondition`]s cannot contain an [`SqlCondition::Exists`] clause since finding invariant names would be harder as of now.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ExtremalCounterQuery {
+pub struct ExtremalConjecture {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,
     /// The optional additional condition that can further restrict the graph to explore.
     pub additional_condition: Option<SqlCondition>,
-    /// The conjecture to disprove.
-    /// When building the query, this will be encapslulated as [`SqlCondition::Not`] in order to try to find a counter example.
-    pub conjecture_to_disprove: SqlCondition,
+    /// The conjecture conditions
+    pub conjecture: SqlCondition,
+}
+
+impl ExtremalConjecture {
+    /// Encapsulates the conjecture with a [`SqlCondition::Not`] condition in order to try to find a counter example.
+    pub fn to_counter_example(&mut self) {
+        self.conjecture = SqlCondition::not(self.conjecture.clone());
+    }
 }
 
 /// Gets all the names of the invariants to compute in order to find the extremal graphs.
@@ -44,7 +50,7 @@ pub fn get_extremal_invariants(
     all_inv
 }
 
-impl ExtremalCounterQuery {
+impl ExtremalConjecture {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
@@ -63,7 +69,7 @@ impl ExtremalCounterQuery {
 
     /// Gets all the names of the invariants specified in the conjecture to disprove.
     pub fn get_invariants_from_conjecture(&self) -> HashSet<String> {
-        self.conjecture_to_disprove.get_all_identifiers()
+        self.conjecture.get_all_identifiers()
     }
 
     //FIXME: This function is too similar to another one
@@ -145,7 +151,7 @@ impl ExtremalCounterQuery {
     fn get_extremal_graphs(
         selection: &ClassSelection,
         additional_condition: &Option<SqlCondition>,
-        conjecture_to_disprove: Option<&SqlCondition>,
+        conjecture: Option<&SqlCondition>,
     ) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
@@ -154,7 +160,7 @@ impl ExtremalCounterQuery {
         if let Some(add_cond) = &additional_condition {
             all_columns.extend(add_cond.get_all_identifiers());
         }
-        if let Some(conj_disp) = conjecture_to_disprove {
+        if let Some(conj_disp) = conjecture {
             all_columns.extend(conj_disp.get_all_identifiers());
         }
 
@@ -222,29 +228,29 @@ impl ExtremalCounterQuery {
     }
 }
 
-impl From<ExtremalCounterQuery> for SqlSelectQuery {
-    fn from(value: ExtremalCounterQuery) -> Self {
+impl From<ExtremalConjecture> for SqlSelectQuery {
+    fn from(value: ExtremalConjecture) -> Self {
         (&value).into()
     }
 }
-impl From<&ExtremalCounterQuery> for SqlSelectQuery {
-    fn from(value: &ExtremalCounterQuery) -> Self {
-        let mut query = ExtremalCounterQuery::get_extremal_graphs(
+impl From<&ExtremalConjecture> for SqlSelectQuery {
+    fn from(value: &ExtremalConjecture) -> Self {
+        let mut query = ExtremalConjecture::get_extremal_graphs(
             &value.selection,
             &value.additional_condition,
-            Some(&value.conjecture_to_disprove),
+            Some(&value.conjecture),
         );
-        // The conjecture to disprove might cause some ambiguous column name
-        // for this we rename it to prevent any issues
-        let mut safe_conjecture_disprove = value.conjecture_to_disprove.clone();
-        safe_conjecture_disprove.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
-        query.add_and(SqlCondition::not(safe_conjecture_disprove));
+        // The conjecture condition might cause some ambiguous column name
+        // so we rename it to prevent any issues
+        let mut safe_conjecture = value.conjecture.clone();
+        safe_conjecture.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
+        query.add_and(safe_conjecture);
 
         query
     }
 }
 
-/// Example: max(`eci`; `n`, `m`)
+/// Example: max(`eci`: `n`, `m`)
 ///
 /// Means: the maximum value of `eci` for every combination of `n` and `m`
 #[derive(Clone, Debug, PartialEq)]
@@ -379,5 +385,5 @@ pub fn select_all_extremal_graphs(
     selection: &ClassSelection,
     additional_condition: &Option<SqlCondition>,
 ) -> SqlSelectQuery {
-    ExtremalCounterQuery::get_extremal_graphs(selection, additional_condition, None)
+    ExtremalConjecture::get_extremal_graphs(selection, additional_condition, None)
 }

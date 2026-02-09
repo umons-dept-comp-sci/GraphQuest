@@ -1,6 +1,6 @@
 use gquest_core::{
     database_handler::{
-        ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery,
+        ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalConjecture,
         MathExpression, SqlComparison, SqlCondition,
     },
     parser::query_parser::{ParsedQuery, ParsingError, QueryParser},
@@ -77,7 +77,7 @@ fn parse_condition_condition_parenthesis() {
 #[test]
 fn parse_extremal_query() {
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: m,n), d_nm >= 3", None),
+        QueryParser::parse_extremal_query("min(p_gn: m,n) and d_nm >= 3", None),
         Ok(
             (selection, additional_condition)
         )
@@ -95,7 +95,7 @@ fn parse_extremal_query() {
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn), d >", None),
+        QueryParser::parse_extremal_query("min(p_gn) and d >", None),
         Err(ParsingError::ParseError {
             col_pos: _,
             input: _,
@@ -104,12 +104,12 @@ fn parse_extremal_query() {
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: p_gn), d > 4",None),
+        QueryParser::parse_extremal_query("min(p_gn: p_gn) and d > 4",None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: g, d, g), d > 4",None),
+        QueryParser::parse_extremal_query("min(p_gn: g, d, g) and d > 4",None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
     ));
 }
@@ -117,23 +117,23 @@ fn parse_extremal_query() {
 #[test]
 fn parse_conj_query() {
     assert!(matches!(
-            QueryParser::parse_extr_conj_query("min(p_gn: m,n), d_nm >= 3 => conj1",None),
+            QueryParser::parse_extr_conj_query("min(p_gn: m,n) and d_nm >= 3 => conj1",None),
             Ok(
-                ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
+                ExtremalConjecture{additional_condition, selection, conjecture}
             )
             if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
             ArgType::identifier("d_nm").into(),
             ArgType::value("3.0").into(), None),
-        )) && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1").into(), None
+        )) && conjecture == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1").into(), None
     ))));
 
     assert!(matches!(
         QueryParser::parse_extr_conj_query("min(p_gn) => conj1 = 1", None),
         Ok(
-            ExtremalCounterQuery{additional_condition, selection, conjecture_to_disprove}
+            ExtremalConjecture{additional_condition, selection, conjecture}
         )
         if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none()
-        && conjecture_to_disprove == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1.0").into(), None))
+        && conjecture == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1.0").into(), None))
     ));
 
     assert!(matches!(
@@ -160,10 +160,10 @@ fn parse_query() {
         Some(sql_cond.clone()),
     );
 
-    let conjecture = ExtremalCounterQuery {
+    let conjecture = ExtremalConjecture {
         selection: extremal.0.clone(),
         additional_condition: extremal.1.clone(),
-        conjecture_to_disprove: SqlCondition::not(SqlComparison::Equal(
+        conjecture: SqlCondition::not(SqlComparison::Equal(
             ArgType::Value("1.0".to_string()).into(),
             ArgType::Identifier("p".to_string()).into(),
             None,
@@ -175,11 +175,11 @@ fn parse_query() {
     );
 
     assert!(
-        matches!(QueryParser::parse_query("min(p_gn: g, d), x = 1", None), Ok(ParsedQuery::Extremal(val)) if val == extremal )
+        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1", None), Ok(ParsedQuery::Extremal(val)) if val == extremal )
     );
 
     assert!(
-        matches!(QueryParser::parse_query("min(p_gn: g, d), x = 1 => !(1 = p)", None), Ok(ParsedQuery::ExtremalCounter(val)) if val == conjecture )
+        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 => !(1 = p)", None), Ok(ParsedQuery::ExtremalConjecture(val)) if val == conjecture )
     )
 }
 

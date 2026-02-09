@@ -10,7 +10,7 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalCounterQuery,
+    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalConjecture,
     MathExpression, SqlComparison, SqlCondition,
 };
 
@@ -21,9 +21,9 @@ pub enum ParsedQuery {
     /// An extremal selection of graphs with an optional condition.
     Extremal((ClassSelection, Option<SqlCondition>)),
     /// A counter example query for a given conjecture.
-    Counter((SqlCondition, SqlCondition)),
+    Conjecture((SqlCondition, SqlCondition)),
     /// A counter example query for a given extremal conjecture.
-    ExtremalCounter(ExtremalCounterQuery),
+    ExtremalConjecture(ExtremalConjecture),
 }
 
 #[derive(Debug, Error)]
@@ -155,10 +155,10 @@ impl QueryParser {
                             inner_rule, epsilon,
                         )?))
                     }
-                    Rule::extremal_conj_query => Ok(ParsedQuery::ExtremalCounter(
+                    Rule::extremal_conj_query => Ok(ParsedQuery::ExtremalConjecture(
                         Self::parse_extremal_conj_query_rule(inner_rule, epsilon)?,
                     )),
-                    Rule::conj_query => Ok(ParsedQuery::Counter(Self::parse_conj_query_rule(
+                    Rule::conj_query => Ok(ParsedQuery::Conjecture(Self::parse_conj_query_rule(
                         inner_rule, epsilon,
                     )?)),
                     _ => unreachable!(),
@@ -190,7 +190,7 @@ impl QueryParser {
     pub fn parse_extr_conj_query(
         input: impl ToString,
         epsilon: Option<f64>,
-    ) -> Result<ExtremalCounterQuery, ParsingError> {
+    ) -> Result<ExtremalConjecture, ParsingError> {
         let input_str = input.to_string();
         let input = match QueryParser::parse(Rule::extremal_conj_query, &input_str) {
             Ok(mut input) => input.next().expect("one present"),
@@ -348,7 +348,7 @@ impl QueryParser {
     fn parse_extremal_conj_query_rule(
         rule: Pair<'_, Rule>,
         epsilon: Option<f64>,
-    ) -> Result<ExtremalCounterQuery, ParsingError> {
+    ) -> Result<ExtremalConjecture, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
         let (selection, additional_condition) = Self::parse_extremal_query_rule(
@@ -359,10 +359,10 @@ impl QueryParser {
         let conjecture_to_disprove =
             Self::parse_condition_rule(inner_rules.next().expect("extramal present"), epsilon);
 
-        Ok(ExtremalCounterQuery {
+        Ok(ExtremalConjecture {
             selection,
             additional_condition,
-            conjecture_to_disprove,
+            conjecture: conjecture_to_disprove,
         })
     }
 
@@ -389,7 +389,8 @@ impl QueryParser {
     ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
         let mut inner_rules = rule.into_inner();
         let selection = Self::parse_extremal(inner_rules.next().expect("extramal present"))?;
-        let additional_condition = if inner_rules.len() == 1 {
+        let additional_condition = if inner_rules.len() == 2 {
+            inner_rules.next(); // Skip "and" rule
             Some(Self::parse_condition_rule(
                 inner_rules.next().expect("condition present"),
                 epsilon,

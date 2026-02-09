@@ -2,7 +2,6 @@
 
 import sys
 import networkx as nx
-from math import floor, sqrt
 
 if __name__ == "__main__":
     for sig, ag, r in map(str.split, map(str.strip, sys.stdin)):

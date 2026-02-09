@@ -159,12 +159,22 @@ pub enum OutputChoice {
     },
 }
 
+/// Removes data from the database
 #[derive(Subcommand, Debug, Clone)]
 pub enum RemoveChoice {
+    // #[command(alias = "i")]
+    // /// Removes an invariant from the databe.
+    // Invariant {
+    //     /// The name of the invariant to remove.
+    //     name: String,
+    // },
+    #[command(alias = "ai")]
     /// Removes all tables except the dataset.
-    Invariants,
+    AllInvariant,
+    #[command(alias = "d")]
     /// Removes the dataset from the database.
     Dataset,
+    #[command(alias = "a")]
     /// Removes all tables from the database, even if not related to gquest !
     All,
 }

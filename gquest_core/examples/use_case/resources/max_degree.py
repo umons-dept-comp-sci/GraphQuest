@@ -15,5 +15,3 @@ if __name__ == "__main__":
 
         
         print(sig, max_deg, flush=True)
-        
-    print()

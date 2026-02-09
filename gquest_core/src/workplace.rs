@@ -10,7 +10,7 @@ use tokio::{
 use crate::{
     data_handler::invariant_execs::{Module, ModuleError, ModuleIterator, ModuleSorter},
     database_handler::{
-        AllowedGraphDb, ClassSelection, ExtremalCounterQuery, GraphDbRuntimeError,
+        AllowedGraphDb, ClassSelection, ExtremalConjecture, GraphDbRuntimeError,
         GraphDbStartupError, PK_NAME, SqlCondition, SqlSelectQuery, SqlTableSelection,
         VERTICES_TABLE_NAME, graph_queries,
     },
@@ -170,7 +170,7 @@ impl Workplace {
         Ok(())
     }
 
-    pub async fn find_graphs_condition<O: SaveOutput>(
+    pub async fn query_condition<O: SaveOutput>(
         &mut self,
         condition: SqlCondition,
         output: &mut O,
@@ -203,10 +203,10 @@ impl Workplace {
         Ok(())
     }
 
-    /// Tries to find a counter example to a conjecture using this workplace and an extremal selection.
-    pub async fn find_counterexamples_extremal<O: SaveOutput>(
+    /// Tries to find result for this conjecture using this workplace and an extremal selection.
+    pub async fn query_extremal_conjecture<O: SaveOutput>(
         &mut self,
-        conjecture: ExtremalCounterQuery,
+        conjecture: ExtremalConjecture,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
         // Fully compute the necessary invariants (and their dependencies)
@@ -243,7 +243,7 @@ impl Workplace {
         }
 
         info!("Try to fetch counterexample graphs");
-        // Return counter example query result
+        // Return query result
         let query: SqlSelectQuery = conjecture.into();
 
         self.fetch_all_row_query(&query, output).await?;
@@ -274,10 +274,10 @@ impl Workplace {
     }
 
     /// Tries to find a counter example to a conjecture using this workplace.
-    pub async fn find_counterexamples<O: SaveOutput>(
+    pub async fn query_conjecture<O: SaveOutput>(
         &mut self,
         criterion: SqlCondition,
-        conjecture_to_disprove: SqlCondition,
+        conjecture: SqlCondition,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
         // Fully compute the left invariants
@@ -289,7 +289,7 @@ impl Workplace {
         info!("Finished finding invariants ");
 
         // Only compute the necessary invariants in order to disprove the conjecture
-        let mut conjecture_invariants = conjecture_to_disprove.get_all_identifiers();
+        let mut conjecture_invariants = conjecture.get_all_identifiers();
         conjecture_invariants.remove(VERTICES_TABLE_NAME);
 
         if !conjecture_invariants.is_empty() {
@@ -318,10 +318,7 @@ impl Workplace {
 
         info!("Try to fetch counterexample graphs");
 
-        let query = graph_queries::select_all_graph_cond(SqlCondition::and(
-            criterion,
-            SqlCondition::not(conjecture_to_disprove),
-        ));
+        let query = graph_queries::select_all_graph_cond(SqlCondition::and(criterion, conjecture));
 
         self.fetch_all_row_query(&query, output).await?;
 

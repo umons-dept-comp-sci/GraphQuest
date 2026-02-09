@@ -197,7 +197,7 @@ impl Module {
     }
 
     /// Execute this module by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
-    /// # Errrors
+    /// # Errors
     /// Returns an [`ModuleExecutionError`] if something goes wrong during the execution of the process.
     pub async fn execute<T, F, E>(
         &self,
