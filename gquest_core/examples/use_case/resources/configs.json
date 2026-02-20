@@ -100,7 +100,7 @@
     {
       "path": "chromatic_nb.py",
       "names": [
-        "chromatic_number"
+        "chromatic_nb"
       ]
     },
     {
@@ -119,6 +119,30 @@
       "path": "clique_size.py",
       "names": [
         "max_clique"
+      ]
+    },
+    {
+      "path": "diameter.py",
+      "names": [
+        "D"
+      ]
+    },
+    {
+      "path": "is_connected.py",
+      "names": [
+        "is_connected"
+      ]
+    },
+    {
+      "path": "is_cycle.py",
+      "names": [
+        "is_cycle"
+      ]
+    },
+    {
+      "path": "is_complete.py",
+      "names": [
+        "is_complete"
       ]
     },
     {

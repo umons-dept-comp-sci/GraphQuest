@@ -117,7 +117,7 @@ fn parse_extremal_query() {
 #[test]
 fn parse_conj_query() {
     assert!(matches!(
-            QueryParser::parse_extr_conj_query("min(p_gn: m,n) and d_nm >= 3 => conj1",None),
+            QueryParser::parse_extr_conj_query("min(p_gn: m,n) and d_nm >= 3 -> conj1",None),
             Ok(
                 ExtremalConjecture{additional_condition, selection, conjecture}
             )
@@ -128,7 +128,7 @@ fn parse_conj_query() {
     ))));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn) => conj1 = 1", None),
+        QueryParser::parse_extr_conj_query("min(p_gn) -> conj1 = 1", None),
         Ok(
             ExtremalConjecture{additional_condition, selection, conjecture}
         )
@@ -137,12 +137,12 @@ fn parse_conj_query() {
     ));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn: p_gn) => conj1", None),
+        QueryParser::parse_extr_conj_query("min(p_gn: p_gn) -> conj1", None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
     ));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn: g, d, g) => conj1 = 1", None),
+        QueryParser::parse_extr_conj_query("min(p_gn: g, d, g) -> conj1 = 1", None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
     ));
 }
@@ -179,7 +179,7 @@ fn parse_query() {
     );
 
     assert!(
-        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 => !(1 = p)", None), Ok(ParsedQuery::ExtremalConjecture(val)) if val == conjecture )
+        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 -> !(1 = p)", None), Ok(ParsedQuery::ExtremalConjecture(val)) if val == conjecture )
     )
 }
 

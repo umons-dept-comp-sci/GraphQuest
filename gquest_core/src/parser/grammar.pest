@@ -93,7 +93,7 @@ less = { "<" }
 greater_equal = { ">" ~ "=" | "≥" }
 greater = { ">" }
 
-implication = _{ "⇒" | "=>" }
+implication = _{ "->" }
 
 and_op = { "and" | "∧" }
 or_op = { "or" | "v" }
