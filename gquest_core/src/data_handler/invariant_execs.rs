@@ -1,9 +1,8 @@
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use is_executable::IsExecutable;
 use log::debug;
 use regex::Regex;
 use std::{
-    collections::{HashMap, HashSet},
     env,
     fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
@@ -439,12 +438,12 @@ impl ModuleSorter {
     /// Returns an [`ModuleError::UnknownInvariant`] if one of the given invariant name was not present in any of the executables from the given array.
     pub fn new_from(
         all_invariants: &[Module],
-        inv_to_add: &HashSet<impl ToString>,
+        inv_to_add: &IndexSet<impl ToString>,
     ) -> Result<Self, ModuleError> {
         let mut res = Self::new();
 
         // To ease the process, creates an hashmap : `name` -> `index of execs`
-        let mut name_index_map: HashMap<&String, usize> = HashMap::new();
+        let mut name_index_map: IndexMap<&String, usize> = IndexMap::new();
         for (i, execs) in all_invariants.iter().enumerate() {
             for inv_name in &execs.invariant_names {
                 name_index_map.insert(inv_name, i);
@@ -463,7 +462,7 @@ impl ModuleSorter {
     fn add_inv_from_name(
         &mut self,
         all_invariants: &[Module],
-        name_index_map: &HashMap<&String, usize>,
+        name_index_map: &IndexMap<&String, usize>,
         inv_to_add: &String,
     ) -> Result<(), ModuleError> {
         let Some(exec_index) = name_index_map.get(inv_to_add) else {

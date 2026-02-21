@@ -1,5 +1,6 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
+use indexmap::IndexSet;
 use log::info;
 use thiserror::Error;
 use tokio::{
@@ -219,7 +220,7 @@ impl Workplace {
 
         // Only compute the necessary invariants in order to disprove the conjecture
         let mut conjecture_invariants = conjecture.get_invariants_from_conjecture();
-        conjecture_invariants.remove(VERTICES_TABLE_NAME);
+        conjecture_invariants.shift_remove(VERTICES_TABLE_NAME);
 
         if !conjecture_invariants.is_empty() {
             // This automatically adds the dependencies of the conjecture invariants
@@ -253,11 +254,11 @@ impl Workplace {
 
     async fn compute_invariants(
         &mut self,
-        mut inv_to_compute: HashSet<String>,
+        mut inv_to_compute: IndexSet<String>,
         inv_to_skip: Vec<String>,
     ) -> Result<(), WorkplaceError> {
         // This table is used but is not part of any module
-        inv_to_compute.remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
+        inv_to_compute.shift_remove(VERTICES_TABLE_NAME); // FIXME: Probably remove the vertices table all together :/
         info!("Computing the following invariants: {:?}", inv_to_compute);
 
         if !inv_to_compute.is_empty() {
@@ -290,7 +291,7 @@ impl Workplace {
 
         // Only compute the necessary invariants in order to disprove the conjecture
         let mut conjecture_invariants = conjecture.get_all_identifiers();
-        conjecture_invariants.remove(VERTICES_TABLE_NAME);
+        conjecture_invariants.shift_remove(VERTICES_TABLE_NAME);
 
         if !conjecture_invariants.is_empty() {
             // This automatically adds the dependencies of the conjecture invariants

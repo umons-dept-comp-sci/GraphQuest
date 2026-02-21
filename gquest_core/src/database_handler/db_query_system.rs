@@ -4,6 +4,7 @@ use std::{
     pin::Pin,
 };
 
+use indexmap::IndexSet;
 use sqlx::{Database, FromRow, Pool, QueryBuilder, query::Query};
 use tokio_stream::Stream;
 
@@ -122,8 +123,8 @@ impl SqlCondition {
     }
 
     /// Searches recursively in the given condition for any identifiers.
-    pub fn get_all_identifiers(&self) -> HashSet<String> {
-        let mut res: HashSet<String> = HashSet::new();
+    pub fn get_all_identifiers(&self) -> IndexSet<String> {
+        let mut res: IndexSet<String> = IndexSet::new();
         match &self {
             SqlCondition::Operation(sql_comparison) => match sql_comparison {
                 SqlComparison::Greater(a, b)

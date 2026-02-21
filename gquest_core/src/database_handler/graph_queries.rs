@@ -1,5 +1,6 @@
 use std::{collections::HashSet, vec};
 
+use indexmap::IndexSet;
 use sqlx::Database;
 use thiserror::Error;
 
@@ -38,8 +39,8 @@ impl ExtremalConjecture {
 pub fn get_extremal_invariants(
     selection: &ClassSelection,
     additional_condition: &Option<SqlCondition>,
-) -> HashSet<String> {
-    let mut all_inv = HashSet::new();
+) -> IndexSet<String> {
+    let mut all_inv = IndexSet::new();
     all_inv.insert(selection.invariant_to_max.clone());
     all_inv.extend(selection.invariants_combination.clone());
 
@@ -54,7 +55,7 @@ impl ExtremalConjecture {
     /// Gets all the names of the invariants to compute in order to find the extremal graphs. (So the invariants from the conjecture are not taken into account here).
     /// * If the result isn't empty this means that the conjecture invariants could only be computed using these extremal graphs thus greatly reducing the number of values to compute.
     /// * Otherwise, it means that the entire Dataset should be computed to find a counter example for this conjecture.
-    pub fn get_invariants_to_compute(&self) -> HashSet<String> {
+    pub fn get_invariants_to_compute(&self) -> IndexSet<String> {
         get_extremal_invariants(&self.selection, &self.additional_condition)
     }
 
@@ -68,7 +69,7 @@ impl ExtremalConjecture {
     }
 
     /// Gets all the names of the invariants specified in the conjecture to disprove.
-    pub fn get_invariants_from_conjecture(&self) -> HashSet<String> {
+    pub fn get_invariants_from_conjecture(&self) -> IndexSet<String> {
         self.conjecture.get_all_identifiers()
     }
 
