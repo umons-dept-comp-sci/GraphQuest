@@ -151,11 +151,14 @@ pub enum OutputChoice {
     /// Prints result line by line to the standart output
     Stdout,
     /// Prints the result as a pretty table (default)
-    #[group(required = false, multiple = false)]
+    #[group(required = false)]
     Table {
         /// [n:m] Only stores the n first and the m last rows. Can improve performances and visibility.
         #[clap(short)]
         partial: Option<String>,
+        /// Returns the result as a valid latex table.
+        #[clap(short, long, default_value("false"))]
+        latex: bool,
     },
 }
 

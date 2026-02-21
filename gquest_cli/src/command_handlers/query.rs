@@ -17,10 +17,15 @@ use crate::{
     command_handlers::arg_parser::ArgParser,
 };
 
-pub async fn query_database(path: DatabasePath, query_args: QueryArgs, is_counter: bool) -> Result<(), CliError> {
-    let output = query_args
-        .output
-        .unwrap_or(OutputChoice::Table { partial: None });
+pub async fn query_database(
+    path: DatabasePath,
+    query_args: QueryArgs,
+    is_counter: bool,
+) -> Result<(), CliError> {
+    let output = query_args.output.unwrap_or(OutputChoice::Table {
+        partial: None,
+        latex: false,
+    });
     // open database :
     info!("Opening database");
     let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
@@ -96,7 +101,7 @@ async fn workplace_condition_query(
             wp.query_condition(cond, &mut StdoutOutput).await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial } => {
+        OutputChoice::Table { partial, latex } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
@@ -105,7 +110,14 @@ async fn workplace_condition_query(
             let mut table = QueryTable::new_no_header(options);
             wp.query_condition(cond, &mut table).await?;
             info!("Finished executing query");
-            println!("{table}");
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
         }
     };
 
@@ -131,7 +143,7 @@ async fn workplace_extremal_query(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial } => {
+        OutputChoice::Table { partial, latex } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
@@ -141,7 +153,14 @@ async fn workplace_extremal_query(
             wp.find_extremals_graphs(selection, add_cond, &mut table)
                 .await?;
             info!("Finished executing query");
-            println!("{table}");
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
         }
     };
 
@@ -165,7 +184,7 @@ async fn workplace_extremal_conjecture(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial } => {
+        OutputChoice::Table { partial, latex } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
@@ -174,7 +193,14 @@ async fn workplace_extremal_conjecture(
             let mut table = QueryTable::new_no_header(options);
             wp.query_extremal_conjecture(conj_query, &mut table).await?;
             info!("Finished executing query");
-            println!("{table}");
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
         }
     };
 
@@ -199,7 +225,7 @@ async fn workplace_conjecture(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial } => {
+        OutputChoice::Table { partial, latex } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
@@ -209,7 +235,14 @@ async fn workplace_conjecture(
             wp.query_conjecture(left_cond, right_cond, &mut table)
                 .await?;
             info!("Finished executing query");
-            println!("{table}");
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
         }
     };
 
