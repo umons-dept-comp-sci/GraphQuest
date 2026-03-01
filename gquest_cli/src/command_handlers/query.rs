@@ -32,11 +32,12 @@ pub async fn query_database(
 
     info!("Opening configuration file");
     let config = ConfigFile::read_json_file(&query_args.config_file)?;
+    let formula = QueryParser::change_aliases(query_args.query, config.get_aliases());
     let epsilon = *config.get_epsilon();
     let mut wp = Workplace::new(db.clone(), config);
 
     // Store the result, then close the database even if we encountered an error
-    let res = execute_query(&mut wp, output, query_args.query, epsilon, is_counter).await;
+    let res = execute_query(&mut wp, output, formula, epsilon, is_counter).await;
     info!("Closing database");
     db.close_connection().await;
     res

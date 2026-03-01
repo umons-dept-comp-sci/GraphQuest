@@ -52,7 +52,6 @@ pub fn from_value_test() {
 #[test]
 pub fn from_file_test() {
     // Correct config file to parse
-
     let (a, b, c) = get_a_b_c_exec();
 
     let config_file = ConfigFile::read_json_file(&OPTION_FILE.to_string()).expect("no error");
@@ -93,8 +92,13 @@ pub fn full_config_file_test() {
                     "P_Gn"
                 ],
             }
+        ],
+        "aliases" : [
+            ("is_four_colorable", "chromatic_nb <= 4"),
+            ("test", "1 + 1")
         ]
     });
+    println!("{config_file}");
 
     let a = get_a_b_c_exec().0;
 
@@ -102,7 +106,18 @@ pub fn full_config_file_test() {
 
     assert_eq!([a].to_vec(), config_file.get_execs_ref().clone());
     assert_eq!(3, config_file.get_batch_size());
-    assert_eq!(10, config_file.get_nb_threads())
+    assert_eq!(10, config_file.get_nb_threads());
+    assert_eq!(
+        &[
+            (
+                "is_four_colorable".to_string(),
+                "chromatic_nb <= 4".to_string()
+            ),
+            ("test".to_string(), "1 + 1".to_string())
+        ]
+        .to_vec(),
+        config_file.get_aliases()
+    );
 }
 
 #[test]

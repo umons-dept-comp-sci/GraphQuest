@@ -107,7 +107,7 @@ fn get_parsing_error(error: Error<Rule>) -> ParsingError {
 
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"] // relative to src
-/// Used to parse inputs for conjecture queries.
+/// Used to parse inputs for queries.
 pub struct QueryParser;
 
 static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
@@ -441,6 +441,15 @@ impl QueryParser {
                 _ => unreachable!(),
             })
             .parse(pairs)
+    }
+
+    /// Replaces all aliases occurance with their given value.
+    pub fn change_aliases(mut og_query: String, aliases: &[(String, String)]) -> String {
+        for (alias, value) in aliases {
+            og_query = og_query.replace(alias, &format!("({value})"));
+        }
+
+        og_query
     }
 }
 

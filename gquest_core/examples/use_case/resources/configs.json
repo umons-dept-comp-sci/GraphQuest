@@ -92,12 +92,6 @@
       ]
     },
     {
-      "path": "4_colorable.py",
-      "names": [
-        "four_colorable"
-      ]
-    },
-    {
       "path": "chromatic_nb.py",
       "names": [
         "chromatic_nb"
@@ -151,8 +145,19 @@
         "conj_res"
       ],
       "dep": [
-        "ag", "r"
+        "ag",
+        "r"
       ]
     }
+  ],
+  "aliases": [
+    [
+      "is_four_colorable",
+      "chromatic_nb <= 4"
+    ],
+    [
+      "test",
+      "1 + 1"
+    ]
   ]
 }

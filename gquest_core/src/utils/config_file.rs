@@ -43,6 +43,8 @@ struct ConfigJsonFile {
     nb_threads: Option<usize>,
     /// The list of executables that should be executed by the program.
     modules: Vec<ModuleJson>,
+    /// A list of aliases that will be replaced with the given value.
+    pub aliases: Option<Vec<(String, String)>>,
 }
 
 #[derive(Debug)]
@@ -57,6 +59,8 @@ pub struct ConfigFile {
     nb_threads: usize,
     /// The list of executables that should be executed by the program.
     modules: Vec<Module>,
+    /// The list of aliases : `key` -> `value`
+    aliases: Vec<(String, String)>,
 }
 
 impl ConfigFile {
@@ -106,6 +110,9 @@ impl ConfigFile {
     pub fn get_epsilon(&self) -> &Option<f64> {
         &self.epsilon
     }
+    pub fn get_aliases(&self) -> &Vec<(String, String)> {
+        &self.aliases
+    }
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
@@ -127,5 +134,6 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
         modules: executables,
         nb_threads: config_json.nb_threads.unwrap_or(1),
         batch_size: config_json.batch_size.unwrap_or(1000),
+        aliases: config_json.aliases.unwrap_or_default(),
     })
 }
