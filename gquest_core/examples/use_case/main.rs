@@ -36,19 +36,19 @@ async fn main() {
 
     let mut wp = Workplace::new(db.clone(), config);
 
-    let mut table =
-        QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
-    wp.query_extremal_conjecture(
-        QueryParser::parse_extr_conj_query("min(ag: n,m), n = 8 => conj1 = 1", None)
-            .expect("correct"),
-        &mut table,
-    )
-    .await
-    .expect("correct wp");
+    // let mut table =
+    //     QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
+    // wp.query_extremal_conjecture(
+    //     QueryParser::parse_query("min(ag: n,m), n = 8 => conj1 = 1", None)
+    //         .expect("correct"),
+    //     &mut table,
+    // )
+    // .await
+    // .expect("correct wp");
 
     // db.clear_database().await.expect("no issues");
 
-    println!("{table}");
+    // println!("{table}");
     db.close_connection().await;
 
     info!("Program ends");

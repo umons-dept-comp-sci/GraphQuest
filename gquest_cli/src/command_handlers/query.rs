@@ -1,6 +1,6 @@
 use gquest_core::{
     database_handler::{AllowedGraphDb, ClassSelection, ExtremalConjecture, SqlCondition},
-    parser::query_parser::{ParsedQuery, QueryParser},
+    parser::query_parser::{ParsedCondition, ParsedQuery2, QueryParser},
     utils::{
         StdoutOutput,
         config_file::ConfigFile,
@@ -54,35 +54,44 @@ async fn execute_query(
     let res = QueryParser::parse_query(formula.clone(), epsilon)?;
 
     match res {
-        ParsedQuery::Condition(mut sql_condition) => {
-            if counter {
-                sql_condition = SqlCondition::not(sql_condition.clone())
+        ParsedQuery2::Condition(parsed_condition) => match parsed_condition {
+            ParsedCondition::ExtremalCondition(selection, add_condition) => {
+                if counter {
+                    Err(CliError::WrongQueryError {
+                        formula,
+                        correct_command: "QUERY".to_string(),
+                        current_command: "COUNTER".to_string(),
+                    })
+                } else {
+                    workplace_extremal_query(wp, output, selection, add_condition).await
+                }
             }
-            workplace_condition_query(wp, output, sql_condition).await
-        }
-        ParsedQuery::Extremal((selection, add_cond)) => {
-            if counter {
-                Err(CliError::WrongQueryError {
-                    formula,
-                    correct_command: "QUERY".to_string(),
-                    current_command: "COUNTER".to_string(),
-                })
-            } else {
-                workplace_extremal_query(wp, output, selection, add_cond).await
+            ParsedCondition::Condition(mut sql_condition) => {
+                if counter {
+                    sql_condition = SqlCondition::not(sql_condition.clone())
+                }
+                workplace_condition_query(wp, output, sql_condition).await
             }
-        }
-        ParsedQuery::ExtremalConjecture(mut conj_query) => {
-            if counter {
-                conj_query.to_counter_example();
+        },
+        ParsedQuery2::IfElse(parsed_condition, mut right_cond) => match parsed_condition {
+            ParsedCondition::ExtremalCondition(class_selection, sql_condition) => {
+                let mut conj_query = ExtremalConjecture {
+                    selection: class_selection,
+                    additional_condition: sql_condition,
+                    conjecture: right_cond,
+                };
+                if counter {
+                    conj_query.to_counter_example();
+                }
+                workplace_extremal_conjecture(wp, output, conj_query).await
             }
-            workplace_extremal_conjecture(wp, output, conj_query).await
-        }
-        ParsedQuery::Conjecture((left_cond, mut right_cond)) => {
-            if counter {
-                right_cond = SqlCondition::not(right_cond);
+            ParsedCondition::Condition(left_cond) => {
+                if counter {
+                    right_cond = SqlCondition::not(right_cond);
+                }
+                workplace_conjecture(wp, output, left_cond, right_cond).await
             }
-            workplace_conjecture(wp, output, left_cond, right_cond).await
-        }
+        },
     }
 }
 
