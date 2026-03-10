@@ -2,68 +2,73 @@
 WHITESPACE = _{ " " | "\t" }
 
 // Combines all queries into one for ease of parse
-query = { (condition ~ EOI) | extremal_query | conj_query | extremal_conj_query }
+query = { (if_query | extremal_condition) ~ EOI }
 
-// example : min(p_qn: n, m), d > 3 => conj1 = 1
-extremal_conj_query = { extremal_selection ~ implication ~ condition ~ EOI } 
-
-// example : d > 3 => conj1 = 1
-conj_query = { condition ~ implication ~ condition ~ EOI } 
+// Rules simply used for unit tests to force an input to end with EOI 
+extremal_condition_eoi = _{ extremal_condition ~ EOI }
+if_query_eoi = _{ if_query ~ EOI }
 
 
-extremal_query =  { extremal_selection ~ EOI }
+// example : d > 3 -> conj1 = 1
+// or : 	 if d > 3 then conj = 1
+if_query      =  { (if_then_query | if_shortened) }
+if_then_query = _{ if ~ extremal_condition ~ then ~ condition }
+if_shortened  = _{ extremal_condition ~ if_then_arrow ~ condition }
 
-extremal_selection =  { extremal ~ (and_op ~ condition)? }
-
-
-// Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m) 
-extremal = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)* )?  ~ ")" }
-
+// Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m)
+extremal      = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)*)? ~ ")" }
 extremal_func = { max_func | min_func }
 
-condition = { comparison ~ binary_op ~ condition
-            | comparison }
+// 3 tokens -> extremal + condition
+// 2 tokens -> /
+// 1 token  -> either an extremal selection or a condition.
+extremal_condition = { (extremal ~ (and_op ~ condition)? | condition) }
+condition          = {
+    comparison ~ binary_op ~ condition
+  | comparison
+}
+binary_op          = { and_op | or_op }
 
-binary_op = { and_op | or_op }
-
-
-comparison = { expr ~ comp_operator ~ expr
-			| "(" ~ condition ~ ")"
-			| not_comparison
-            | identifier }
+comparison = {
+    expr ~ comp_operator ~ expr
+  | "(" ~ condition ~ ")"
+  | not_comparison
+  | identifier
+}
 
 // !inv or !(inv = 1)
-// Special case of inv to not force parenthesis: !(x) == !x 
+// Special case of inv to not force parenthesis: !(x) == !x
 not_comparison = { not_op ~ (identifier | "(" ~ condition ~ ")") }
 
-comp_operator = { equal 
-		  | not_equal 
-           | less_equal 
-           | less 
-           | greater_equal 
-           | greater }
+comp_operator = {
+    equal
+  | not_equal
+  | less_equal
+  | less
+  | greater_equal
+  | greater
+}
 
 // _________ MATH _________
 
-
 primary = _{ primitif | "(" ~ expr ~ ")" }
-atom = _{ atom_function? ~ primary }
+atom    = _{ atom_function? ~ primary }
 
 atom_function = _{ floor | ceil | sqrt | abs | negation }
-floor = { "floor" }
-ceil  = { "ceil" }
-sqrt  = { "sqrt" }
-abs  = { "abs" }
-negation = { "-" }
+floor         =  { "floor" }
+ceil          =  { "ceil" }
+sqrt          =  { "sqrt" }
+abs           =  { "abs" }
+negation      =  { "-" }
 
-bin_op = _{ add | subtract | exponent | multiply | floor_divide | divide | modulo }
-	add = { "+" }
-	subtract = { "-" }
-	exponent = { "**" | "^" }
-	multiply = { "*" }
-	floor_divide = { "//" }
-	divide = { "/" }
-	modulo = { "%" }
+bin_op       = _{ add | subtract | exponent | multiply | floor_divide | divide | modulo }
+add          =  { "+" }
+subtract     =  { "-" }
+exponent     =  { "**" | "^" }
+multiply     =  { "*" }
+floor_divide =  { "//" }
+divide       =  { "/" }
+modulo       =  { "%" }
 
 expr = { atom ~ (bin_op ~ atom)* }
 
@@ -77,24 +82,26 @@ value = { number | string }
 // A value representing an identifier (must start with a letter)
 identifier = @{ ASCII_ALPHA ~ valid_ascii* }
 
-string = { double_quotes ~ valid_ascii+ ~ double_quotes }
+string        =  { double_quotes ~ valid_ascii+ ~ double_quotes }
 double_quotes = _{ "\"" }
 
-number = {  ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+number      =  { ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 valid_ascii = _{ ASCII_ALPHANUMERIC | "_" }
 
 max_func = { "max" }
 min_func = { "min" }
 
-equal = { "=" | "==" }
-not_equal = { "!" ~ "=" | "≠" }
-less_equal = { "<" ~ "=" | "≤" }
-less = { "<" }
+equal         = { "=" | "==" }
+not_equal     = { "!" ~ "=" | "≠" }
+less_equal    = { "<" ~ "=" | "≤" }
+less          = { "<" }
 greater_equal = { ">" ~ "=" | "≥" }
-greater = { ">" }
+greater       = { ">" }
 
-implication = _{ "->" }
+if_then_arrow = _{ "->" }
+if            = _{ "if" }
+then          = _{ "then" }
 
-and_op = { "and" | "∧" }
-or_op = { "or" | "v" }
+and_op =  { "and" | "∧" }
+or_op  =  { "or" | "v" }
 not_op = _{ "not" | "!" }
