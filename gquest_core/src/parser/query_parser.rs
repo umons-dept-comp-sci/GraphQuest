@@ -204,24 +204,6 @@ impl QueryParser {
         Self::parse_extremal_condition_rule(input, epsilon)
     }
 
-    // /// Parses an extremal query.
-    // /// For example : `min(p_gn: n,m), d_nm >= 3
-    // pub fn parse_extremal_query(
-    //     input: impl ToString,
-    //     epsilon: Option<f64>,
-    // ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
-    //     let input_str = input.to_string();
-    //     let input = match QueryParser::parse(Rule::extremal_query, &input_str) {
-    //         Ok(mut input) => input.next().expect("one present"),
-    //         Err(e) => {
-    //             return Err(get_parsing_error(e));
-    //         }
-    //     };
-    //     let inner_rule = input.into_inner().next().expect("one subrule");
-
-    //     Self::parse_extremal_query_rule(inner_rule, epsilon)
-    // }
-
     pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
         match Self::parse(Rule::expr, &input.to_string()) {
             Ok(rules) => Ok(Self::parse_expr_rule(rules)),
@@ -408,42 +390,6 @@ impl QueryParser {
             Err(e) => Err(ParsingError::ClassSelectionError(rule_str.to_string(), e)),
         }
     }
-
-    // fn parse_conj_query_rule(
-    //     rule: Pair<'_, Rule>,
-    //     epsilon: Option<f64>,
-    // ) -> Result<(SqlCondition, SqlCondition), ParsingError> {
-    //     let mut inner_rules = rule.into_inner();
-
-    //     let left_condition = Self::parse_condition_rule(
-    //         inner_rules.next().expect("extremal query present"),
-    //         epsilon,
-    //     );
-
-    //     let right_condition =
-    //         Self::parse_condition_rule(inner_rules.next().expect("extramal present"), epsilon);
-
-    //     Ok((left_condition, right_condition))
-    // }
-
-    // fn parse_extremal_query_rule(
-    //     rule: Pair<'_, Rule>,
-    //     epsilon: Option<f64>,
-    // ) -> Result<(ClassSelection, Option<SqlCondition>), ParsingError> {
-    //     let mut inner_rules = rule.into_inner();
-    //     let selection = Self::parse_extremal(inner_rules.next().expect("extramal present"))?;
-    //     let additional_condition = if inner_rules.len() == 2 {
-    //         inner_rules.next(); // Skip "and" rule
-    //         Some(Self::parse_condition_rule(
-    //             inner_rules.next().expect("condition present"),
-    //             epsilon,
-    //         ))
-    //     } else {
-    //         None
-    //     };
-
-    //     Ok((selection, additional_condition))
-    // }
 
     fn parse_expr_rule(pairs: Pairs<Rule>) -> MathExpression {
         PRATT_PARSER
