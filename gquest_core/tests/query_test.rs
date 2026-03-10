@@ -1,9 +1,9 @@
 use gquest_core::{
     database_handler::{
-        ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalConjecture,
-        MathExpression, SqlComparison, SqlCondition,
+        ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, MathExpression,
+        SqlComparison, SqlCondition,
     },
-    parser::query_parser::{ParsedQuery, ParsingError, QueryParser},
+    parser::query_parser::{ParsedCondition, ParsedQuery2, ParsingError, QueryParser},
 };
 
 #[test]
@@ -77,9 +77,9 @@ fn parse_condition_condition_parenthesis() {
 #[test]
 fn parse_extremal_query() {
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: m,n) and d_nm >= 3", None),
+        QueryParser::parse_extremal_condition("min(p_gn: m,n) and d_nm >= 3", None),
         Ok(
-            (selection, additional_condition)
+            ParsedCondition::ExtremalCondition(selection, additional_condition)
         )
         if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
         ArgType::identifier("d_nm").into(),
@@ -87,15 +87,15 @@ fn parse_extremal_query() {
     ))));
 
     assert!(matches!(
-    QueryParser::parse_extremal_query("min(p_gn)", None),
+    QueryParser::parse_extremal_condition("min(p_gn)", None),
     Ok(
-        (selection, additional_condition)
+        ParsedCondition::ExtremalCondition(selection, None)
     )
-    if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none()
+    if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct")
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn) and d >", None),
+        QueryParser::parse_extremal_condition("min(p_gn) and d >", None),
         Err(ParsingError::ParseError {
             col_pos: _,
             input: _,
@@ -104,45 +104,45 @@ fn parse_extremal_query() {
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: p_gn) and d > 4",None),
+        QueryParser::parse_extremal_condition("min(p_gn: p_gn) and d > 4",None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
     ));
 
     assert!(matches!(
-        QueryParser::parse_extremal_query("min(p_gn: g, d, g) and d > 4",None),
+        QueryParser::parse_extremal_condition("min(p_gn: g, d, g) and d > 4",None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
     ));
 }
 
 #[test]
-fn parse_conj_query() {
+fn parse_if_else_query_extremal() {
     assert!(matches!(
-            QueryParser::parse_extr_conj_query("min(p_gn: m,n) and d_nm >= 3 -> conj1",None),
+            QueryParser::parse_query("min(p_gn: m,n) and d_nm >= 3 -> conj1",None),
             Ok(
-                ExtremalConjecture{additional_condition, selection, conjecture}
+                ParsedQuery2::IfElse(ParsedCondition::ExtremalCondition(selection, add_cond), cond)
             )
-            if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
+            if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && add_cond == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
             ArgType::identifier("d_nm").into(),
             ArgType::value("3.0").into(), None),
-        )) && conjecture == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1").into(), None
+        )) && cond == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1").into(), None
     ))));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn) -> conj1 = 1", None),
+        QueryParser::parse_query("min(p_gn) -> conj1 = 1", None),
         Ok(
-            ExtremalConjecture{additional_condition, selection, conjecture}
-        )
-        if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct") && additional_condition.is_none()
-        && conjecture == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1.0").into(), None))
+                ParsedQuery2::IfElse(ParsedCondition::ExtremalCondition(selection, None), cond)
+            )
+        if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct")
+        && cond == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1.0").into(), None))
     ));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn: p_gn) -> conj1", None),
+        QueryParser::parse_query("min(p_gn: p_gn) -> conj1", None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
     ));
 
     assert!(matches!(
-        QueryParser::parse_extr_conj_query("min(p_gn: g, d, g) -> conj1 = 1", None),
+        QueryParser::parse_query("min(p_gn: g, d, g) -> conj1 = 1", None),
         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
     ));
 }
@@ -155,31 +155,29 @@ fn parse_query() {
         None,
     ));
 
-    let extremal = (
-        ClassSelection::new(ClassType::Min, "p_gn", vec!["g", "d"]).expect("correct"),
-        Some(sql_cond.clone()),
-    );
-
-    let conjecture = ExtremalConjecture {
-        selection: extremal.0.clone(),
-        additional_condition: extremal.1.clone(),
-        conjecture: SqlCondition::not(SqlComparison::Equal(
-            ArgType::Value("1.0".to_string()).into(),
-            ArgType::Identifier("p".to_string()).into(),
-            None,
-        )),
-    };
+    let extremal = ClassSelection::new(ClassType::Min, "p_gn", vec!["g", "d"]).expect("correct");
+    let sql_cond_2 = SqlCondition::not(SqlComparison::Equal(
+        ArgType::Value("1.0".to_string()).into(),
+        ArgType::Identifier("p".to_string()).into(),
+        None,
+    ));
 
     assert!(
-        matches!(QueryParser::parse_query("x = 1", None), Ok(ParsedQuery::Condition(x)) if x == sql_cond )
+        matches!(QueryParser::parse_query("x = 1", None), Ok(ParsedQuery2::Condition(ParsedCondition::Condition(x))) if x == sql_cond )
     );
 
     assert!(
-        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1", None), Ok(ParsedQuery::Extremal(val)) if val == extremal )
+        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1", None), Ok(ParsedQuery2::Condition(ParsedCondition::ExtremalCondition(selection, Some(cond)))) if selection == extremal && cond == sql_cond)
     );
 
     assert!(
-        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 -> !(1 = p)", None), Ok(ParsedQuery::ExtremalConjecture(val)) if val == conjecture )
+        matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 -> !(1 = p)", None), Ok(ParsedQuery2::IfElse(ParsedCondition::ExtremalCondition(selection, Some(add_cond)), cond)) 
+            if selection == extremal && add_cond == sql_cond && cond == sql_cond_2 )
+    );
+
+    assert!(
+        matches!(QueryParser::parse_query("x = 1 -> !(1 = p)", None), Ok(ParsedQuery2::IfElse(ParsedCondition::Condition(cond_1), cond_2)) 
+            if cond_1 == sql_cond && cond_2 == sql_cond_2 )
     )
 }
 

@@ -1,7 +1,6 @@
 {
   "batch_size": 5000,
   "nb_threads": 10,
-  "epsilon": 0.000001,
   "modules": [
     {
       "path": "P_Gn.py",

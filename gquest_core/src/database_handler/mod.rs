@@ -3,7 +3,7 @@ pub const BUFFER_VECTOR_MAX_SIZE: usize = 2000;
 /// The name of the first created table of the dataset containing the initial dataset
 pub const CANONICAL_TABLE_NAME: &str = "dataset";
 /// The column name of the primary key of the dataset
-pub const PK_NAME: &str = "canon";
+pub const PK_NAME: &str = "sig";
 
 /// The name of the vertices table of the dataset
 pub const VERTICES_TABLE_NAME: &str = "n";
