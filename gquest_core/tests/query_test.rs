@@ -36,6 +36,26 @@ fn parse_condition() {
 }
 
 #[test]
+fn parse_condition_xor() {
+    let a = ArgType::identifier("a");
+    let b = ArgType::identifier("b");
+    let one = ArgType::value("1.0");
+    let a_true = SqlComparison::Equal(a.into(), one.clone().into(), None);
+    let b_true = SqlComparison::Equal(b.into(), one.clone().into(), None);
+
+    let cond = SqlCondition::and(
+        SqlCondition::or(a_true.clone(), b_true.clone()),
+        SqlCondition::not(SqlCondition::and(a_true.clone(), b_true.clone())),
+    );
+
+    assert!(matches!(
+        QueryParser::parse_condition("a = 1 xor b = 1", None),
+        Ok(cond1)
+        if cond1 == cond
+    ))
+}
+
+#[test]
 fn parse_condition_not() {
     assert!(matches!(
         QueryParser::parse_condition("not(a > b) or c = d", None),
