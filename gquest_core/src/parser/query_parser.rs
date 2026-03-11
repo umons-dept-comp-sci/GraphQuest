@@ -450,6 +450,10 @@ fn create_condition(
     match binary_op_rule.as_rule() {
         Rule::and_op => SqlCondition::and(cond_1, cond_2),
         Rule::or_op => SqlCondition::or(cond_1, cond_2),
+        Rule::xor_op => SqlCondition::and(
+            SqlCondition::or(cond_1.clone(), cond_2.clone()),
+            SqlCondition::not(SqlCondition::and(cond_1, cond_2)),
+        ),
         _ => unreachable!(),
     }
 }
