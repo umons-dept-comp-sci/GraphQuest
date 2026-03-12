@@ -27,7 +27,7 @@ condition          = {
     comparison ~ binary_op ~ condition
   | comparison
 }
-binary_op          = { and_op | or_op | xor_op }
+binary_op          = { and_op | or_op | xor_op | implication_op | equivalence_op }
 
 comparison = {
     expr ~ comp_operator ~ expr
@@ -105,4 +105,6 @@ then          = _{ "then" }
 and_op =  { "and" | "∧" }
 or_op  =  { "or" | "v" }
 xor_op  =  { "xor" | "⊕" | "⊻" }
+implication_op =  { "==>" }
+equivalence_op =  { "<==>" | "iff" }
 not_op = _{ "not" | "!" }

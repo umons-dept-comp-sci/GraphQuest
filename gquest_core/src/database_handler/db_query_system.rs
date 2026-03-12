@@ -61,6 +61,34 @@ impl SqlCondition {
         Self::Not(Box::new(cond.into()))
     }
 
+    /// Creates an equivalente condition to the `xor` operator.
+    /// `x xor y` iff `(x or y) and not(x and y)`
+    pub fn xor(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+        let cond_1 = cond_1.into();
+        let cond_2 = cond_2.into();
+        SqlCondition::and(
+            SqlCondition::or(cond_1.clone(), cond_2.clone()),
+            SqlCondition::not(SqlCondition::and(cond_1, cond_2)),
+        )
+    }
+
+    /// Creates an equivalente condition to a logical implication.
+    /// `x ==> y` iff `not(x) or y`
+    pub fn implication(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+        SqlCondition::or(SqlCondition::not(cond_1), cond_2)
+    }
+
+    /// Creates an equivalente condition to a logical equivalence.
+    /// `x <==> y` iff `(x ==> y) or (y ==> x)`
+    pub fn equivalence(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+        let cond_1 = cond_1.into();
+        let cond_2 = cond_2.into();
+        SqlCondition::and(
+            SqlCondition::implication(cond_1.clone(), cond_2.clone()),
+            SqlCondition::implication(cond_2, cond_1),
+        )
+    }
+
     /// Simplifies the creation of the [`SqlCondition::Exists`] enum.
     pub fn exists(query: impl Into<SqlSelectQuery>) -> Self {
         Self::Exists(Box::new(query.into()))
