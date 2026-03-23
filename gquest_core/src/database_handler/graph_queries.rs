@@ -168,6 +168,8 @@ impl ExtremalConjecture {
 
         all_columns.extend(selection_set.clone());
 
+        selection_set.remove(&selection.invariant_to_max);
+
         let mut all_columns = Vec::from_iter(all_columns);
 
         let all_eq_extremal_clause = SqlCondition::and_vec(
