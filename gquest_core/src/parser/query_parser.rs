@@ -10,23 +10,11 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, ExtremalConjecture,
+    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType,
     MathExpression, SqlComparison, SqlCondition,
 };
 
-/// Represents the available queries that can be parsed and submitted to the graph database.
 pub enum ParsedQuery {
-    /// A simple condition to apply to the database.
-    Condition(SqlCondition),
-    /// An extremal selection of graphs with an optional condition.
-    Extremal((ClassSelection, Option<SqlCondition>)),
-    /// A counter example query for a given conjecture.
-    Conjecture((SqlCondition, SqlCondition)),
-    /// A counter example query for a given extremal conjecture.
-    ExtremalConjecture(ExtremalConjecture),
-}
-
-pub enum ParsedQuery2 {
     Condition(ParsedCondition),
     /// An if else statement
     IfElse(ParsedCondition, SqlCondition),
@@ -147,7 +135,7 @@ impl QueryParser {
     pub fn parse_query(
         input: impl ToString,
         epsilon: Option<f64>,
-    ) -> Result<ParsedQuery2, ParsingError> {
+    ) -> Result<ParsedQuery, ParsingError> {
         let input_str = input.to_string();
         let input = Self::parse(Rule::query, &input_str);
         match input {
@@ -160,7 +148,7 @@ impl QueryParser {
                 let inner_rule = rules.next().expect("always at least one subrule");
                 match inner_rule.as_rule() {
                     Rule::if_query => Self::parse_if_query_rule(inner_rule, epsilon),
-                    Rule::extremal_condition => Ok(ParsedQuery2::Condition(
+                    Rule::extremal_condition => Ok(ParsedQuery::Condition(
                         Self::parse_extremal_condition_rule(inner_rule, epsilon)?,
                     )),
                     _ => unreachable!(),
@@ -214,7 +202,7 @@ impl QueryParser {
     fn parse_if_query_rule(
         rule: Pair<'_, Rule>,
         epsilon: Option<f64>,
-    ) -> Result<ParsedQuery2, ParsingError> {
+    ) -> Result<ParsedQuery, ParsingError> {
         let mut inner_rules = rule.into_inner();
 
         // Two tokens : `extremal_condition` and `condition`
@@ -226,7 +214,7 @@ impl QueryParser {
         let condition =
             Self::parse_condition_rule(inner_rules.next().expect("condition present"), epsilon);
 
-        Ok(ParsedQuery2::IfElse(extremal_cond, condition))
+        Ok(ParsedQuery::IfElse(extremal_cond, condition))
     }
 
     fn parse_extremal_condition_rule(

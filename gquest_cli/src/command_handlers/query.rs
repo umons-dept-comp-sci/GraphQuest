@@ -1,6 +1,6 @@
 use gquest_core::{
     database_handler::{AllowedGraphDb, ClassSelection, ExtremalConjecture, SqlCondition},
-    parser::query_parser::{ParsedCondition, ParsedQuery2, QueryParser},
+    parser::query_parser::{ParsedCondition, ParsedQuery, QueryParser},
     utils::{
         StdoutOutput,
         config_file::ConfigFile,
@@ -54,7 +54,7 @@ async fn execute_query(
     let res = QueryParser::parse_query(formula.clone(), epsilon)?;
 
     match res {
-        ParsedQuery2::Condition(parsed_condition) => match parsed_condition {
+        ParsedQuery::Condition(parsed_condition) => match parsed_condition {
             ParsedCondition::ExtremalCondition(selection, add_condition) => {
                 if counter {
                     Err(CliError::WrongQueryError {
@@ -73,7 +73,7 @@ async fn execute_query(
                 workplace_condition_query(wp, output, sql_condition).await
             }
         },
-        ParsedQuery2::IfElse(parsed_condition, mut right_cond) => match parsed_condition {
+        ParsedQuery::IfElse(parsed_condition, mut right_cond) => match parsed_condition {
             ParsedCondition::ExtremalCondition(class_selection, sql_condition) => {
                 let mut conj_query = ExtremalConjecture {
                     selection: class_selection,

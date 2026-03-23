@@ -192,8 +192,9 @@ impl Workplace {
         additional_condition: Option<SqlCondition>,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
+        // Fetch module names :
         let extremal_inv = graph_queries::get_extremal_invariants(&extremal, &additional_condition);
-
+        // Compute all invariants :
         self.compute_invariants(extremal_inv, vec![]).await?;
 
         // Get them
