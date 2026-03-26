@@ -100,8 +100,9 @@ pub struct GengArgs {
     /// The command to use to call the geng program. Can sometimes be `nauty-geng` instead.
     #[clap(default_value = "geng")]
     pub command_name: String,
-    /// The addition parameters to give to geng
-    pub params: Option<String>,
+    /// The additional argument to pass to the geng program.
+    #[clap(short)]
+    pub args: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
