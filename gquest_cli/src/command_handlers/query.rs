@@ -13,13 +13,61 @@ use log::info;
 
 use crate::{
     CliError,
-    cli_commands::{DatabasePath, OutputChoice, QueryArgs},
+    cli_commands::{ConfigFileArg, DatabasePath, OutputChoice, QueryArgs},
     command_handlers::arg_parser::ArgParser,
 };
+
+pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<(), CliError> {
+    info!("Opening database");
+    let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
+
+    info!("Sending raw sql query");
+
+    let output = query_args.output.unwrap_or(OutputChoice::Table {
+        partial: None,
+        latex: false,
+    });
+
+    match output {
+        OutputChoice::File { path, separator } => {
+            // open csv file
+            let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
+            Workplace::send_raw_sql(db.clone(), query_args.query, &mut csv).await?;
+        }
+        OutputChoice::Stdout => {
+            Workplace::send_raw_sql(db.clone(), query_args.query, &mut StdoutOutput).await?;
+        }
+        OutputChoice::Table { partial, latex } => {
+            let options = if let Some(partial_input) = partial {
+                ArgParser::parse_partial_table(&partial_input)?
+            } else {
+                QueryTableOptions::Full
+            };
+            let mut table = QueryTable::new_no_header(options);
+
+            Workplace::send_raw_sql(db.clone(), query_args.query, &mut table).await?;
+
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
+        }
+    };
+    info!("Finished executing query");
+
+    info!("Closing database");
+    db.close_connection().await;
+    Ok(())
+}
 
 pub async fn query_database(
     path: DatabasePath,
     query_args: QueryArgs,
+    config_arg: ConfigFileArg,
     is_counter: bool,
 ) -> Result<(), CliError> {
     let output = query_args.output.unwrap_or(OutputChoice::Table {
@@ -31,7 +79,7 @@ pub async fn query_database(
     let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
 
     info!("Opening configuration file");
-    let config = ConfigFile::read_json_file(&query_args.config_file)?;
+    let config = ConfigFile::read_json_file(&config_arg.config_file)?;
     let formula = QueryParser::change_aliases(query_args.query, config.get_aliases());
     let epsilon = *config.get_epsilon();
     let mut wp = Workplace::new(db.clone(), config);

@@ -10,8 +10,8 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType,
-    MathExpression, SqlComparison, SqlCondition,
+    ArgType, ArithmOp, ClassSelection, ClassSelectionError, ClassType, MathExpression,
+    SqlComparison, SqlCondition,
 };
 
 pub enum ParsedQuery {
