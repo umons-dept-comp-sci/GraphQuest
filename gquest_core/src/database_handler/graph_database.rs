@@ -320,7 +320,6 @@ where
     }
 }
 
-// TODO: Remove useless import
 impl<DB: GraphDb> GraphDatabase<DB>
 where
     // Allow column indexing using usize
@@ -600,7 +599,6 @@ where
     ) -> Result<(), GraphDbRuntimeError> {
         let inv_name = inv_name.to_string();
 
-        // TODO: Combine signatures and values into one vector
         let query_str = DB::get_insert_into_query(&inv_name, 2, signatures.len());
 
         let safe_query = Self::create_safe_insert_query(query_str, signatures, values)?;
@@ -821,17 +819,17 @@ where
         Ok(())
     }
 
-    /// Fetches and stores all rows from the given query inside a table as strings.
-    pub async fn fetch_all_row_query<O>(
+    /// Fetches and stores all rows from the given raw sql query as strings.
+    pub async fn fetch_all_rows_raw_sql<O>(
         &self,
-        query: &SqlSelectQuery,
+        query: impl ToString,
         output: &mut O,
     ) -> Result<(), GraphDbRuntimeError>
     where
         O: SaveOutput,
     {
         let mut added_headers = false;
-        let query = query.to_sql::<DB>();
+        let query = query.to_string();
         // Execute query :
         let mut results = DB::execute_query_fetch_sql_rows(&self.pool, sqlx::query(&query));
         // Add each returned row to the table
@@ -852,6 +850,19 @@ where
             output.push_line(Self::read_row_values(&row));
         }
         Ok(())
+    }
+
+    /// Fetches and stores all rows from the given query.
+    pub async fn fetch_all_row_query<O>(
+        &self,
+        query: &SqlSelectQuery,
+        output: &mut O,
+    ) -> Result<(), GraphDbRuntimeError>
+    where
+        O: SaveOutput,
+    {
+        self.fetch_all_rows_raw_sql(query.to_sql::<DB>(), output)
+            .await
     }
 }
 

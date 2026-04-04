@@ -43,7 +43,18 @@ pub enum Modes {
         #[command(subcommand, name = "TARGET")]
         choice: RemoveChoice,
     },
-    /// Explores the dataset.
+    /// Returns the result of a raw sql query sent to the database.
+    /// The syntax of the queries here are dependent on the database system used.
+    #[command(
+        alias = "s",
+        subcommand_value_name = "OUTPUT",
+        subcommand_help_heading = "Outputs"
+    )]
+    Sql {
+        #[command(flatten)]
+        args: QueryArgs,
+    },
+    /// Sends a query to the database and returns the results.
     #[command(
         alias = "q",
         subcommand_value_name = "OUTPUT",
@@ -52,6 +63,8 @@ pub enum Modes {
     Query {
         #[command(flatten)]
         args: QueryArgs,
+        #[command(flatten)]
+        config: ConfigFileArg,
     },
     /// Tries to find counter examples in the dataset.
     #[command(
@@ -62,9 +75,11 @@ pub enum Modes {
     Counter {
         #[command(flatten)]
         args: QueryArgs,
+        #[command(flatten)]
+        config: ConfigFileArg,
     },
     /// Shows the tables present in the database
-    #[command(alias = "s")]
+    #[command(alias = "sm")]
     Summary {
         /// [n:m] Only displays the n first and the m last rows. Can improve performances and visibility.
         #[clap(short)]
@@ -79,6 +94,10 @@ pub struct QueryArgs {
     pub query: String,
     #[command(subcommand, name = "OUTPUT")]
     pub output: Option<OutputChoice>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ConfigFileArg {
     /// The path to the config file to use
     #[clap(default_value = DEFAULT_CONFIGS)]
     pub config_file: String,
@@ -100,8 +119,9 @@ pub struct GengArgs {
     /// The command to use to call the geng program. Can sometimes be `nauty-geng` instead.
     #[clap(default_value = "geng")]
     pub command_name: String,
-    /// The addition parameters to give to geng
-    pub params: Option<String>,
+    /// The additional argument to pass to the geng program.
+    #[clap(short)]
+    pub args: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]

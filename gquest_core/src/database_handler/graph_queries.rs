@@ -152,7 +152,6 @@ impl ExtremalConjecture {
     fn get_extremal_graphs(
         selection: &ClassSelection,
         additional_condition: &Option<SqlCondition>,
-        conjecture: Option<&SqlCondition>,
     ) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
@@ -161,10 +160,6 @@ impl ExtremalConjecture {
         if let Some(add_cond) = &additional_condition {
             all_columns.extend(add_cond.get_all_identifiers());
         }
-        if let Some(conj_disp) = conjecture {
-            all_columns.extend(conj_disp.get_all_identifiers());
-        }
-
         // Get all from selection :
         let mut selection_set = HashSet::new();
 
@@ -172,6 +167,8 @@ impl ExtremalConjecture {
         selection_set.extend(selection.invariants_combination.clone());
 
         all_columns.extend(selection_set.clone());
+
+        selection_set.remove(&selection.invariant_to_max);
 
         let mut all_columns = Vec::from_iter(all_columns);
 
@@ -236,18 +233,26 @@ impl From<ExtremalConjecture> for SqlSelectQuery {
 }
 impl From<&ExtremalConjecture> for SqlSelectQuery {
     fn from(value: &ExtremalConjecture) -> Self {
-        let mut query = ExtremalConjecture::get_extremal_graphs(
-            &value.selection,
-            &value.additional_condition,
-            Some(&value.conjecture),
-        );
-        // The conjecture condition might cause some ambiguous column name
-        // so we rename it to prevent any issues
-        let mut safe_conjecture = value.conjecture.clone();
-        safe_conjecture.add_prefix_identifier(format!("{FULL_TABLE_NAME}."));
-        query.add_and(safe_conjecture);
+        let all_inv_query =
+            ExtremalConjecture::get_extremal_graphs(&value.selection, &value.additional_condition);
 
-        query
+        let already_added_invariants =
+            get_extremal_invariants(&value.selection, &value.additional_condition);
+
+        let missing_invariants: Vec<String> = value
+            .conjecture
+            .get_all_identifiers()
+            .difference(&already_added_invariants)
+            .map(|s| s.to_string())
+            .collect();
+
+        let all_inv_table =
+            SqlTableSelection::new_join(all_inv_query, missing_invariants, PK_NAME, None);
+
+        let mut select_all = SqlSelectQuery::select_all_from_table(all_inv_table);
+        select_all.add_and(value.conjecture.clone());
+
+        select_all
     }
 }
 
@@ -386,5 +391,7 @@ pub fn select_all_extremal_graphs(
     selection: &ClassSelection,
     additional_condition: &Option<SqlCondition>,
 ) -> SqlSelectQuery {
-    ExtremalConjecture::get_extremal_graphs(selection, additional_condition, None)
+    let all_inv = ExtremalConjecture::get_extremal_graphs(selection, additional_condition);
+    let all_inv_table = SqlTableSelection::new(all_inv);
+    SqlSelectQuery::select_all_from_table(all_inv_table)
 }

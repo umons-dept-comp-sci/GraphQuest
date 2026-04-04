@@ -91,7 +91,7 @@
       ]
     },
     {
-      "path": "chromatic_nb.py",
+      "path": "rust_module/chromatic_nb",
       "names": [
         "chromatic_nb"
       ]

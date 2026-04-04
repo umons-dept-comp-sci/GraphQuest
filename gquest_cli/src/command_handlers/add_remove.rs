@@ -36,7 +36,7 @@ pub async fn add_dataset(
                 let geng_call = GengProcess::call_geng(
                     Some(args.command_name.to_string()),
                     order,
-                    &args.params.clone().unwrap_or_default(),
+                    &args.args.clone().unwrap_or_default(),
                     (None, None),
                 )?;
 

@@ -171,6 +171,23 @@ impl Workplace {
         Ok(())
     }
 
+    /// Sends a raw sql query to the database and displays its return value.
+    pub async fn send_raw_sql<O: SaveOutput>(
+        db: AllowedGraphDb,
+        query: impl Into<String>,
+        output: &mut O,
+    ) -> Result<(), WorkplaceError> {
+        match db {
+            AllowedGraphDb::Sqlite(sqlite_db) => {
+                sqlite_db.fetch_all_rows_raw_sql(query.into(), output).await
+            }
+            AllowedGraphDb::Postgres(pg_db) => {
+                pg_db.fetch_all_rows_raw_sql(query.into(), output).await
+            }
+        }?;
+        Ok(())
+    }
+
     pub async fn query_condition<O: SaveOutput>(
         &mut self,
         condition: SqlCondition,
@@ -192,8 +209,9 @@ impl Workplace {
         additional_condition: Option<SqlCondition>,
         output: &mut O,
     ) -> Result<(), WorkplaceError> {
+        // Fetch module names :
         let extremal_inv = graph_queries::get_extremal_invariants(&extremal, &additional_condition);
-
+        // Compute all invariants :
         self.compute_invariants(extremal_inv, vec![]).await?;
 
         // Get them
