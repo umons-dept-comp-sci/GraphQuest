@@ -50,7 +50,7 @@ gquest add geng [OPTIONS] <(order | range) list> [COMMAND_NAME]
   - orders (like `1,5,7,3`, which will generate graphs of order 1, 3, 5 and 7).
   - or ranges of orders (like `1:5,8:10`, which will generate graphs of orders going from 1 to 10 with the exception of 6 and 7).
 * The $\texttt{ARGS}$ option is present to allow additional parameters that can be provided to `geng` to control the class of the graph to generate (ex: "c" for connected graphs).
-* Sometimes the $\texttt{geng}$ program has a different name in the path, such as $\texttt{nauty-geng}$ which will prevent the cli from calling it, so the $\texttt{COMMAND\_NAME}$ field can be used to change the name of the program to execute. This also allows the user to use a diferent graph generation programs from the nauty suit like $\texttt{gentreeg}$ for example.
+* Sometimes the $\texttt{geng}$ program has a different name in the path, such as $\texttt{nauty-geng}$ which will prevent the cli from calling it, so the **COMMAND_NAME** field can be used to change the name of the program to execute. This also allows the user to use a diferent graph generation programs from the nauty suit like $\texttt{gentreeg}$ for example.
 > [!NOTE]
 > To use all of `geng` features, such as controlling the number of edges, you can always use the original tool alongside the "*file*" and "*pipe*" commands. This command is simply a quick shortcut targeted for a simple usage. 
 
@@ -353,7 +353,7 @@ This can be translated to: *find the graphs with the minimum value for a given `
 
 Another feature is the search of counter-examples for a given **extremal** conjecture, which can be expressed using the following syntax:
 
-```py
+```ebnf
 if_then_cond = "if", extremal_condition, "then", condition 
               | extremal_condition, "->", condition;
 ```
