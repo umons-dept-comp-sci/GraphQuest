@@ -1,0 +1,162 @@
+{
+  "batch_size": 5000,
+  "nb_threads": 10,
+  "modules": [
+    {
+      "path": "P_Gn.py",
+      "names": [
+        "P_Gn"
+      ]
+    },
+    {
+      "path": "km_rm.py",
+      "names": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "is_Bmn.py",
+      "names": [
+        "is_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "P_Bmn.py",
+      "names": [
+        "P_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "randie_index.py",
+      "names": [
+        "r"
+      ]
+    },
+    {
+      "path": "arithmetic_geo_index.py",
+      "names": [
+        "ag"
+      ]
+    },
+    {
+      "path": "edges.py",
+      "names": [
+        "m"
+      ]
+    },
+    {
+      "path": "conj_1.py",
+      "names": [
+        "conj1"
+      ],
+      "dep": [
+        "ag",
+        "r"
+      ]
+    },
+    {
+      "path": "d_nm.py",
+      "names": [
+        "d_nm"
+      ]
+    },
+    {
+      "path": "eci.py",
+      "names": [
+        "eci"
+      ]
+    },
+    {
+      "path": "comp.py",
+      "names": [
+        "comp"
+      ],
+      "dep": [
+        "d_nm"
+      ]
+    },
+    {
+      "path": "is_planar.py",
+      "names": [
+        "is_planar"
+      ]
+    },
+    {
+      "path": "rust_module/chromatic_nb",
+      "names": [
+        "chromatic_nb"
+      ]
+    },
+    {
+      "path": "max_degree.py",
+      "names": [
+        "max_degree"
+      ]
+    },
+    {
+      "path": "is_bipartite.py",
+      "names": [
+        "is_bipartite"
+      ]
+    },
+    {
+      "path": "clique_size.py",
+      "names": [
+        "max_clique"
+      ]
+    },
+    {
+      "path": "diameter.py",
+      "names": [
+        "D"
+      ]
+    },
+    {
+      "path": "is_connected.py",
+      "names": [
+        "is_connected"
+      ]
+    },
+    {
+      "path": "is_cycle.py",
+      "names": [
+        "is_cycle"
+      ]
+    },
+    {
+      "path": "is_complete.py",
+      "names": [
+        "is_complete"
+      ]
+    },
+    {
+      "path": "rust_module/conj_res",
+      "names": [
+        "conj_res"
+      ],
+      "dep": [
+        "ag",
+        "r"
+      ]
+    }
+  ],
+  "aliases": [
+    [
+      "is_four_colorable",
+      "chromatic_nb <= 4"
+    ],
+    [
+      "test",
+      "1 + 1"
+    ]
+  ]
+}

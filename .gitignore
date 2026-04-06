@@ -19,6 +19,10 @@ Cargo.lock
 *.db-shm
 *.db-wal
 
+# For the python use cases + env. variables
+*.venv
+*.env
+
 
 # For vscode
 .vscode
@@ -34,3 +38,6 @@ Cargo.lock
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+
+*__pycache__/
