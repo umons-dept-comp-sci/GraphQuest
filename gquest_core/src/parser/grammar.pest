@@ -104,7 +104,7 @@ then          = _{ "then" }
 
 and_op =  { "and" | "∧" }
 or_op  =  { "or" | "v" }
-xor_op  =  { "xor" | "⊕" | "⊻" }
+xor_op  =  { "xor" | "⊕" }
 implication_op =  { "==>" }
 equivalence_op =  { "<==>" | "iff" }
 not_op = _{ "not" | "!" }
