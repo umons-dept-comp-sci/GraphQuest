@@ -23,10 +23,7 @@ pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<
 
     info!("Sending raw sql query");
 
-    let output = query_args.output.unwrap_or(OutputChoice::Table {
-        partial: None,
-        latex: false,
-    });
+    let output = get_default_output(query_args.output);
 
     match output {
         OutputChoice::File { path, separator } => {
@@ -37,13 +34,17 @@ pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<
         OutputChoice::Stdout => {
             Workplace::send_raw_sql(db.clone(), query_args.query, &mut StdoutOutput).await?;
         }
-        OutputChoice::Table { partial, latex } => {
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
                 QueryTableOptions::Full
             };
-            let mut table = QueryTable::new_no_header(options);
+            let mut table = QueryTable::new_no_header(!no_id, options);
 
             Workplace::send_raw_sql(db.clone(), query_args.query, &mut table).await?;
 
@@ -70,10 +71,8 @@ pub async fn query_database(
     config_arg: ConfigFileArg,
     is_counter: bool,
 ) -> Result<(), CliError> {
-    let output = query_args.output.unwrap_or(OutputChoice::Table {
-        partial: None,
-        latex: false,
-    });
+    let output = get_default_output(query_args.output);
+
     // open database :
     info!("Opening database");
     let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
@@ -159,13 +158,17 @@ async fn workplace_condition_query(
             wp.query_condition(cond, &mut StdoutOutput).await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial, latex } => {
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
                 QueryTableOptions::Full
             };
-            let mut table = QueryTable::new_no_header(options);
+            let mut table = QueryTable::new_no_header(!no_id, options);
             wp.query_condition(cond, &mut table).await?;
             info!("Finished executing query");
             println!(
@@ -201,13 +204,17 @@ async fn workplace_extremal_query(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial, latex } => {
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
                 QueryTableOptions::Full
             };
-            let mut table = QueryTable::new_no_header(options);
+            let mut table = QueryTable::new_no_header(!no_id, options);
             wp.find_extremals_graphs(selection, add_cond, &mut table)
                 .await?;
             info!("Finished executing query");
@@ -242,13 +249,17 @@ async fn workplace_extremal_conjecture(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial, latex } => {
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
                 QueryTableOptions::Full
             };
-            let mut table = QueryTable::new_no_header(options);
+            let mut table = QueryTable::new_no_header(!no_id, options);
             wp.query_extremal_conjecture(conj_query, &mut table).await?;
             info!("Finished executing query");
             println!(
@@ -283,13 +294,17 @@ async fn workplace_conjecture(
                 .await?;
             info!("Finished executing query");
         }
-        OutputChoice::Table { partial, latex } => {
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
             let options = if let Some(partial_input) = partial {
                 ArgParser::parse_partial_table(&partial_input)?
             } else {
                 QueryTableOptions::Full
             };
-            let mut table = QueryTable::new_no_header(options);
+            let mut table = QueryTable::new_no_header(!no_id, options);
             wp.query_conjecture(left_cond, right_cond, &mut table)
                 .await?;
             info!("Finished executing query");
@@ -307,23 +322,56 @@ async fn workplace_conjecture(
     Ok(())
 }
 
-pub async fn summary(path: DatabasePath, partial: Option<String>) -> Result<(), CliError> {
+pub async fn summary(path: DatabasePath, output: Option<OutputChoice>) -> Result<(), CliError> {
     // open database :
     info!("Opening database");
     let mut db = AllowedGraphDb::connect_from_url(path.url, None).await?;
 
-    let table_opt = if let Some(partial) = partial {
-        ArgParser::parse_partial_table(&partial)?
-    } else {
-        QueryTableOptions::Full
-    };
-    let res = match &mut db {
-        AllowedGraphDb::Sqlite(sqlite_db) => sqlite_db.print_all_tables(table_opt).await,
-        AllowedGraphDb::Postgres(pgsql_db) => pgsql_db.print_all_tables(table_opt).await,
+    let output = get_default_output(output);
+
+    let res = match output {
+        OutputChoice::File {
+            path: _,
+            separator: _,
+        } => {
+            println!("Not yet implemented");
+            Ok(())
+        }
+        OutputChoice::Stdout => {
+            println!("Not yet implemented");
+            Ok(())
+        }
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
+            let table_opt = if let Some(p) = partial {
+                ArgParser::parse_partial_table(&p)?
+            } else {
+                QueryTableOptions::Full
+            };
+            match &mut db {
+                AllowedGraphDb::Sqlite(sqlite_db) => {
+                    sqlite_db.print_all_tables(!no_id, table_opt, latex).await
+                }
+                AllowedGraphDb::Postgres(pgsql_db) => {
+                    pgsql_db.print_all_tables(!no_id, table_opt, latex).await
+                }
+            }
+        }
     };
 
     info!("Closing database");
     db.close_connection().await;
 
     Ok(res?)
+}
+
+pub fn get_default_output(output: Option<OutputChoice>) -> OutputChoice {
+    output.unwrap_or(OutputChoice::Table {
+        no_id: false,
+        partial: None,
+        latex: false,
+    })
 }

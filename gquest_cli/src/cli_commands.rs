@@ -81,9 +81,8 @@ pub enum Modes {
     /// Shows the tables present in the database
     #[command(alias = "sm")]
     Summary {
-        /// [n:m] Only displays the n first and the m last rows. Can improve performances and visibility.
-        #[clap(short)]
-        partial: Option<String>,
+        #[command(subcommand, name = "OUTPUT")]
+        output: Option<OutputChoice>,
     },
 }
 
@@ -179,6 +178,9 @@ pub enum OutputChoice {
         /// Returns the result as a valid latex table.
         #[clap(short, long, default_value("false"))]
         latex: bool,
+        /// Hides the index column of the table.
+        #[clap(short, long, default_value("false"))]
+        no_id: bool,
     },
 }
 

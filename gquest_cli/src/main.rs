@@ -36,7 +36,7 @@ async fn main() {
         Modes::Counter { args, config } => query_database(path, args, config, true).await,
         Modes::Sql { args } => query_raw_sql(path, args).await,
         Modes::Remove { choice } => remove_dataset(path, choice).await,
-        Modes::Summary { partial } => summary(path, partial).await,
+        Modes::Summary { output } => summary(path, output).await,
     } {
         Ok(_) => {}
         Err(e) => {
