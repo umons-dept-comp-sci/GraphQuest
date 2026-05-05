@@ -118,9 +118,6 @@ pub struct GengArgs {
     /// The command to use to call the geng program. Can sometimes be `nauty-geng` instead.
     #[clap(default_value = "geng")]
     pub command_name: String,
-    /// The additional argument to pass to the geng program.
-    #[clap(short)]
-    pub args: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -134,7 +131,7 @@ pub enum DatasetChoice {
     #[clap(alias = "f")]
     /// Imports graph signatures from a file
     File {
-        /// The path to were the dataset to add is stored
+        /// The path of the file to read
         path: String,
     },
     #[clap(alias = "p")]
@@ -200,6 +197,6 @@ pub enum RemoveChoice {
     /// Removes the dataset from the database.
     Dataset,
     #[command(alias = "a")]
-    /// Removes all tables from the database, even if not related to gquest !
+    /// Removes all tables from the database (even those unrelated to gquest)
     All,
 }

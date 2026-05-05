@@ -54,33 +54,17 @@
       ]
     },
     {
-      "path": "conj_1.py",
+      "path": "eci.py",
       "names": [
-        "conj1"
+        "eci_G", "eci_E"
       ],
       "dep": [
-        "ag",
-        "r"
+        "d_nm"
       ]
     },
     {
       "path": "d_nm.py",
       "names": [
-        "d_nm"
-      ]
-    },
-    {
-      "path": "eci.py",
-      "names": [
-        "eci"
-      ]
-    },
-    {
-      "path": "comp.py",
-      "names": [
-        "comp"
-      ],
-      "dep": [
         "d_nm"
       ]
     },
@@ -155,8 +139,8 @@
       "chromatic_nb <= 4"
     ],
     [
-      "test",
-      "1 + 1"
+      "precond",
+      "n-1 <= m and m <= n*(n-1)/2 and is_connected"
     ]
   ]
 }

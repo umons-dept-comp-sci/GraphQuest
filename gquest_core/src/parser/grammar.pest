@@ -91,7 +91,7 @@ valid_ascii = _{ ASCII_ALPHANUMERIC | "_" }
 max_func = { "max" }
 min_func = { "min" }
 
-equal         = { "=" | "==" }
+equal         = { "==" | "=" }
 not_equal     = { "!" ~ "=" | "≠" }
 less_equal    = { "<" ~ "=" | "≤" }
 less          = { "<" }

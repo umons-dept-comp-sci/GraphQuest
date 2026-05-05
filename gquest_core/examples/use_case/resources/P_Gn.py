@@ -12,9 +12,6 @@ def P(G):
     n = G.number_of_nodes()
     return int(nx.chromatic_polynomial(G).subs({Symbol("x"): n}))
 
-
-max_flush_count = 1
-
 if __name__ == "__main__":
     flush_count = 0
     for sig in map(str.strip, sys.stdin):
