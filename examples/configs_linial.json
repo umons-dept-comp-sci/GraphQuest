@@ -1,0 +1,51 @@
+{
+  "batch_size": 100,
+  "nb_threads": 4,
+  "modules": [
+    {
+      "path": "modules/P_Gn.py",
+      "names": [
+        "P_Gn"
+      ]
+    },
+    {
+      "path": "modules/km_rm.py",
+      "names": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "modules/is_Bmn.py",
+      "names": [
+        "is_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "modules/P_Bmn.py",
+      "names": [
+        "P_Bmn"
+      ],
+      "dep": [
+        "km",
+        "rm"
+      ]
+    },
+    {
+      "path": "modules/edges.py",
+      "names": [
+        "m"
+      ]
+    },
+    {
+	    "path": "modules/is_connected.py",
+	    "names" :[
+	    "is_connected"
+	    ]
+    }
+  ]
+}

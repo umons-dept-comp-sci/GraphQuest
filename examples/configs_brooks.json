@@ -1,0 +1,42 @@
+{
+  "batch_size": 5000,
+  "nb_threads": 10,
+  "modules": [
+    {
+      "path": "modules/edges.py",
+      "names": [
+        "m"
+      ]
+    },
+    {
+      "path": "modules/chromatic_nb",
+      "names": [
+        "chromatic_nb"
+      ]
+    },
+    {
+      "path": "modules/max_degree.py",
+      "names": [
+        "max_degree"
+      ]
+    },
+    {
+      "path": "modules/is_connected.py",
+      "names": [
+        "is_connected"
+      ]
+    },
+    {
+      "path": "modules/is_cycle.py",
+      "names": [
+        "is_cycle"
+      ]
+    },
+    {
+      "path": "modules/is_complete.py",
+      "names": [
+        "is_complete"
+      ]
+    }
+  ]
+}
