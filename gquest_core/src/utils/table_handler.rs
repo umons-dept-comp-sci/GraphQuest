@@ -76,7 +76,7 @@ struct TableData {
 
 /// Struct representing a stylized table that can be used to store and display informations in a clean way
 pub struct QueryTable {
-    curr_index: usize,
+    curr_index: Option<usize>,
     table_data: TableData,
     header_added: bool,
     mode: QueryTableOptions,
@@ -84,8 +84,12 @@ pub struct QueryTable {
 
 impl QueryTable {
     /// Creates a new [`QueryTable`] with the given header.
-    pub fn new<T: Into<String> + Clone>(header: Vec<T>, mode: QueryTableOptions) -> Self {
-        let mut res = Self::new_no_header(mode);
+    pub fn new<T: Into<String> + Clone>(
+        header: Vec<T>,
+        with_id: bool,
+        mode: QueryTableOptions,
+    ) -> Self {
+        let mut res = Self::new_no_header(with_id, mode);
 
         res.push_line(header);
 
@@ -93,9 +97,9 @@ impl QueryTable {
     }
 
     /// Creates a new empty [`QueryTable`] where the first added line will be considered as the header.
-    pub fn new_no_header(mode: QueryTableOptions) -> Self {
+    pub fn new_no_header(with_id: bool, mode: QueryTableOptions) -> Self {
         Self {
-            curr_index: 0,
+            curr_index: with_id.then_some(0),
             table_data: TableData::default(),
             header_added: false,
             mode,
@@ -231,10 +235,16 @@ impl SaveOutput for QueryTable {
     fn push_line<T: Into<String> + Clone>(&mut self, values: Vec<T>) {
         let mut values_indexed = if !self.header_added {
             self.header_added = true;
-            vec![String::from("i")]
+            if self.curr_index.is_some() {
+                vec![String::from("i")]
+            } else {
+                Vec::new()
+            }
+        } else if let Some(curr_id) = self.curr_index.as_mut() {
+            *curr_id += 1;
+            vec![(*curr_id - 1).to_string()]
         } else {
-            self.curr_index += 1;
-            vec![(self.curr_index - 1).to_string()]
+            Vec::new()
         };
 
         values_indexed.append(&mut to_vec_string(values));

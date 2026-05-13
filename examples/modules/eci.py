@@ -42,4 +42,4 @@ if __name__ == "__main__":
         if (n,m,d_nm) not in mem:
             mem[(n,m, d_nm)] = create_E_nm(n, m, d_nm)
         
-        print(sig, eci(G), eci(mem[(n,m, d_nm)]), flush=True)
+        print(sig, eci(G), eci(mem[(n,m, d_nm)]), int(nx.is_isomorphic(G, mem[(n,m, d_nm)])), flush=True)

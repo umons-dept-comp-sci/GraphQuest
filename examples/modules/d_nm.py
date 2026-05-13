@@ -9,7 +9,7 @@ if __name__ == "__main__":
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
         m = G.size()
         n = G.order()
+        
 
         d_nm = floor((2* n + 1 - sqrt(17 + 8 * (m - n))) /2 )
-                
         print(sig, d_nm, flush=True)

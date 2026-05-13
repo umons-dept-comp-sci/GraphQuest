@@ -418,7 +418,9 @@ where
     /// Pretty prints all table to the standart output.
     pub async fn print_all_tables(
         &self,
+        with_id: bool,
         table_option: QueryTableOptions,
+        to_latex: bool,
     ) -> Result<(), GraphDbRuntimeError> {
         // Get all tables :
         let tables = self.get_all_table_names().await?;
@@ -427,14 +429,21 @@ where
             return Ok(());
         }
         for table in tables {
-            let mut query_table = QueryTable::new_no_header(table_option.clone());
+            let mut query_table = QueryTable::new_no_header(with_id, table_option.clone());
             self.fetch_all_row_query(
                 &SqlSelectQuery::select_all_from_table(table),
                 &mut query_table,
             )
             .await?;
 
-            println!("{query_table}");
+            println!(
+                "{}",
+                if to_latex {
+                    query_table.to_latex()
+                } else {
+                    query_table.to_string()
+                }
+            );
         }
 
         Ok(())

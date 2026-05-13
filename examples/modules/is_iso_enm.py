@@ -23,14 +23,6 @@ def create_E_nm(n, m, d):
             to_link -= 1
     return res
 
-
-def eci(G: nx.Graph):
-    eccs = nx.eccentricity(G)
-    res = 0
-    for vertice in eccs.keys():
-        res += (eccs[vertice] *  G.degree(vertice))
-    return res
-
 mem = {}
 
 if __name__ == "__main__":
@@ -41,5 +33,5 @@ if __name__ == "__main__":
         n, m = G.order(), G.size()
         if (n,m,d_nm) not in mem:
             mem[(n,m, d_nm)] = create_E_nm(n, m, d_nm)
-        
-        print(sig, eci(G), eci(mem[(n,m, d_nm)]), flush=True)
+    
+        print(sig, int(nx.is_isomorphic(G, mem[(n,m, d_nm)])), flush=True)
