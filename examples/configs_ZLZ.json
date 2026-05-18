@@ -15,18 +15,17 @@
       ]
     },
     {
-      "path": "modules/d_nm.py",
+      "path": "modules/complete_but_two.py",
       "names": [
-        "d_nm"
+        "is_complete_but_two"
       ]
     },
     {
       "path": "modules/eci.py",
       "names": [
-        "eci_G", "eci_E", "is_Enm"
-      ],
-      "dep": [
-        "d_nm"
+        "eci_G",
+        "eci_E",
+        "is_Enm"
       ]
     }
   ],
@@ -34,6 +33,10 @@
     [
       "precond",
       "n-1 <= m and m <= n*(n-1)/2 and is_connected"
+    ],
+    [
+      "d_nm",
+      "floor((2*n + 1 - sqrt(17 + 8*(m - n)))/2)"
     ]
   ]
 }
