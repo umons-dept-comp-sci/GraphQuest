@@ -21,50 +21,10 @@ if __name__ == "__main__":
             # list of vertices not present in the complete graph
             vertices = [item for item in list(range(G.order())) if item not in biggest_clique]
             # These two vertices cannot be adjacent
-            has_kn = len(vertices) == 2 and not G.has_edge(vertices[0], vertices[1]) and len(nx.common_neighbors(G, vertices[0], vertices[1])) == 0
             # And cannot share a common end
+            has_kn = len(vertices) == 2 and not G.has_edge(vertices[0], vertices[1]) and len(nx.common_neighbors(G, vertices[0], vertices[1])) == 0
 
-
-        # # Checks that the other 
-        # print(cliques)
+            # Their combined degrees need to sum to n-2:
+            has_kn = has_kn and (G.degree(vertices[0]) + G.degree(vertices[1]) == n-2)
         
         print(sig, int(has_kn), flush=True)
-
-
-# sig n m is_connected eci_G eci_E is_Enm
-# FJ]|w 7 15 1 65 65 0
-# GTlzz{ 8 21 1 90 90 0
-# GJ\||{ 8 21 1 90 90 0
-# ET\w 6 10 1 44 44 0
-
-
-# "precond and n <= 8 -> d_nm >= 3 and has_complete and eci_G == eci_E and is_Enm"
-
-
-# sig n m is_connected eci_G eci_E is_Enm
-# ITm~vvz}w 10 36 1 152 152 0
-# ITm|~z|~W 10 36 1 152 152 0
-# ITm||~}~g 10 36 1 152 152 0
-# FJ]|w 7 15 1 65 65 0
-# GTlzz{ 8 21 1 90 90 0
-# GJ\||{ 8 21 1 90 90 0
-# ET\w 6 10 1 44 44 0
-# HJ\||}~ 9 28 1 119 119 0
-# HJ\z|}~ 9 28 1 119 119 0
-
-
-
-
-
-
-
-# sig n m is_connected eci_G eci_E is_Enm
-# FJ]|w 7 15 1 65 65 0
-# GTlzz{ 8 21 1 90 90 0
-# GJ\||{ 8 21 1 90 90 0
-# ET\w 6 10 1 44 44 0
-# HJ\||}~ 9 28 1 119 119 0
-# HJ\z|}~ 9 28 1 119 119 0
-# ITm~vvz}w 10 36 1 152 152 0
-# ITm|~z|~W 10 36 1 152 152 0
-# ITm||~}~g 10 36 1 152 152 0

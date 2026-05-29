@@ -40,5 +40,5 @@ if __name__ == "__main__":
         if (n,m) not in mem:
             d_nm = floor((2* n + 1 - sqrt(17 + 8 * (m - n))) /2 )
             mem[(n,m)] = create_E_nm(n, m, d_nm)
-        
+
         print(sig, eci(G), eci(mem[(n,m)]), int(nx.is_isomorphic(G, mem[(n,m)])), flush=True)

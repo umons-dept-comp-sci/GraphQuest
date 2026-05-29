@@ -1,0 +1,16 @@
+{
+  "modules": [
+    {
+      "path": "modules/is_planar.py",
+      "names": [
+        "is_planar"
+      ]
+    },
+    {
+      "path": "modules/chromatic_nb",
+      "names": [
+        "chromatic_nb"
+      ]
+    }
+  ]
+}
