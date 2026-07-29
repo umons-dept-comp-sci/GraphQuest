@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     pin::Pin,
 };
@@ -28,64 +28,64 @@ pub enum ColumnType {
 
 /// Represents a condition that could appear in a where clause.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SqlCondition {
+pub enum Condition {
     /// A simple comparison
-    Operation(SqlComparison),
+    Operation(Comparison),
     /// `x` or `y`
-    Or(Box<SqlCondition>, Box<SqlCondition>),
+    Or(Box<Condition>, Box<Condition>),
     /// `x` and `y`
-    And(Box<SqlCondition>, Box<SqlCondition>),
+    And(Box<Condition>, Box<Condition>),
     /// `x_0` and `x_1` and ... and `x_{n-1}`.
-    AndVec(Box<SqlCondition>, Vec<SqlCondition>),
+    AndVec(Box<Condition>, Vec<Condition>),
     /// `x_0` or `x_1` or ... or `x_{n-1}`.
-    OrVec(Box<SqlCondition>, Vec<SqlCondition>),
+    OrVec(Box<Condition>, Vec<Condition>),
     /// not `x`
-    Not(Box<SqlCondition>),
+    Not(Box<Condition>),
     /// exists `x`
     Exists(Box<SqlSelectQuery>),
 }
 
-impl SqlCondition {
+impl Condition {
     /// Simplifies the creation of the [`SqlCondition::And`] enum.
-    pub fn and(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+    pub fn and(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
         Self::And(Box::new(cond_1.into()), Box::new(cond_2.into()))
     }
 
     /// Simplifies the creation of the [`SqlCondition::Or`] enum.
-    pub fn or(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+    pub fn or(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
         Self::Or(Box::new(cond_1.into()), Box::new(cond_2.into()))
     }
 
     /// Simplifies the creation of the [`SqlCondition::Not`] enum.
-    pub fn not(cond: impl Into<SqlCondition>) -> Self {
+    pub fn not(cond: impl Into<Condition>) -> Self {
         Self::Not(Box::new(cond.into()))
     }
 
     /// Creates an equivalente condition to the `xor` operator.
     /// `x xor y` iff `(x or y) and not(x and y)`
-    pub fn xor(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+    pub fn xor(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
         let cond_1 = cond_1.into();
         let cond_2 = cond_2.into();
-        SqlCondition::and(
-            SqlCondition::or(cond_1.clone(), cond_2.clone()),
-            SqlCondition::not(SqlCondition::and(cond_1, cond_2)),
+        Condition::and(
+            Condition::or(cond_1.clone(), cond_2.clone()),
+            Condition::not(Condition::and(cond_1, cond_2)),
         )
     }
 
     /// Creates an equivalente condition to a logical implication.
     /// `x ==> y` iff `not(x) or y`
-    pub fn implication(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
-        SqlCondition::or(SqlCondition::not(cond_1), cond_2)
+    pub fn implication(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
+        Condition::or(Condition::not(cond_1), cond_2)
     }
 
     /// Creates an equivalente condition to a logical equivalence.
     /// `x <==> y` iff `(x ==> y) or (y ==> x)`
-    pub fn equivalence(cond_1: impl Into<SqlCondition>, cond_2: impl Into<SqlCondition>) -> Self {
+    pub fn equivalence(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
         let cond_1 = cond_1.into();
         let cond_2 = cond_2.into();
-        SqlCondition::and(
-            SqlCondition::implication(cond_1.clone(), cond_2.clone()),
-            SqlCondition::implication(cond_2, cond_1),
+        Condition::and(
+            Condition::implication(cond_1.clone(), cond_2.clone()),
+            Condition::implication(cond_2, cond_1),
         )
     }
 
@@ -97,7 +97,7 @@ impl SqlCondition {
     /// Simplifies the creation of the [`SqlCondition::AndVec`] enum.
     ///
     /// If `conds` is empty, then `cond_1` will simply be returned.
-    pub fn and_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
+    pub fn and_vec(cond_1: impl Into<Condition>, conds: Vec<impl Into<Condition>>) -> Self {
         if conds.is_empty() {
             cond_1.into()
         } else {
@@ -111,7 +111,7 @@ impl SqlCondition {
     /// Simplifies the creation of the [`SqlCondition::OrVec`] enum.
     ///
     /// If `conds` is empty, then `cond_1` will simply be returned.
-    pub fn or_vec(cond_1: impl Into<SqlCondition>, conds: Vec<impl Into<SqlCondition>>) -> Self {
+    pub fn or_vec(cond_1: impl Into<Condition>, conds: Vec<impl Into<Condition>>) -> Self {
         if conds.is_empty() {
             cond_1.into()
         } else {
@@ -126,25 +126,25 @@ impl SqlCondition {
     pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
         let prefix = prefix.to_string();
         match self {
-            SqlCondition::Operation(sql_comparison) => {
+            Condition::Operation(sql_comparison) => {
                 sql_comparison.add_prefix_identifier(prefix);
             }
-            SqlCondition::Or(sql_condition, sql_condition1)
-            | SqlCondition::And(sql_condition, sql_condition1) => {
+            Condition::Or(sql_condition, sql_condition1)
+            | Condition::And(sql_condition, sql_condition1) => {
                 sql_condition.add_prefix_identifier(&prefix);
                 sql_condition1.add_prefix_identifier(prefix);
             }
-            SqlCondition::AndVec(sql_condition, sql_conditions)
-            | SqlCondition::OrVec(sql_condition, sql_conditions) => {
+            Condition::AndVec(sql_condition, sql_conditions)
+            | Condition::OrVec(sql_condition, sql_conditions) => {
                 sql_condition.add_prefix_identifier(&prefix);
                 sql_conditions
                     .iter_mut()
                     .for_each(|cond| cond.add_prefix_identifier(&prefix));
             }
-            SqlCondition::Not(sql_condition) => {
+            Condition::Not(sql_condition) => {
                 sql_condition.add_prefix_identifier(prefix);
             }
-            SqlCondition::Exists(_) => {
+            Condition::Exists(_) => {
                 todo!("Renaming is not yet implemented for select queries")
             }
         }
@@ -154,33 +154,33 @@ impl SqlCondition {
     pub fn get_all_identifiers(&self) -> IndexSet<String> {
         let mut res: IndexSet<String> = IndexSet::new();
         match &self {
-            SqlCondition::Operation(sql_comparison) => match sql_comparison {
-                SqlComparison::Greater(a, b)
-                | SqlComparison::GreaterEqual(a, b, _)
-                | SqlComparison::Less(a, b)
-                | SqlComparison::LessEqual(a, b, _)
-                | SqlComparison::Equal(a, b, _)
-                | SqlComparison::NotEqual(a, b, _) => {
+            Condition::Operation(sql_comparison) => match sql_comparison {
+                Comparison::Greater(a, b)
+                | Comparison::GreaterEqual(a, b, _)
+                | Comparison::Less(a, b)
+                | Comparison::LessEqual(a, b, _)
+                | Comparison::Equal(a, b, _)
+                | Comparison::NotEqual(a, b, _) => {
                     res.extend(a.get_all_identifiers());
                     res.extend(b.get_all_identifiers());
                 }
             },
-            SqlCondition::And(sql_condition, sql_condition1)
-            | SqlCondition::Or(sql_condition, sql_condition1) => {
+            Condition::And(sql_condition, sql_condition1)
+            | Condition::Or(sql_condition, sql_condition1) => {
                 res.extend(sql_condition.get_all_identifiers());
                 res.extend(sql_condition1.get_all_identifiers());
             }
-            SqlCondition::Not(sql_condition) => {
+            Condition::Not(sql_condition) => {
                 res.extend(sql_condition.get_all_identifiers());
             }
-            SqlCondition::AndVec(sql_condition, sql_conditions)
-            | SqlCondition::OrVec(sql_condition, sql_conditions) => {
+            Condition::AndVec(sql_condition, sql_conditions)
+            | Condition::OrVec(sql_condition, sql_conditions) => {
                 res.extend(sql_condition.get_all_identifiers());
                 for condition in sql_conditions {
                     res.extend(condition.get_all_identifiers());
                 }
             }
-            SqlCondition::Exists(_sql_select_query) => {
+            Condition::Exists(_sql_select_query) => {
                 todo!(
                     "Conditions using sql selections are not yet supported since finding identifiers names is harder here."
                 )
@@ -195,7 +195,7 @@ impl SqlCondition {
         DB: Database + DbQuerySystem<DB>,
     {
         let concat =
-            |cond1: &SqlCondition, operator: &str, sql_conditions: &Vec<SqlCondition>| -> String {
+            |cond1: &Condition, operator: &str, sql_conditions: &Vec<Condition>| -> String {
                 let mut res = cond1.to_sql::<DB>().to_string();
 
                 for condition in sql_conditions {
@@ -206,13 +206,17 @@ impl SqlCondition {
             };
 
         match self {
-            SqlCondition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
-            SqlCondition::And(a, b) => format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
-            SqlCondition::Or(a, b) => format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>()),
-            SqlCondition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
-            SqlCondition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
-            SqlCondition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
-            SqlCondition::Exists(sql_select_query) => {
+            Condition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
+            Condition::And(a, b) => {
+                format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+            }
+            Condition::Or(a, b) => {
+                format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+            }
+            Condition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
+            Condition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
+            Condition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
+            Condition::Exists(sql_select_query) => {
                 format!("EXISTS({})", DB::to_sql(sql_select_query))
             }
         }
@@ -222,7 +226,7 @@ impl SqlCondition {
 /// Represents a comparison that can be used in an Sql where clause.
 /// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SqlComparison {
+pub enum Comparison {
     /// `a > b`
     Greater(MathExpression, MathExpression),
     /// `a >= b` / `a > b or |a - b| < epsilon`
@@ -239,7 +243,7 @@ pub enum SqlComparison {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MathExpression {
-    Primitif(ArgType),
+    Primitif(ParsedArgType),
     // Unary op
     Negation(Box<MathExpression>),
     Floor(Box<MathExpression>),
@@ -271,7 +275,7 @@ impl MathExpression {
         Self::Sqrt(Box::new(expr.into()))
     }
 
-    pub fn primitif(arg: impl Into<ArgType>) -> Self {
+    pub fn primitif(arg: impl Into<ParsedArgType>) -> Self {
         Self::Primitif(arg.into())
     }
     pub fn bin_operation(
@@ -291,9 +295,10 @@ impl MathExpression {
         let mut res: HashSet<String> = HashSet::new();
         match self {
             MathExpression::Primitif(arg_type) => {
-                if let ArgType::Identifier(id) = arg_type {
-                    res.insert(id.clone());
-                }
+                // if let ArgType::Identifier(id) = arg_type {
+                //     res.insert(id.clone());
+                // }
+                // TODO: Same here as bellow
             }
             MathExpression::Negation(math_expression)
             | MathExpression::Floor(math_expression)
@@ -315,9 +320,10 @@ impl MathExpression {
         let prefix = prefix.to_string();
         match self {
             MathExpression::Primitif(arg_type) => {
-                if let ArgType::Identifier(name) = arg_type {
-                    *name = format!("{prefix}{name}");
-                }
+                // if let ArgType::Identifier(name) = arg_type {
+                //     *name = format!("{prefix}{name}");
+                // }
+                // TODO: This entire function will have to be redone
             }
             MathExpression::Negation(math_expression)
             | MathExpression::Floor(math_expression)
@@ -347,56 +353,97 @@ pub enum ArithmOp {
 /// Used to correctly identify arguments type,
 /// otherwise it would be hard to guess if they refer to a value or an identifier.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ArgType {
+pub enum ParsedArgType {
     Value(String),
-    Identifier(String),
+    Graph,
+    Function(ParsedFunction),
 }
 
-impl From<ArgType> for MathExpression {
-    fn from(value: ArgType) -> Self {
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedFunction {
+    pub name: String,
+    pub first_arg: Box<MathExpression>,
+    pub other_args: Vec<MathExpression>,
+}
+
+impl From<ParsedFunction> for ParsedArgType {
+    fn from(value: ParsedFunction) -> Self {
+        ParsedArgType::Function(value)
+    }
+}
+
+impl From<ParsedArgType> for MathExpression {
+    fn from(value: ParsedArgType) -> Self {
         MathExpression::Primitif(value)
     }
 }
 
-impl ArgType {
+impl ParsedArgType {
     pub fn value(value: impl ToString) -> Self {
-        ArgType::Value(value.to_string())
+        ParsedArgType::Value(value.to_string())
     }
-    pub fn identifier(name: impl ToString) -> Self {
-        ArgType::Identifier(name.to_string())
+    // pub fn identifier(name: impl ToString) -> Self {
+    //     ArgType::Identifier(name.to_string())
+    // }
+    pub fn function(
+        name: impl ToString,
+        first_arg: impl Into<MathExpression>,
+        args: Vec<impl Into<MathExpression>>,
+    ) -> Self {
+        let args = args.into_iter().map(|m| m.into()).collect();
+        ParsedFunction {
+            name: name.to_string(),
+            first_arg: Box::new(first_arg.into()),
+            other_args: args,
+        }
+        .into()
+    }
+
+    pub fn invariant(name: impl ToString) -> Self {
+        ParsedFunction {
+            name: name.to_string(),
+            first_arg: Box::new(ParsedArgType::Graph.into()),
+            other_args: Vec::new(),
+        }
+        .into()
     }
 }
 
-impl Display for ArgType {
+impl Display for ParsedArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                ArgType::Value(v) => v.to_string(),
-                ArgType::Identifier(v) => v.to_string(),
+                ParsedArgType::Value(v) => v.to_string(),
+                ParsedArgType::Graph => "G".to_string(),
+                // ArgType::Identifier(v) => v.to_string(),
+                ParsedArgType::Function(function) => format!(
+                    "{}({:?},{:?})",
+                    function.name, function.first_arg, function.other_args
+                ), // FIXME: this is not valid SQL !!!
             }
         )
     }
 }
 
-impl From<SqlComparison> for SqlCondition {
-    fn from(val: SqlComparison) -> Self {
-        SqlCondition::Operation(val)
+impl From<Comparison> for Condition {
+    fn from(val: Comparison) -> Self {
+        Condition::Operation(val)
     }
 }
 
-impl SqlComparison {
+impl Comparison {
     /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
     pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
         let prefix = prefix.to_string();
         match self {
-            SqlComparison::Greater(left, right)
-            | SqlComparison::GreaterEqual(left, right, _)
-            | SqlComparison::Less(left, right)
-            | SqlComparison::LessEqual(left, right, _)
-            | SqlComparison::Equal(left, right, _)
-            | SqlComparison::NotEqual(left, right, _) => {
+            Comparison::Greater(left, right)
+            | Comparison::GreaterEqual(left, right, _)
+            | Comparison::Less(left, right)
+            | Comparison::LessEqual(left, right, _)
+            | Comparison::Equal(left, right, _)
+            | Comparison::NotEqual(left, right, _) => {
                 left.add_prefix_identifier(&prefix);
                 right.add_prefix_identifier(prefix);
             }
@@ -408,18 +455,18 @@ impl SqlComparison {
         DB: Database + DbQuerySystem<DB>,
     {
         match self {
-            SqlComparison::Greater(a, b) => format!(
+            Comparison::Greater(a, b) => format!(
                 "{} > {}",
                 DB::translate_math_expr(a),
                 DB::translate_math_expr(b)
             ),
-            SqlComparison::GreaterEqual(a, b, epsilon) => match epsilon {
+            Comparison::GreaterEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a > b or |a - b| < epsilon
                     format!(
                         "({}) OR ({})",
-                        SqlComparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
-                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                        Comparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
                     )
                 }
                 None => {
@@ -430,18 +477,18 @@ impl SqlComparison {
                     )
                 }
             },
-            SqlComparison::Less(a, b) => format!(
+            Comparison::Less(a, b) => format!(
                 "{} < {}",
                 DB::translate_math_expr(a),
                 DB::translate_math_expr(b)
             ),
-            SqlComparison::LessEqual(a, b, epsilon) => match epsilon {
+            Comparison::LessEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a < b or |a - b| < epsilon
                     format!(
                         "({}) OR ({})",
-                        SqlComparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
-                        SqlComparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                        Comparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
                     )
                 }
                 None => {
@@ -452,16 +499,16 @@ impl SqlComparison {
                     )
                 }
             },
-            SqlComparison::Equal(a, b, epsilon) => match epsilon {
+            Comparison::Equal(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // |a - b| < eps
-                    SqlComparison::Less(
+                    Comparison::Less(
                         MathExpression::abs(MathExpression::bin_operation(
                             a.clone(),
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        ArgType::value(eps).into(),
+                        ParsedArgType::value(eps).into(),
                     )
                     .to_sql::<DB>()
                 }
@@ -473,16 +520,16 @@ impl SqlComparison {
                     )
                 }
             },
-            SqlComparison::NotEqual(a, b, epsilon) => match epsilon {
+            Comparison::NotEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // |a - b| >= eps
-                    SqlComparison::GreaterEqual(
+                    Comparison::GreaterEqual(
                         MathExpression::abs(MathExpression::bin_operation(
                             a.clone(),
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        ArgType::value(eps).into(),
+                        ParsedArgType::value(eps).into(),
                         None,
                     )
                     .to_sql::<DB>()
@@ -592,7 +639,7 @@ pub struct SqlSelectQuery {
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
     /// The condition to impose to the selection
-    pub where_clause: Option<SqlCondition>,
+    pub where_clause: Option<Condition>,
     /// What to group the selection by
     pub group_by: Vec<String>,
     /// The limit of data to return.
@@ -626,7 +673,7 @@ impl SqlSelectQuery {
     }
 
     /// Returns the *same* query but with the given **where** clause.
-    pub fn set_where_clause(mut self, where_clause: impl Into<SqlCondition>) -> Self {
+    pub fn set_where_clause(mut self, where_clause: impl Into<Condition>) -> Self {
         self.where_clause = Some(where_clause.into());
         self
     }
@@ -634,9 +681,9 @@ impl SqlSelectQuery {
     /// Encapsulates the previous conditions with an [`SqlCondition::And`] composed of the previous condition and the given one.
     ///
     /// And if no conditions were given before then it will be added directly.
-    pub fn add_and(&mut self, additional_cond: impl Into<SqlCondition>) {
+    pub fn add_and(&mut self, additional_cond: impl Into<Condition>) {
         if self.where_clause.is_some() {
-            self.where_clause = Some(SqlCondition::and(
+            self.where_clause = Some(Condition::and(
                 self.where_clause.take().expect("is some"),
                 additional_cond,
             ))

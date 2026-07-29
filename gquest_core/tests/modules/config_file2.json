@@ -1,0 +1,41 @@
+{
+    "modules": [
+        {
+            "function": "P",
+            "path": "a.py",
+            "args": [
+                {
+                    "name": "sig",
+                    "class": "graph"
+                },
+                {
+                    "name": "k",
+                    "class": "numeric"
+                }
+            ],
+            "output": "numeric",
+            "batch_size": 10000
+        },
+        {
+            "function": "chromatic_nb",
+            "path": "a.py",
+            "output": "numeric"
+        },
+        {
+            "function": "Q",
+            "path": "a.py",
+            "args": [
+                {
+                    "name": "class_name",
+                    "class": "string"
+                }
+            ],
+            "output": "string"
+        },
+        {
+            "function": "n",
+            "path": "a.py",
+            "output": "numeric"
+        }
+    ]
+}

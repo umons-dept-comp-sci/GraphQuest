@@ -5,8 +5,8 @@ use sqlx::Database;
 use thiserror::Error;
 
 use crate::database_handler::{
-    ArgType, CANONICAL_TABLE_NAME, DbQuerySystem, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME,
-    SqlComparison, SqlCondition, SqlSelectQuery, SqlTableSelection,
+    ParsedArgType, CANONICAL_TABLE_NAME, DbQuerySystem, EXTREMAL_TABLE_NAME, FULL_TABLE_NAME, PK_NAME,
+    Comparison, Condition, SqlSelectQuery, SqlTableSelection,
 };
 
 pub trait ToSql {
@@ -23,22 +23,22 @@ pub struct ExtremalConjecture {
     /// The condition that the graph of the dataset have to respect for the conjecture.
     pub selection: ClassSelection,
     /// The optional additional condition that can further restrict the graph to explore.
-    pub additional_condition: Option<SqlCondition>,
+    pub additional_condition: Option<Condition>,
     /// The conjecture conditions
-    pub conjecture: SqlCondition,
+    pub conjecture: Condition,
 }
 
 impl ExtremalConjecture {
     /// Encapsulates the conjecture with a [`SqlCondition::Not`] condition in order to try to find a counter example.
     pub fn to_counter_example(&mut self) {
-        self.conjecture = SqlCondition::not(self.conjecture.clone());
+        self.conjecture = Condition::not(self.conjecture.clone());
     }
 }
 
 /// Gets all the names of the invariants to compute in order to find the extremal graphs.
 pub fn get_extremal_invariants(
     selection: &ClassSelection,
-    additional_condition: &Option<SqlCondition>,
+    additional_condition: &Option<Condition>,
 ) -> IndexSet<String> {
     let mut all_inv = IndexSet::new();
     all_inv.insert(selection.invariant_to_max.clone());
@@ -93,14 +93,14 @@ impl ExtremalConjecture {
 
         let mut all_columns = Vec::from_iter(all_columns);
 
-        let all_eq_extremal_clause = SqlCondition::and_vec(
-            SqlComparison::Equal(
-                ArgType::Identifier(format!(
+        let all_eq_extremal_clause = Condition::and_vec(
+            Comparison::Equal( // FIXME: Once again this is really wrong and bad
+                ParsedArgType::invariant(format!(
                     "{FULL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
                 ))
                 .into(),
-                ArgType::Identifier(format!(
+                ParsedArgType::invariant(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     self.selection.invariant_to_max
                 ))
@@ -110,9 +110,9 @@ impl ExtremalConjecture {
             selection_set
                 .into_iter()
                 .map(|column| {
-                    SqlComparison::Equal(
-                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
-                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
+                    Comparison::Equal( // FIXME: Once again this is really wrong and bad
+                        ParsedArgType::invariant(format!("{FULL_TABLE_NAME}.{column}")).into(),
+                        ParsedArgType::invariant(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
                         None,
                     )
                 })
@@ -151,7 +151,7 @@ impl ExtremalConjecture {
 
     fn get_extremal_graphs(
         selection: &ClassSelection,
-        additional_condition: &Option<SqlCondition>,
+        additional_condition: &Option<Condition>,
     ) -> SqlSelectQuery {
         // Find all tables needed for this invariant by looking at the name of every selected column/invariant.
         let mut all_columns = HashSet::new();
@@ -172,11 +172,11 @@ impl ExtremalConjecture {
 
         let mut all_columns = Vec::from_iter(all_columns);
 
-        let all_eq_extremal_clause = SqlCondition::and_vec(
-            SqlComparison::Equal(
-                ArgType::Identifier(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max))
+        let all_eq_extremal_clause = Condition::and_vec(
+            Comparison::Equal( // FIXME: Once again this is really wrong and bad
+                ParsedArgType::invariant(format!("{FULL_TABLE_NAME}.{}", selection.invariant_to_max))
                     .into(),
-                ArgType::Identifier(format!(
+                ParsedArgType::invariant(format!(
                     "{EXTREMAL_TABLE_NAME}.{}",
                     selection.invariant_to_max
                 ))
@@ -186,9 +186,9 @@ impl ExtremalConjecture {
             selection_set
                 .into_iter()
                 .map(|column| {
-                    SqlComparison::Equal(
-                        ArgType::Identifier(format!("{FULL_TABLE_NAME}.{column}")).into(),
-                        ArgType::Identifier(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
+                    Comparison::Equal( // FIXME: Once again this is really wrong and bad
+                        ParsedArgType::invariant(format!("{FULL_TABLE_NAME}.{column}")).into(),
+                        ParsedArgType::invariant(format!("{EXTREMAL_TABLE_NAME}.{column}")).into(),
                         None,
                     )
                 })
@@ -368,7 +368,7 @@ impl ToSql for ClassType {
 
 /// Gets a selection query that can be use to get all graphs that respect the given condition.
 /// If no identifier is present in the condition then a simple selection of the dataset with the condition is returned.
-pub fn select_all_graph_cond(cond: impl Into<SqlCondition>) -> SqlSelectQuery {
+pub fn select_all_graph_cond(cond: impl Into<Condition>) -> SqlSelectQuery {
     let cond = cond.into();
     let invariants = cond.get_all_identifiers();
 
@@ -389,7 +389,7 @@ pub fn select_all_graph_cond(cond: impl Into<SqlCondition>) -> SqlSelectQuery {
 /// Returns a query that can be used to fetch all extremal graphs
 pub fn select_all_extremal_graphs(
     selection: &ClassSelection,
-    additional_condition: &Option<SqlCondition>,
+    additional_condition: &Option<Condition>,
 ) -> SqlSelectQuery {
     let all_inv = ExtremalConjecture::get_extremal_graphs(selection, additional_condition);
     let all_inv_table = SqlTableSelection::new(all_inv);

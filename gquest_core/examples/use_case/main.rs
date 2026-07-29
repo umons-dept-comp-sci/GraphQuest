@@ -7,7 +7,7 @@ use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     utils::config_file::ConfigFile,
-    workplace::Workplace,
+    workplace::GquestEngine,
 };
 use log::{LevelFilter, info};
 
@@ -33,7 +33,7 @@ async fn main() {
 
     let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
 
-    let mut _wp = Workplace::new(db.clone(), config);
+    let mut _wp = GquestEngine::new(db.clone(), config);
 
     // let mut table =
     //     QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);

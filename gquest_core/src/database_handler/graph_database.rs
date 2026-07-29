@@ -732,11 +732,12 @@ where
         {
             let first_inv = executable.invariant_names.last().expect("at least one val");
             if self.is_table_added(first_inv).await? {
-                dataset.add_and(SqlCondition::not(SqlCondition::exists(
+                dataset.add_and(Condition::not(Condition::exists(
                     SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
-                        .set_where_clause(SqlComparison::Equal(
-                            ArgType::Identifier(format!("{first_inv}.{PK_NAME}")).into(),
-                            ArgType::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
+                        .set_where_clause(Comparison::Equal(
+                            // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
+                            ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
+                            ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
                             None,
                         )),
                 )));
