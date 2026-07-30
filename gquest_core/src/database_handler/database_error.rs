@@ -1,6 +1,7 @@
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::{Module, ModuleExecutionError};
+use crate::data_handler::{data_types::ValueTypeError, module::{Module, ModuleExecutionError}};
+
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
@@ -21,9 +22,9 @@ pub enum GraphDbStartupError {
 /// Represents databases error that can happen while the database is already connected.
 pub enum GraphDbRuntimeError {
     #[error(
-        "Tried to execute the following invariant when the dataset was not initialised: \"{0}\""
+        "Tried to execute a module when the dataset was not initialised"
     )]
-    DatasetNotInitialisedError(Module),
+    DatasetNotInitialisedError,
     #[error("The given table name does not exist \"{table_name}\"")]
     TableNotFoundError { table_name: String },
     #[error("A table was already created: \"{0}\"")]
@@ -39,13 +40,13 @@ pub enum GraphDbRuntimeError {
     #[error("Too many bind characters found when working on the query : \"{0}\"")]
     QueryCreationError(String),
     #[error(
-        "Could not compute the invariant \"{0}\" because the \"{1}\" is not present in the database"
+        "Could not compute the module \"{0:?}\" because the \"{1}\" is not present in the database"
     )]
     InvariantDependencyError(Module, String),
     #[error("Ran into an error while computing an executable : \"{0}\"")]
     InvariantExecutionError(#[from] ModuleExecutionError),
     #[error("The given value is not a valid signature: \"{0}\"")]
     InvalidSignature(String),
-    #[error("Could not parse the following value as a float: \"{0}\"")]
-    InvalidReturnValue(String),
+    #[error("Error while parsing a returned value : \"{0}\"")]
+    ValueTypeError(#[from]ValueTypeError),
 }

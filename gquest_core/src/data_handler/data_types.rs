@@ -6,6 +6,8 @@ use thiserror::Error;
 pub enum ValueTypeError {
     #[error("Could not parse \"{0}\" as a valid module type.")]
     UnknownType(String),
+    #[error("Could not parse the value \"{1}\" into a {0} type.")]
+    ParseImpossible(ValueType, String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +16,31 @@ pub enum ValueType {
     String,
     Bool,
     Graph,
+}
+
+impl ValueType {
+    pub fn translate_into_const(
+        &self,
+        str: impl Into<String>,
+    ) -> Result<ConstantValue, ValueTypeError> {
+        let str = str.into();
+
+        Ok(match self {
+            ValueType::Numeric => ConstantValue::Numeric(match str.parse::<f64>() {
+                Ok(num) => num,
+                Err(_) => {
+                    return Err(ValueTypeError::ParseImpossible(self.clone(), str));
+                }
+            }),
+            ValueType::Bool => ConstantValue::Bool(match str.parse::<bool>() {
+                Ok(val) => val,
+                Err(_) => {
+                    return Err(ValueTypeError::ParseImpossible(self.clone(), str));
+                }
+            }),
+            ValueType::String | ValueType::Graph => ConstantValue::String(str),
+        })
+    }
 }
 
 impl Display for ValueType {
@@ -35,6 +62,7 @@ impl Display for ValueType {
 pub enum ConstantValue {
     Numeric(f64),
     String(String),
+    Identifier(String),
     Bool(bool),
 }
 

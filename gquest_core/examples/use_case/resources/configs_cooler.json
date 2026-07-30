@@ -17,6 +17,41 @@
       "output": "numeric"
     },
     {
+      "function": "e_nm",
+      "path": "e_nm.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        },
+        {
+          "name": "d_nm",
+          "class": "numeric"
+        }
+      ],
+      "output": "graph"
+    },
+    {
+      "function": "m",
+      "path": "edges.py",
+      "output": "numeric"
+    },
+    {
+      "function": "n",
+      "path": "order.py",
+      "args": [
+        {
+          "name": "sig",
+          "class": "graph"
+        }
+      ],
+      "output": "numeric"
+    },
+    {
       "function": "is_planar",
       "path": "is_planar.py",
       "output": "numeric"
@@ -24,6 +59,11 @@
     {
       "function": "max_degree",
       "path": "max_degree.py",
+      "output": "numeric"
+    },
+    {
+      "function": "eci",
+      "path": "eci.py",
       "output": "numeric"
     }
   ]

@@ -1,10 +1,10 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
 use crate::{
-    data_handler::rel_graph::FnArg,
+    data_handler::{module::TypedArg, rel_graph::FnArg},
     database_handler::{
-        ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError,
-        GraphDbStartupError, SqlSelectQuery, SqlTable,
+        DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError,
+        SqlSelectQuery, SqlTable,
     },
     parser::parsed_expression::{ArithmOp, MathExpression},
 };
@@ -96,52 +96,27 @@ WHERE schemaname != 'pg_catalog' AND
             .to_string()
     }
 
-    fn get_create_table_value_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-        value_column_name: impl ToString,
-        value_column_type: ColumnType,
-    ) -> String {
-        format!(
-            "CREATE TABLE {} ({} {} PRIMARY KEY, {} {})",
-            table_name.to_string(),
-            pk_column_name.to_string(),
-            translate_column(pk_column_type),
-            value_column_name.to_string(),
-            translate_column(value_column_type)
-        )
-    }
-
-    fn get_create_table_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-    ) -> String {
-        format!(
-            "CREATE TABLE {} ({} {} PRIMARY KEY)",
-            table_name.to_string(),
-            pk_column_name.to_string(),
-            translate_column(pk_column_type)
-        )
-    }
-
     fn get_delete_table_query(name: impl ToString) -> String {
         format!("DROP TABLE {}", name.to_string().to_lowercase())
     }
 
     fn to_sql(query: &SqlSelectQuery) -> String {
         let mut res = "SELECT ".to_string();
+        if query.distinct {
+            res.push_str("DISTINCT ");
+        }
 
         // Add select clause
         for column_i in 0..query.select.len() - 1 {
-            res.push_str(&format!("{}, ", query.select[column_i]));
+            res.push_str(&format!(
+                "{}, ",
+                Self::translate_math_expr(&query.select[column_i])
+            ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            query.select.last().expect("at least one val")
+            Self::translate_math_expr(query.select.last().expect("at least one val"))
         ));
-
         // From clause
         for (i, table) in query.from.iter().enumerate() {
             match &table.selected_table {
@@ -169,8 +144,11 @@ WHERE schemaname != 'pg_catalog' AND
         }
 
         // Join clauses
-        for sql_join in &query.joins {
-            res.push_str(&sql_join.to_sql::<Self>());
+        if !query.joins.is_empty() {
+            res.push(' ');
+            for sql_join in &query.joins {
+                res.push_str(&sql_join.to_sql::<Self>());
+            }
         }
 
         // Where clause
@@ -301,46 +279,50 @@ WHERE schemaname != 'pg_catalog' AND
             }
         }
     }
-}
 
-fn translate_column(column_type: ColumnType) -> String {
-    match column_type {
-        ColumnType::String {
-            max_size,
-            default_value,
-        } => {
-            let mut tmp = String::from("VARCHAR");
-            if let Some(m) = max_size {
-                tmp.push_str(format!("({})", m).as_str());
-            }
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
-        }
-        ColumnType::Integer { default_value } => {
-            let mut tmp = String::from("INTEGER");
-
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
-        }
-        ColumnType::Float { default_value } => {
-            let mut tmp = String::from("float8");
-
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
-        }
-        ColumnType::Boolean { default_value } => {
-            let mut tmp = String::from("INTEGER");
-            // Convert true to 1 and false to 0
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
-            }
-            tmp
-        }
+    fn get_create_table_query(table_name: impl ToString, cols: &[TypedArg]) -> String {
+        todo!()
     }
 }
+
+// fn translate_column(column_type: ColumnType) -> String {
+//     match column_type {
+//         ColumnType::String {
+//             max_size,
+//             default_value,
+//         } => {
+//             let mut tmp = String::from("VARCHAR");
+//             if let Some(m) = max_size {
+//                 tmp.push_str(format!("({})", m).as_str());
+//             }
+//             if let Some(d) = default_value {
+//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
+//             }
+//             tmp
+//         }
+//         ColumnType::Integer { default_value } => {
+//             let mut tmp = String::from("INTEGER");
+
+//             if let Some(d) = default_value {
+//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
+//             }
+//             tmp
+//         }
+//         ColumnType::Float { default_value } => {
+//             let mut tmp = String::from("float8");
+
+//             if let Some(d) = default_value {
+//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
+//             }
+//             tmp
+//         }
+//         ColumnType::Boolean { default_value } => {
+//             let mut tmp = String::from("INTEGER");
+//             // Convert true to 1 and false to 0
+//             if let Some(d) = default_value {
+//                 tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
+//             }
+//             tmp
+//         }
+//     }
+// }

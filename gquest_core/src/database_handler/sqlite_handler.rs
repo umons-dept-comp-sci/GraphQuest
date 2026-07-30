@@ -2,9 +2,11 @@ use sqlx::{FromRow, Pool, query::Query, sqlite::Sqlite};
 
 use tokio_stream::Stream;
 
-use crate::database_handler::{
-    ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery,
-    SqlTable,
+use crate::{
+    data_handler::{data_types::ValueType, module::TypedArg},
+    database_handler::{
+        DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery, SqlTable,
+    },
 };
 
 /// An alias for [`GraphDatabase`] specialized for Sqlite
@@ -87,46 +89,42 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         "SELECT name FROM sqlite_master WHERE type='table';".to_string()
     }
 
-    fn get_create_table_value_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-        value_column_name: impl ToString,
-        value_column_type: ColumnType,
-    ) -> String {
-        format!(
-            "CREATE TABLE {} ({} {} PRIMARY KEY NOT NULL, {} {})",
-            table_name.to_string(),
-            pk_column_name.to_string(),
-            translate_column(pk_column_type),
-            value_column_name.to_string(),
-            translate_column(value_column_type)
-        )
-    }
+    fn get_create_table_query(table_name: impl ToString, cols: &[TypedArg]) -> String {
+        let mut cols_iter = cols.iter();
+        let first_col = cols_iter.next().expect("first present");
+        let mut cols_definitions = translate_column(first_col);
+        let mut cols_names = first_col.name.clone();
 
-    fn get_create_table_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-    ) -> String {
+        for col in cols_iter {
+            cols_definitions.push_str(&format!(", {}", translate_column(col)));
+            cols_names.push_str(&format!(",{}", col.name));
+        }
+
         format!(
-            "CREATE TABLE {} ({} {} PRIMARY KEY NOT NULL)",
+            "CREATE TABLE {} ({}, PRIMARY KEY({}))",
             table_name.to_string(),
-            pk_column_name.to_string(),
-            translate_column(pk_column_type)
+            cols_definitions,
+            cols_names
         )
     }
 
     fn to_sql(query: &SqlSelectQuery) -> String {
         let mut res = "SELECT ".to_string();
 
+        if query.distinct {
+            res.push_str("DISTINCT ");
+        }
+
         // Add select clause
         for column_i in 0..query.select.len() - 1 {
-            res.push_str(&format!("{}, ", query.select[column_i]));
+            res.push_str(&format!(
+                "{}, ",
+                Self::translate_math_expr(&query.select[column_i])
+            ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            query.select.last().expect("at least one val")
+            Self::translate_math_expr(query.select.last().expect("at least one val"))
         ));
 
         // From clause
@@ -157,8 +155,11 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         }
 
         // Join clauses
-        for sql_join in &query.joins {
-            res.push_str(&sql_join.to_sql::<Self>());
+        if !query.joins.is_empty() {
+            res.push(' ');
+            for sql_join in &query.joins {
+                res.push_str(&format!("{} ", sql_join.to_sql::<Self>()));
+            }
         }
 
         // Where clause
@@ -264,44 +265,54 @@ impl DbQuerySystem<Sqlite> for Sqlite {
     }
 }
 
-fn translate_column(column_type: ColumnType) -> String {
-    match column_type {
-        ColumnType::String {
-            max_size,
-            default_value,
-        } => {
-            let mut tmp = String::from("VARCHAR");
-            if let Some(m) = max_size {
-                tmp.push_str(format!("({})", m).as_str());
-            }
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
+fn translate_column(column_type: &TypedArg) -> String {
+    format!(
+        "{} {} NOT NULL",
+        column_type.name,
+        match column_type.data_type {
+            ValueType::Numeric => "REAL",
+            ValueType::Bool => "INTEGER",
+            ValueType::String | ValueType::Graph => "VARCHAR",
         }
-        ColumnType::Integer { default_value } => {
-            let mut tmp = String::from("INTEGER");
+    )
 
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
-        }
-        ColumnType::Float { default_value } => {
-            let mut tmp = String::from("REAL");
+    // match column_type {
+    //     ColumnType::String {
+    //         max_size,
+    //         default_value,
+    //     } => {
+    //         let mut tmp = String::from("VARCHAR");
+    //         if let Some(m) = max_size {
+    //             tmp.push_str(format!("({})", m).as_str());
+    //         }
+    //         if let Some(d) = default_value {
+    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
+    //         }
+    //         tmp
+    //     }
+    //     ColumnType::Integer { default_value } => {
+    //         let mut tmp = String::from("INTEGER");
 
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", d).as_str());
-            }
-            tmp
-        }
-        ColumnType::Boolean { default_value } => {
-            let mut tmp = String::from("INTEGER");
-            // Convert true to 1 and false to 0
-            if let Some(d) = default_value {
-                tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
-            }
-            tmp
-        }
-    }
+    //         if let Some(d) = default_value {
+    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
+    //         }
+    //         tmp
+    //     }
+    //     ColumnType::Float { default_value } => {
+    //         let mut tmp = String::from("REAL");
+
+    //         if let Some(d) = default_value {
+    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
+    //         }
+    //         tmp
+    //     }
+    //     ColumnType::Boolean { default_value } => {
+    //         let mut tmp = String::from("INTEGER");
+    //         // Convert true to 1 and false to 0
+    //         if let Some(d) = default_value {
+    //             tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
+    //         }
+    //         tmp
+    //     }
+    // }
 }

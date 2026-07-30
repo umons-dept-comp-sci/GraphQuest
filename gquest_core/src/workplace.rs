@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use log::info;
+use sqlx::Sqlite;
 use tabled::grid::config;
 use thiserror::Error;
 use tokio::{
@@ -11,11 +12,17 @@ use tokio::{
 
 use crate::{
     data_handler::{
-        data_types::ConstantValue, invariant_execs::{Module, ModuleError, ModuleIterator, ModuleSorter}, rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
-    }, database_handler::{
-        AllowedGraphDb, GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery,
+        data_types::ConstantValue,
+        invariant_execs,
+        module::{Module, ModuleError},
+        rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
+    },
+    database_handler::{
+        AllowedGraphDb, GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlJoin, SqlSelectQuery,
         SqlTableSelection, VERTICES_TABLE_NAME,
-    }, parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType}, utils::{SaveOutput, config_file2::ConfigFile, subject::Observer},
+    },
+    parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType},
+    utils::{SaveOutput, config_file2::ConfigFile, subject::Observer},
 };
 
 #[derive(Debug, Error)]
@@ -50,19 +57,67 @@ impl GquestEngine {
         self.db.close_connection().await
     }
 
-    pub fn exec_condition_no_multithread(
-        &self,
+    pub async fn exec_condition_no_multithread(
+        &mut self,
         cond: Condition<ParsedArgType>,
     ) -> Result<(), WorkplaceError> {
         let mut rel_graph = RelationGraph::new(self.config.get_module_refs());
         let flattened_cond = Self::fill_graph_cond(&mut rel_graph, cond)?;
+        // Create
+        let mut join_map: IndexMap<FnRef, SqlJoin> = IndexMap::new();
 
-        let mut iter: AutoFnCallIterator<'_> =
-            rel_graph.into_iter().into();
+        let mut iter: AutoFnCallIterator<'_> = rel_graph.into_iter().into();
 
         while let Some(re) = iter.next() {
+            println!("sdqsd");
             let (module, args) = iter.get_module_args(&re);
+            // Fetch all needed function to join for this module.
+            let mut needed_joins = Vec::new();
+            for expr in args {
+                for prim in expr.get_all_primitives_rec() {
+                    if let FnArg::FnCall(dependency) = prim {
+                        needed_joins.push(
+                            join_map
+                                .get(&dependency)
+                                .expect("present by the iterator topological sort logic")
+                                .clone(),
+                        );
+                    }
+                }
+            }
 
+            // Execute the function
+            compute_module(
+                &mut self.db,
+                &re,
+                module,
+                args,
+                needed_joins,
+                self.config.get_batch_size(),
+                None,
+            )
+            .await?;
+
+            // Save the result as a join query for later uses.
+            let mut join_conditions: Vec<Comparison<FnArg>> = Vec::new();
+            for i in 0..args.len() {
+                let arg_name = module.args[i].name.clone();
+                let arg_value = args[i].clone();
+                join_conditions.push(Comparison::Equal(
+                    FnArg::Constant(ConstantValue::Identifier(format!(
+                        "{}{}.{arg_name}",
+                        re.0, re.1
+                    )))
+                    .into(),
+                    arg_value,
+                    None,
+                ));
+            }
+
+            join_map.insert(
+                re.clone(),
+                SqlJoin::new(re.0.clone(), format!("{}{}", re.0, re.1), join_conditions),
+            );
         }
 
         Ok(())
@@ -188,11 +243,34 @@ impl GquestEngine {
                         }
                     }
                 }
-
                 FnArg::FnCall(fn_ref)
             }
         })
     }
+}
+
+async fn compute_module(
+    allowed_db: &mut AllowedGraphDb,
+    fn_ref: &FnRef,
+    module: &Module,
+    args: &Vec<MathExpression<FnArg>>,
+    join_list: Vec<SqlJoin>,
+    batch_size: usize,
+    mut optional_obs: Option<&mut dyn Observer>,
+) -> Result<(), GraphDbRuntimeError> {
+    match allowed_db {
+        AllowedGraphDb::Sqlite(sqlite_db) => {
+            sqlite_db
+                .compute_module(fn_ref, module, args, join_list, batch_size, optional_obs)
+                .await?;
+        }
+        AllowedGraphDb::Postgres(pg_db) => {
+            pg_db
+                .compute_module(fn_ref, module, args, join_list, batch_size, optional_obs)
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 // impl Workplace {
@@ -515,25 +593,3 @@ impl GquestEngine {
 //         Ok(())
 //     }
 // }
-
-async fn compute_module(
-    allowed_db: &mut AllowedGraphDb,
-    module: &Module,
-    add_query: Option<SqlSelectQuery>,
-    batch_size: usize,
-    optional_obs: Option<&mut dyn Observer>,
-) -> Result<(), GraphDbRuntimeError> {
-    match allowed_db {
-        AllowedGraphDb::Sqlite(sqlite_db) => {
-            sqlite_db
-                .compute_module(module, add_query, batch_size, optional_obs)
-                .await?;
-        }
-        AllowedGraphDb::Postgres(pg_db) => {
-            pg_db
-                .compute_module(module, add_query, batch_size, optional_obs)
-                .await?;
-        }
-    }
-    Ok(())
-}

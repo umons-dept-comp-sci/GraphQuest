@@ -4,40 +4,40 @@ use sqlx::{Database, FromRow, Pool, QueryBuilder, query::Query};
 use tokio_stream::Stream;
 
 use crate::{
-    data_handler::{data_types::ConstantValue, rel_graph::FnArg},
+    data_handler::{data_types::ConstantValue, module::TypedArg, rel_graph::FnArg},
     database_handler::{
-        CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, INVARIANT_COLUMN_NAME,
+        CANONICAL_TABLE_NAME, FUNCTION_OUTPUT_COL_NAME, GraphDbRuntimeError, GraphDbStartupError,
         PK_NAME,
     },
     parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
 };
 
-pub enum ColumnType {
-    String {
-        max_size: Option<usize>,
-        default_value: Option<String>,
-    },
-    Integer {
-        default_value: Option<usize>,
-    },
-    Float {
-        default_value: Option<usize>,
-    },
-    Boolean {
-        default_value: Option<bool>,
-    },
-}
+// pub enum ColumnType {
+//     String {
+//         max_size: Option<usize>,
+//         default_value: Option<String>,
+//     },
+//     Integer {
+//         default_value: Option<usize>,
+//     },
+//     Float {
+//         default_value: Option<usize>,
+//     },
+//     Boolean {
+//         default_value: Option<bool>,
+//     },
+// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlWhereClause {
     not_exists: Option<Box<SqlSelectQuery>>,
-    condition: Condition<FnArg>,
+    condition: Option<Condition<FnArg>>,
 }
 
 impl From<Condition<FnArg>> for SqlWhereClause {
     fn from(value: Condition<FnArg>) -> Self {
         SqlWhereClause {
-            condition: value,
+            condition: Some(value),
             not_exists: None,
         }
     }
@@ -48,8 +48,16 @@ impl SqlWhereClause {
         cond.into()
     }
 
+    /// Creates a [`SqlWhereClause`] with a *Not Exists* clause.
+    pub fn not_exists(query: impl Into<SqlSelectQuery>) -> Self {
+        Self {
+            not_exists: Some(Box::new(query.into())),
+            condition: None,
+        }
+    }
+
     /// Sets the *Not Exists* clause of an [`SqlWhereClause`]. If one already existed, this will overwrite it with the new one.
-    pub fn exists(&mut self, query: impl Into<SqlSelectQuery>) {
+    pub fn set_not_exists(&mut self, query: impl Into<SqlSelectQuery>) {
         self.not_exists = Some(Box::new(query.into()));
     }
 }
@@ -90,15 +98,24 @@ impl SqlWhereClause {
     where
         DB: Database + DbQuerySystem<DB>,
     {
-        let sql_cond = self.condition.to_sql::<DB>();
-        match &self.not_exists {
-            Some(not_exist_query) => {
-                format!(
-                    "{sql_cond} AND NOT(EXISTS({}))",
-                    DB::to_sql(not_exist_query)
-                )
+        if let Some(sql_cond) = &self.condition {
+            let sql_cond = sql_cond.to_sql::<DB>();
+            match &self.not_exists {
+                Some(not_exist_query) => {
+                    format!(
+                        "{sql_cond} AND NOT(EXISTS({}))",
+                        DB::to_sql(not_exist_query)
+                    )
+                }
+                None => sql_cond,
             }
-            None => sql_cond,
+        } else {
+            match &self.not_exists {
+                Some(not_exist_query) => {
+                    format!("NOT(EXISTS({}))", DB::to_sql(not_exist_query))
+                }
+                None => "".to_string(),
+            }
         }
     }
 }
@@ -204,14 +221,14 @@ impl Comparison<FnArg> {
 pub struct SqlJoin {
     table_name: String,
     alias_name: String,
-    on_cond: Condition<FnArg>,
+    on_cond: Vec<Comparison<FnArg>>,
 }
 
 impl SqlJoin {
     pub fn new(
         table_name: impl Into<String>,
         alias_name: impl Into<String>,
-        on_cond: Condition<FnArg>,
+        on_cond: Vec<Comparison<FnArg>>,
     ) -> Self {
         Self {
             table_name: table_name.into(),
@@ -224,11 +241,16 @@ impl SqlJoin {
     where
         DB: Database + DbQuerySystem<DB>,
     {
+        let mut on_clause = String::new();
+        if !self.on_cond.is_empty() {
+            on_clause.push_str(&self.on_cond.first().expect("present").to_sql::<DB>());
+            for on in self.on_cond.iter().skip(1) {
+                on_clause.push_str(&format!(" AND {}", on.to_sql::<DB>()));
+            }
+        }
         format!(
             "JOIN {} {} ON {}",
-            self.table_name,
-            self.alias_name,
-            self.on_cond.to_sql::<DB>()
+            self.table_name, self.alias_name, on_clause
         )
     }
 }
@@ -322,7 +344,8 @@ impl From<&str> for SqlTable {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
-    pub select: Vec<String>,
+    pub select: Vec<MathExpression<FnArg>>,
+    pub distinct: bool,
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
     /// The list of joins to add to the query.
@@ -346,8 +369,19 @@ impl SqlSelectQuery {
         column_name: impl ToString,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
+        Self::select_columns_from_table(
+            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()],
+            table,
+        )
+    }
+
+    pub fn select_columns_from_table(
+        columns: Vec<MathExpression<FnArg>>,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
         Self {
-            select: vec![column_name.to_string()],
+            select: columns,
+            distinct: false,
             from: vec![table.into()],
             joins: Vec::new(),
             where_clause: None,
@@ -368,6 +402,10 @@ impl SqlSelectQuery {
         self
     }
 
+    pub fn set_distinct_values(&mut self, value: bool) {
+        self.distinct = value;
+    }
+
     /// Encapsulates the previous conditions with an [`Condition::And`] composed of the previous condition and the given one.
     ///
     /// And if no conditions were given before then it will be added directly.
@@ -375,7 +413,14 @@ impl SqlSelectQuery {
         if self.where_clause.is_some() {
             // We do this to keep the previous condition as well as the possible NotExists clause.
             let mut where_clause = self.where_clause.take().expect("is some");
-            where_clause.condition = Condition::and(where_clause.condition, additional_cond);
+            if where_clause.condition.is_some() {
+                where_clause.condition = Some(Condition::and(
+                    where_clause.condition.take().expect("is some"),
+                    additional_cond,
+                ));
+            } else {
+                where_clause.condition = Some(additional_cond.into())
+            }
             self.where_clause = Some(where_clause);
         } else {
             self.where_clause = Some(additional_cond.into().into());
@@ -472,21 +517,8 @@ where
     /// Gets a query that returns all the table names from the database.
     fn get_all_tables_query() -> String;
 
-    /// Returns the query that can be used to create a table with a name and the value column
-    fn get_create_table_value_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-        value_column_name: impl ToString,
-        value_column_type: ColumnType,
-    ) -> String;
-
-    /// Returns the query that can be used to create a table with a name but no secondary column
-    fn get_create_table_query(
-        table_name: impl ToString,
-        pk_column_name: impl ToString,
-        pk_column_type: ColumnType,
-    ) -> String;
+    /// Gets a query that can be used to create a table with the given name and columns.
+    fn get_create_table_query(table_name: impl ToString, cols: &[TypedArg]) -> String;
 
     /// Returns the query that can be used to delete a table with the given name from the dataset
     fn get_delete_table_query(name: impl ToString) -> String;
@@ -511,10 +543,11 @@ where
     fn translate_constant(constant: &ConstantValue) -> String {
         match constant {
             ConstantValue::Numeric(num) => num.to_string(),
-            ConstantValue::String(string) => format!("\"{string}\""),
+            ConstantValue::String(string) => format!("\'{string}\'"),
             ConstantValue::Bool(_) => todo!(
                 "Bool can differ from function to function, this has to be revisited in the future !"
             ),
+            ConstantValue::Identifier(id) => id.to_string(),
         }
     }
 
@@ -523,7 +556,7 @@ where
             MathExpression::Primitif(arg_type) => match arg_type {
                 FnArg::FnCall(fn_ref) => {
                     // At this point, the function table must already be part of the join chain.
-                    format!("{}{}.{INVARIANT_COLUMN_NAME}", fn_ref.0, fn_ref.1)
+                    format!("{}{}.{FUNCTION_OUTPUT_COL_NAME}", fn_ref.0, fn_ref.1)
                 }
                 FnArg::Constant(constant_value) => Self::translate_constant(constant_value),
                 // At this point, the dataset table must already be part of the join chain.

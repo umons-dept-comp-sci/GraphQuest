@@ -72,18 +72,18 @@ pub enum ModuleError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionArg {
+pub struct TypedArg {
     pub name: String,
     pub data_type: ValueType,
 }
 
-impl FunctionArg {
-    pub fn has_same_name(&self, other: &FunctionArg) -> bool {
+impl TypedArg {
+    pub fn has_same_name(&self, other: &TypedArg) -> bool {
         self.name == other.name
     }
 }
 
-impl From<(String, ValueType)> for FunctionArg {
+impl From<(String, ValueType)> for TypedArg {
     fn from(value: (String, ValueType)) -> Self {
         Self {
             name: value.0,
@@ -92,7 +92,7 @@ impl From<(String, ValueType)> for FunctionArg {
     }
 }
 
-impl From<(&str, ValueType)> for FunctionArg {
+impl From<(&str, ValueType)> for TypedArg {
     fn from(value: (&str, ValueType)) -> Self {
         (value.0.to_string(), value.1).into()
     }
@@ -104,7 +104,7 @@ pub struct Module {
     /// The *absolute* path to the module.
     pub exec_path: PathBuf,
     pub fn_name: String,
-    pub args: Vec<FunctionArg>,
+    pub args: Vec<TypedArg>,
     /// The type of output to return
     pub output: ValueType,
     pub batch_size: Option<usize>,
@@ -115,7 +115,7 @@ impl Module {
     pub fn new(
         exec_path: impl Into<String>,
         fn_name: impl Into<String>,
-        args: Vec<impl Into<FunctionArg>>,
+        args: Vec<impl Into<TypedArg>>,
         output: ValueType,
         batch_size: Option<usize>,
     ) -> Result<Self, ModuleError> {
@@ -123,7 +123,7 @@ impl Module {
             return Err(ModuleError::NoArgs);
         }
         let fn_name: String = fn_name.into();
-        let args: Vec<FunctionArg> = args.into_iter().map(|n| n.into()).collect();
+        let args: Vec<TypedArg> = args.into_iter().map(|n| n.into()).collect();
 
         let exec_path = Self::check_validity(exec_path.into(), &fn_name, &args)?;
 
@@ -167,7 +167,7 @@ impl Module {
     fn check_validity(
         exec_path: String,
         fn_name: &String,
-        args: &[FunctionArg],
+        args: &[TypedArg],
     ) -> Result<PathBuf, ModuleError> {
         let path = Self::get_path(exec_path)?;
         for val in args {
@@ -208,7 +208,7 @@ impl Module {
     /// # Errors :
     /// * If the given name is not ascii
     /// * If the given name does not match with the following regex: [`INVARIANT_REGEX`]
-    pub fn check_invariant_name_validity(value: &FunctionArg) -> Result<(), ModuleError> {
+    pub fn check_invariant_name_validity(value: &TypedArg) -> Result<(), ModuleError> {
         let re = Regex::new(INVARIANT_REGEX).expect("Regex should be okay");
         if !value.name.is_ascii() || !re.is_match(&value.name) {
             return Err(ModuleError::InvalidName(value.name.to_string()));

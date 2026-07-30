@@ -239,6 +239,9 @@ impl<'a> RelationGraph<'a> {
                     ConstantValue::Numeric(_) => ValueType::Numeric,
                     ConstantValue::String(_) => ValueType::String,
                     ConstantValue::Bool(_) => ValueType::Bool,
+                    ConstantValue::Identifier(_) => unreachable!(
+                        "Identifiers are not supposed to be used outside of SQL clauses"
+                    ),
                 },
                 FnArg::Graph => ValueType::Graph,
             })
@@ -358,7 +361,7 @@ impl<'a> FnCallIterator<'a> {
             .expect("correct module name");
         let fn_args = &self
             .relation_graph
-            .get_call(&fn_ref)
+            .get_call(fn_ref)
             .expect("valid reference")
             .args;
         (module, fn_args)

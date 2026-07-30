@@ -8,7 +8,7 @@ pub const PK_NAME: &str = "sig";
 /// The name of the vertices table of the dataset
 pub const VERTICES_TABLE_NAME: &str = "n";
 
-pub const INVARIANT_COLUMN_NAME: &str = "value";
+pub const FUNCTION_OUTPUT_COL_NAME: &str = "output";
 
 /// The name of the table that has all the data
 pub const FULL_TABLE_NAME: &str = "all_inv";

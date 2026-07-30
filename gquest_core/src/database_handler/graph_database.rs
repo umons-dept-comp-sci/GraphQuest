@@ -6,9 +6,12 @@ use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::module::{AsyncModuleInput, AsyncModuleOutput, Module};
+use crate::data_handler::data_types::ValueType::Graph;
+use crate::data_handler::data_types::{ConstantValue, ValueType};
+use crate::data_handler::module::{AsyncModuleInput, AsyncModuleOutput, Module, TypedArg};
+use crate::data_handler::rel_graph::{FnArg, FnRef};
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
-use crate::parser::parsed_expression::{Comparison, Condition, ParsedArgType};
+use crate::parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType};
 use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
@@ -158,57 +161,50 @@ impl<DB: GraphDb> GraphDatabase<DB> {
 impl<DB: GraphDb> GraphDatabase<DB> {
     /// Adds the canonical table to the database.
     async fn add_canonical_table(&mut self) -> Result<(), GraphDbRuntimeError> {
-        let query_str = DB::get_create_table_query(
+        self.add_table(
             CANONICAL_TABLE_NAME,
-            PK_NAME,
-            ColumnType::String {
-                max_size: Some(SIGNATURE_MAX_SIZE),
-                default_value: None,
-            },
-        );
-
-        let builder = QueryBuilder::<DB>::new(query_str);
-        DB::execute_query_no_return(&self.pool, builder).await
+            &[TypedArg {
+                name: PK_NAME.to_string(),
+                data_type: ValueType::Graph,
+            }],
+        )
+        .await
     }
 
     /// Adds the vertices table to the database.
     async fn add_vertices_table(&mut self) -> Result<(), GraphDbRuntimeError> {
-        self.add_invariant_table(VERTICES_TABLE_NAME.to_string())
-            .await
-    }
-
-    async fn add_invariant_table(&mut self, inv: String) -> Result<(), GraphDbRuntimeError> {
         self.add_table(
-            inv.to_string(),
-            PK_NAME,
-            ColumnType::String {
-                max_size: Some(TABLE_NAME_MAX_SIZE),
-                default_value: None,
-            },
-            inv, // Makes the join queries easier
-            // We store data as strings in order to accept anything
-            ColumnType::Float {
-                default_value: None,
-            },
+            VERTICES_TABLE_NAME,
+            &[
+                TypedArg {
+                    name: PK_NAME.to_string(),
+                    data_type: ValueType::Graph,
+                },
+                TypedArg {
+                    name: FUNCTION_OUTPUT_COL_NAME.to_string(),
+                    data_type: ValueType::Numeric,
+                },
+            ],
         )
         .await
+    }
+
+    async fn add_module_table(&mut self, module: &Module) -> Result<(), GraphDbRuntimeError> {
+        let mut columns = module.args.clone();
+        columns.push(TypedArg {
+            name: FUNCTION_OUTPUT_COL_NAME.to_string(),
+            data_type: module.output.clone(),
+        });
+
+        self.add_table(&module.fn_name, &columns).await
     }
 
     pub async fn add_table(
         &mut self,
         table_name: impl ToString,
-        pk_name: impl ToString,
-        pk_column_type: ColumnType,
-        value_name: impl ToString,
-        value_column_type: ColumnType,
+        columns: &[TypedArg],
     ) -> Result<(), GraphDbRuntimeError> {
-        let query_str = DB::get_create_table_value_query(
-            table_name,
-            pk_name,
-            pk_column_type,
-            value_name,
-            value_column_type,
-        );
+        let query_str = DB::get_create_table_query(table_name, columns);
 
         let builder = QueryBuilder::<DB>::new(query_str);
         DB::execute_query_no_return(&self.pool, builder).await
@@ -255,12 +251,11 @@ where
 
 struct OutputFn<'b, 'o, DB: GraphDb> {
     db: GraphDatabase<DB>,
-    signatures: &'b mut Vec<String>,
-    batch_to_store: &'b mut Vec<Vec<f64>>,
+    results: &'b mut Vec<Vec<ConstantValue>>,
     count: &'b mut usize,
     optional_obs: &'b mut Option<&'o mut dyn Observer>, // 'o lifetime for the observer itself
     batch_size: usize,
-    invariant_exec: Module,
+    module: Module,
 }
 impl<'b, 'o, DB: GraphDb> AsyncModuleOutput<GraphDbRuntimeError> for OutputFn<'b, 'o, DB>
 where
@@ -283,23 +278,27 @@ where
     (i32,): Send + Unpin + for<'a> FromRow<'a, DB::Row>,
 {
     async fn call(&mut self, values: Vec<String>) -> Result<(), GraphDbRuntimeError> {
-        let mut values = values.into_iter();
-        self.signatures
-            .push(values.next().expect("a signature as the first value"));
+        // Received : arg_0, arg_1, ..., arg_{n-1}, output
 
-        // Received : inv_0, inv_1, inv_2, ..., inv_{n-1}
-        for (i, inv_values) in values.enumerate() {
-            // Push into the related storing vector
-            let val = match inv_values.parse::<f64>() {
-                Ok(val) => val,
-                Err(_) => return Err(GraphDbRuntimeError::InvalidReturnValue(inv_values)),
-            };
+        let mut received_values = Vec::with_capacity(values.len());
 
-            self.batch_to_store
-                .get_mut(i)
-                .expect("correct index")
-                .push(val);
+        for (i, arg) in values.iter().enumerate().take(values.len() - 1) {
+            let arg_type = self
+                .module
+                .args
+                .get(i)
+                .expect("same number of args as returned values");
+
+            received_values.push(arg_type.data_type.translate_into_const(arg)?);
         }
+        // The last received value is always the result:
+        received_values.push(
+            self.module
+                .output
+                .translate_into_const(values.last().expect("one value present"))?,
+        );
+
+        self.results.push(received_values);
 
         // Notify obs something happened
         if let Some(obs) = &mut self.optional_obs {
@@ -309,9 +308,7 @@ where
         *self.count += 1;
 
         if *self.count >= self.batch_size {
-            self.db
-                .push_batch(self.signatures, self.batch_to_store, &self.invariant_exec)
-                .await?;
+            self.db.push_batch(self.results, &self.module).await?;
             if let Some(obs) = &mut self.optional_obs {
                 obs.notify_data_pushed(self.batch_size as u64);
             }
@@ -465,23 +462,36 @@ where
     }
 
     fn read_row_col_value(row: &DB::Row, col_index: usize) -> String {
-        let col = row.column(col_index);
-        let col_type = col.type_info().name();
-        // Float4 & Varchar are for postgre, the rest is for sqlite
-        if col_type == "INTEGER" {
-            let value = row.get::<i64, usize>(col_index);
-            value.to_string()
-        } else if col_type == "REAL" || col_type == "FLOAT8" || col_type == "NULL" {
-            let value = row.get::<f64, usize>(col_index);
-            value.to_string()
-        } else if col_type == "FLOAT4" {
-            let value = row.get::<f32, usize>(col_index);
-            value.to_string()
-        } else if col_type == "TEXT" || col_type == "VARCHAR" {
-            row.get::<String, usize>(col_index)
-        } else {
-            "No string value".to_string()
+        // let col = row.column(col_index);
+        // let col_type = col.type_info().name();
+        // // Float4 & Varchar are for postgre, the rest is for sqlite
+        // if col_type == "INTEGER"  || col_type == "NULL" {
+        //     let value = row.get::<i64, usize>(col_index);
+        //     value.to_string()
+        // } else if col_type == "REAL" || col_type == "FLOAT8"  {
+        //     let value = row.get::<f64, usize>(col_index);
+        //     value.to_string()
+        // } else if col_type == "FLOAT4" {
+        //     let value = row.get::<f32, usize>(col_index);
+        //     value.to_string()
+        // } else if col_type == "TEXT" || col_type == "VARCHAR"  {
+        //     row.get::<String, usize>(col_index)
+        // } else {
+        //     "No string value".to_string()
+        // }
+        if let Ok(v) = row.try_get::<i64, _>(col_index) {
+            return v.to_string();
         }
+
+        if let Ok(v) = row.try_get::<f64, _>(col_index) {
+            return v.to_string();
+        }
+
+        if let Ok(v) = row.try_get::<String, _>(col_index) {
+            return v;
+        }
+
+        "No string value".to_string()
     }
 
     /// Removes the dataset and the related vertices table from the database.
@@ -549,34 +559,40 @@ where
             _ => res?,
         }
 
-        let push_to_db = async |signatures: &Vec<String>,
-                                values: &Vec<f64>,
-                                batch_size|
-               -> Result<(), GraphDbRuntimeError> {
-            // Insert to dataset query
-            let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 1, batch_size);
-            let safe_query = Self::create_safe_signature_query(query_str, signatures)?;
-            DB::execute_query_no_return(&self.pool, safe_query).await?;
+        let push_to_db =
+            async |signatures: &Vec<String>, batch_size| -> Result<(), GraphDbRuntimeError> {
+                // Insert to dataset query
+                let query_str = DB::get_insert_into_query(CANONICAL_TABLE_NAME, 1, batch_size);
+                let safe_query = Self::create_safe_signature_query(query_str, signatures)?;
+                DB::execute_query_no_return(&self.pool, safe_query).await
+            };
 
+        let push_to_vertices = async |values: &Vec<Vec<ConstantValue>>,
+                                      batch_size|
+               -> Result<(), GraphDbRuntimeError> {
             // Insert to vertices table query
             let query_str = DB::get_insert_into_query(VERTICES_TABLE_NAME, 2, batch_size);
-            let safe_query = Self::create_safe_insert_query(query_str, signatures, values)?;
-            DB::execute_query_no_return(&self.pool, safe_query).await?;
-            Ok(())
+            let safe_query = Self::create_safe_insert_query(query_str, 2, values)?;
+            DB::execute_query_no_return(&self.pool, safe_query).await
         };
 
-        let mut signature_batch = vec![];
-        let mut data_batch = vec![];
+        let mut signature_batch = Vec::new();
+        let mut data_batch = Vec::new();
 
         for canonical_form in reader.lines().map_while(Result::ok) {
             // Check input and get value
             let value = get_nb_vertices(&canonical_form)?;
+            data_batch.push(vec![
+                ConstantValue::String(canonical_form.clone()),
+                ConstantValue::Numeric(value as f64),
+            ]);
+
             signature_batch.push(canonical_form);
-            data_batch.push(value as f64);
 
             if data_batch.len() >= batch_size {
                 // push collected data to database
-                push_to_db(&signature_batch, &data_batch, batch_size).await?;
+                push_to_db(&signature_batch, batch_size).await?;
+                push_to_vertices(&data_batch, batch_size).await?;
                 if let Some(obs) = &mut optional_obs {
                     obs.notify_data_pushed(batch_size.try_into().expect("val to be u64"));
                 }
@@ -591,7 +607,8 @@ where
         }
         // If any is still cached, store it in the database
         if !data_batch.is_empty() {
-            push_to_db(&signature_batch, &data_batch, data_batch.len()).await?;
+            push_to_db(&signature_batch, data_batch.len()).await?;
+            push_to_vertices(&data_batch, data_batch.len()).await?;
 
             if let Some(obs) = &mut optional_obs {
                 obs.notify_data_pushed(data_batch.len().try_into().expect("val to be u64"));
@@ -601,57 +618,49 @@ where
         Ok(())
     }
 
-    async fn add_to_inv_table(
+    async fn add_to_function_table(
         &mut self,
-        inv_name: impl ToString,
-        signatures: &[impl ToString],
-        values: &[f64],
+        function_name: impl ToString,
+        nb_args: usize,
+        results_to_store: &mut Vec<Vec<ConstantValue>>,
     ) -> Result<(), GraphDbRuntimeError> {
-        let inv_name = inv_name.to_string();
+        let inv_name = function_name.to_string();
 
-        let query_str = DB::get_insert_into_query(&inv_name, 2, signatures.len());
+        let query_str = DB::get_insert_into_query(&inv_name, nb_args, results_to_store.len());
 
-        let safe_query = Self::create_safe_insert_query(query_str, signatures, values)?;
+        let safe_query = Self::create_safe_insert_query(query_str, nb_args, results_to_store)?;
         DB::execute_query_no_return(&self.pool, safe_query).await
     }
 
     fn create_safe_insert_query(
         query_str: String,
-        signatures: &[impl ToString],
-        values: &[f64],
+        nb_cols: usize,
+        results_to_store: &Vec<Vec<ConstantValue>>,
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
-        let mut signatures = signatures.iter();
-        let mut values = values.iter();
-
-        let mut added_signature = false;
+        let mut value_id = 0;
+        let mut col_id = 0;
 
         for c in query_str.chars() {
             if c == '?' {
-                if added_signature {
-                    match values.next() {
-                        Some(value) => {
-                            builder.push_bind::<f64>(*value);
-                        }
-                        None => {
-                            return Err(GraphDbRuntimeError::QueryCreationError(
-                                builder.into_sql().to_string(),
-                            ));
-                        }
+                let value = &results_to_store[value_id][col_id];
+                match &value {
+                    ConstantValue::Numeric(nb) => {
+                        builder.push_bind::<f64>(*nb);
                     }
-                } else {
-                    match signatures.next() {
-                        Some(sign) => {
-                            builder.push_bind::<String>(sign.to_string());
-                        }
-                        None => {
-                            return Err(GraphDbRuntimeError::QueryCreationError(
-                                builder.into_sql().to_string(),
-                            ));
-                        }
+                    ConstantValue::Identifier(str) | ConstantValue::String(str) => {
+                        builder.push_bind::<String>(str.clone());
+                    }
+                    // Boolean values depend on the database
+                    ConstantValue::Bool(_) => {
+                        builder.push_bind::<String>(DB::translate_constant(value));
                     }
                 }
-                added_signature = !added_signature;
+                col_id += 1;
+                if col_id == nb_cols {
+                    col_id = 0;
+                    value_id += 1;
+                }
             } else {
                 builder.push(c);
             }
@@ -693,83 +702,90 @@ where
     /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
     pub async fn compute_module(
         &mut self,
-        executable: &Module,
-        add_query: Option<SqlSelectQuery>,
+        fn_ref: &FnRef,
+        module: &Module,
+        args: &Vec<MathExpression<FnArg>>,
+        join_list: Vec<SqlJoin>,
         batch_size: usize,
         mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
         // Check if the dataset was at least initialised first
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
-            return Err(GraphDbRuntimeError::DatasetNotInitialisedError(
-                executable.clone(),
-            ));
+            return Err(GraphDbRuntimeError::DatasetNotInitialisedError);
         }
 
-        // Check if we can compute this invariant
-        // by checking that every dependency was added before
-        if let Some(deps) = &executable.dependencies {
-            for dep in deps {
-                if !&self.is_table_added(dep).await? {
-                    return Err(GraphDbRuntimeError::InvariantDependencyError(
-                        executable.clone(),
-                        dep.to_string(),
+        // // Check if we can compute this invariant
+        // // by checking that every function it relies on was added before
+        // if let Some(deps) = &module.dependencies {
+        //     for dep in deps {
+        //         if !&self.is_table_added(dep).await? {
+        //             return Err(GraphDbRuntimeError::InvariantDependencyError(
+        //                 module.clone(),
+        //                 dep.to_string(),
+        //             ));
+        //         }
+        //     }
+        // }
+
+        // TODO: Check if there are only constants (since this will not require the need for a join...)
+
+        // Using the given join list, we can restrict the dataset.
+
+        let mut input_selection =
+            SqlSelectQuery::select_columns_from_table(args.clone(), CANONICAL_TABLE_NAME);
+
+        // We do not want to re send a row multiple times (useful for functions that do not depend on a graph signature like d(n,m) for example)
+        input_selection.set_distinct_values(true);
+
+        for join in join_list {
+            input_selection.add_join(join);
+        }
+
+        // let mut dataset = if let Some(select_query) = add_query {
+        //     SqlSelectQuery::select_all_from_table(SqlTableSelection::new_rename(
+        //         select_query,
+        //         CANONICAL_TABLE_NAME,
+        //     ))
+        // } else {
+        //     SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
+        // };
+
+        /* if the table already exists, adds a condition so that only gets values not present in it */
+        {
+            if self.is_table_added(&module.fn_name).await? {
+                let mut not_exist_selection =
+                    SqlSelectQuery::select_all_from_table(module.fn_name.to_string());
+
+                for (i, arg) in module.args.iter().enumerate() {
+                    not_exist_selection.add_and(Comparison::Equal(
+                        FnArg::Constant(ConstantValue::Identifier(arg.name.clone())).into(),
+                        args[i].clone(),
+                        None,
                     ));
                 }
+                input_selection.where_clause =
+                    Some(SqlWhereClause::not_exists(not_exist_selection));
+
+                // input_selection.where_clause.no add_and(Condition::not(Condition::exists(
+                //     SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
+                //         .set_where_clause(Comparison::Equal(
+                //             // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
+                //             ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
+                //             ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"))
+                //                 .into(),
+                //             None,
+                //         )),
+                // )));
             }
         }
 
-        // If given, uses that additional querry to restrict the dataset
-        let mut dataset = if let Some(select_query) = add_query {
-            SqlSelectQuery::select_all_from_table(SqlTableSelection::new_rename(
-                select_query,
-                CANONICAL_TABLE_NAME,
-            ))
-        } else {
-            SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
-        };
-
-        /* if an inv table already exists, adds a condition so that only gets values not present in it */
-        {
-            // let first_inv = executable.invariant_names.last().expect("at least one val");
-            // if self.is_table_added(first_inv).await? {
-            //     dataset.add_and(Condition::not(Condition::exists(
-            //         SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
-            //             .set_where_clause(Comparison::Equal(
-            //                 // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
-            //                 ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
-            //                 ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
-            //                 None,
-            //             )),
-            //     )));
-            // }
-        }
-        // All needed signatures are selected
-
-        /* Join query to fetch dependencies if any are required */
-        // let join_query = {
-        //     if let Some(dep) = &executable.dependencies
-        //         && !dep.is_empty()
-        //     {
-        //         SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
-        //             dataset,
-        //             dep.clone(),
-        //             PK_NAME,
-        //             Some(CANONICAL_TABLE_NAME.to_string()),
-        //         ))
-        //     } else {
-        //         dataset
-        //     }
-        // };
-
-        // // build query
-        // let query_str = join_query.to_sql::<DB>();
-        let query_str = "WRONG".to_string();
-        // Set the capacity of the vector to save time (since we know their sizes)
-        let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
-        let mut batch_to_store: Vec<Vec<f64>> =
-            Vec::with_capacity(executable.invariant_names.len());
-        (0..executable.invariant_names.len())
-            .for_each(|_| batch_to_store.push(Vec::with_capacity(batch_size)));
+        // Build the final query
+        let query_str = input_selection.to_sql::<DB>();
+        // Set the capacity of the vectors to save time (since we know their maximum sizes)
+        // let mut results: Vec<ConstantValue> = Vec::with_capacity(batch_size);
+        let mut args_to_store: Vec<Vec<ConstantValue>> = Vec::with_capacity(batch_size);
+        // (0..module.args.len())
+        //     .for_each(|_| args_to_store.push(Vec::with_capacity(module.args.len())));
 
         let mut count = 0;
 
@@ -785,20 +801,18 @@ where
 
             let output = OutputFn {
                 db: self.clone(),
-                signatures: &mut signatures,
-                batch_to_store: &mut batch_to_store,
+                results: &mut args_to_store,
                 count: &mut count,
                 batch_size,
-                invariant_exec: executable.clone(),
+                module: module.clone(),
                 optional_obs: &mut optional_obs,
             };
 
-            executable.execute(input, output, batch_size).await?;
+            module.execute(fn_ref, input, output, batch_size).await?;
         }
         if count != 0 {
-            let batch_len = batch_to_store[0].len(); // Saving that to notify *after* saving the data
-            self.push_batch(&mut signatures, &mut batch_to_store, executable)
-                .await?;
+            let batch_len = args_to_store[0].len(); // Saving that to notify *after* saving the data
+            self.push_batch(&mut args_to_store, module).await?;
 
             if let Some(obs) = &mut optional_obs {
                 obs.notify_data_pushed(batch_len as u64);
@@ -809,23 +823,16 @@ where
 
     async fn push_batch(
         &mut self,
-        signatures: &mut Vec<String>,
-        batch_to_store: &mut [Vec<f64>],
-        executable: &Module,
+        results: &mut Vec<Vec<ConstantValue>>,
+        module: &Module,
     ) -> Result<(), GraphDbRuntimeError> {
-        for (i, inv_values) in batch_to_store.iter_mut().enumerate() {
-            // Check if table was created before
-            if !self.is_table_added(&executable.invariant_names[i]).await? {
-                self.add_invariant_table(executable.invariant_names[i].clone())
-                    .await?
-            }
-            // Push data to related invariant table
-            self.add_to_inv_table(&executable.invariant_names[i], signatures, inv_values)
-                .await?;
-
-            inv_values.clear(); // no affects on capacity
+        // Push data to related function table
+        if !self.is_table_added(&module.fn_name).await? {
+            self.add_module_table(module).await?
         }
-        signatures.clear();
+        self.add_to_function_table(&module.fn_name, module.args.len() + 1, results)
+            .await?;
+        results.clear();
         Ok(())
     }
 

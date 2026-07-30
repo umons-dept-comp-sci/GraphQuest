@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::data_handler::{
     data_types::ValueTypeError,
-    module::{FunctionArg, Module, ModuleError},
+    module::{TypedArg, Module, ModuleError},
 };
 
 #[derive(Error, Debug)]
@@ -156,7 +156,7 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
                     // From JSON to real module types
                     let mut args = Vec::with_capacity(args_json.len());
                     for arg in args_json {
-                        args.push(FunctionArg {
+                        args.push(TypedArg {
                             name: arg.name,
                             data_type: arg.class.try_into()?,
                         });
