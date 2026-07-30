@@ -138,12 +138,12 @@ impl DbQuerySystem<Sqlite> for Sqlite {
                 }
                 SqlTable::TableName(name) => res.push_str(name),
             }
-            // Join query
-            if let Some((tables_to_join, using)) = &table.join_clause {
-                for table_name in tables_to_join {
-                    res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
-                }
-            }
+            // // Join query
+            // if let Some((tables_to_join, using)) = &table.join_clause {
+            //     for table_name in tables_to_join {
+            //         res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
+            //     }
+            // }
 
             res.push(')');
 
@@ -154,6 +154,11 @@ impl DbQuerySystem<Sqlite> for Sqlite {
             if i != query.from.len() - 1 {
                 res.push_str(", ");
             }
+        }
+
+        // Join clauses
+        for sql_join in &query.joins {
+            res.push_str(&sql_join.to_sql::<Self>());
         }
 
         // Where clause

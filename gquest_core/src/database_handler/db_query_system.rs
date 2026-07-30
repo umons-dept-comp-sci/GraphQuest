@@ -1,14 +1,16 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Debug, Display},
-    pin::Pin,
-};
+use std::{fmt::Debug, pin::Pin};
 
-use indexmap::IndexSet;
 use sqlx::{Database, FromRow, Pool, QueryBuilder, query::Query};
 use tokio_stream::Stream;
 
-use crate::database_handler::{GraphDbRuntimeError, GraphDbStartupError};
+use crate::{
+    data_handler::{data_types::ConstantValue, rel_graph::FnArg},
+    database_handler::{
+        CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, INVARIANT_COLUMN_NAME,
+        PK_NAME,
+    },
+    parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
+};
 
 pub enum ColumnType {
     String {
@@ -26,184 +28,49 @@ pub enum ColumnType {
     },
 }
 
-/// Represents a condition that could appear in a where clause.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Condition {
-    /// A simple comparison
-    Operation(Comparison),
-    /// `x` or `y`
-    Or(Box<Condition>, Box<Condition>),
-    /// `x` and `y`
-    And(Box<Condition>, Box<Condition>),
-    /// `x_0` and `x_1` and ... and `x_{n-1}`.
-    AndVec(Box<Condition>, Vec<Condition>),
-    /// `x_0` or `x_1` or ... or `x_{n-1}`.
-    OrVec(Box<Condition>, Vec<Condition>),
-    /// not `x`
-    Not(Box<Condition>),
-    /// exists `x`
-    Exists(Box<SqlSelectQuery>),
+pub struct SqlWhereClause {
+    not_exists: Option<Box<SqlSelectQuery>>,
+    condition: Condition<FnArg>,
 }
 
-impl Condition {
-    /// Simplifies the creation of the [`SqlCondition::And`] enum.
-    pub fn and(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
-        Self::And(Box::new(cond_1.into()), Box::new(cond_2.into()))
-    }
-
-    /// Simplifies the creation of the [`SqlCondition::Or`] enum.
-    pub fn or(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
-        Self::Or(Box::new(cond_1.into()), Box::new(cond_2.into()))
-    }
-
-    /// Simplifies the creation of the [`SqlCondition::Not`] enum.
-    pub fn not(cond: impl Into<Condition>) -> Self {
-        Self::Not(Box::new(cond.into()))
-    }
-
-    /// Creates an equivalente condition to the `xor` operator.
-    /// `x xor y` iff `(x or y) and not(x and y)`
-    pub fn xor(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
-        let cond_1 = cond_1.into();
-        let cond_2 = cond_2.into();
-        Condition::and(
-            Condition::or(cond_1.clone(), cond_2.clone()),
-            Condition::not(Condition::and(cond_1, cond_2)),
-        )
-    }
-
-    /// Creates an equivalente condition to a logical implication.
-    /// `x ==> y` iff `not(x) or y`
-    pub fn implication(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
-        Condition::or(Condition::not(cond_1), cond_2)
-    }
-
-    /// Creates an equivalente condition to a logical equivalence.
-    /// `x <==> y` iff `(x ==> y) or (y ==> x)`
-    pub fn equivalence(cond_1: impl Into<Condition>, cond_2: impl Into<Condition>) -> Self {
-        let cond_1 = cond_1.into();
-        let cond_2 = cond_2.into();
-        Condition::and(
-            Condition::implication(cond_1.clone(), cond_2.clone()),
-            Condition::implication(cond_2, cond_1),
-        )
-    }
-
-    /// Simplifies the creation of the [`SqlCondition::Exists`] enum.
-    pub fn exists(query: impl Into<SqlSelectQuery>) -> Self {
-        Self::Exists(Box::new(query.into()))
-    }
-
-    /// Simplifies the creation of the [`SqlCondition::AndVec`] enum.
-    ///
-    /// If `conds` is empty, then `cond_1` will simply be returned.
-    pub fn and_vec(cond_1: impl Into<Condition>, conds: Vec<impl Into<Condition>>) -> Self {
-        if conds.is_empty() {
-            cond_1.into()
-        } else {
-            Self::AndVec(
-                Box::new(cond_1.into()),
-                conds.into_iter().map(|c| c.into()).collect(),
-            )
+impl From<Condition<FnArg>> for SqlWhereClause {
+    fn from(value: Condition<FnArg>) -> Self {
+        SqlWhereClause {
+            condition: value,
+            not_exists: None,
         }
     }
+}
 
-    /// Simplifies the creation of the [`SqlCondition::OrVec`] enum.
-    ///
-    /// If `conds` is empty, then `cond_1` will simply be returned.
-    pub fn or_vec(cond_1: impl Into<Condition>, conds: Vec<impl Into<Condition>>) -> Self {
-        if conds.is_empty() {
-            cond_1.into()
-        } else {
-            Self::OrVec(
-                Box::new(cond_1.into()),
-                conds.into_iter().map(|c| c.into()).collect(),
-            )
-        }
+impl SqlWhereClause {
+    pub fn from_condition(cond: Condition<FnArg>) -> Self {
+        cond.into()
     }
 
-    /// Adds the given prefix to all [`ArgType::IdentifierName`] present inside this comparison.
-    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
-        let prefix = prefix.to_string();
-        match self {
-            Condition::Operation(sql_comparison) => {
-                sql_comparison.add_prefix_identifier(prefix);
-            }
-            Condition::Or(sql_condition, sql_condition1)
-            | Condition::And(sql_condition, sql_condition1) => {
-                sql_condition.add_prefix_identifier(&prefix);
-                sql_condition1.add_prefix_identifier(prefix);
-            }
-            Condition::AndVec(sql_condition, sql_conditions)
-            | Condition::OrVec(sql_condition, sql_conditions) => {
-                sql_condition.add_prefix_identifier(&prefix);
-                sql_conditions
-                    .iter_mut()
-                    .for_each(|cond| cond.add_prefix_identifier(&prefix));
-            }
-            Condition::Not(sql_condition) => {
-                sql_condition.add_prefix_identifier(prefix);
-            }
-            Condition::Exists(_) => {
-                todo!("Renaming is not yet implemented for select queries")
-            }
-        }
+    /// Sets the *Not Exists* clause of an [`SqlWhereClause`]. If one already existed, this will overwrite it with the new one.
+    pub fn exists(&mut self, query: impl Into<SqlSelectQuery>) {
+        self.not_exists = Some(Box::new(query.into()));
     }
+}
 
-    /// Searches recursively in the given condition for any identifiers.
-    pub fn get_all_identifiers(&self) -> IndexSet<String> {
-        let mut res: IndexSet<String> = IndexSet::new();
-        match &self {
-            Condition::Operation(sql_comparison) => match sql_comparison {
-                Comparison::Greater(a, b)
-                | Comparison::GreaterEqual(a, b, _)
-                | Comparison::Less(a, b)
-                | Comparison::LessEqual(a, b, _)
-                | Comparison::Equal(a, b, _)
-                | Comparison::NotEqual(a, b, _) => {
-                    res.extend(a.get_all_identifiers());
-                    res.extend(b.get_all_identifiers());
-                }
-            },
-            Condition::And(sql_condition, sql_condition1)
-            | Condition::Or(sql_condition, sql_condition1) => {
-                res.extend(sql_condition.get_all_identifiers());
-                res.extend(sql_condition1.get_all_identifiers());
-            }
-            Condition::Not(sql_condition) => {
-                res.extend(sql_condition.get_all_identifiers());
-            }
-            Condition::AndVec(sql_condition, sql_conditions)
-            | Condition::OrVec(sql_condition, sql_conditions) => {
-                res.extend(sql_condition.get_all_identifiers());
-                for condition in sql_conditions {
-                    res.extend(condition.get_all_identifiers());
-                }
-            }
-            Condition::Exists(_sql_select_query) => {
-                todo!(
-                    "Conditions using sql selections are not yet supported since finding identifiers names is harder here."
-                )
-            }
-        };
-
-        res
-    }
-
-    pub fn to_sql<DB>(&self) -> String
+impl Condition<FnArg> {
+    fn to_sql<DB>(&self) -> String
     where
         DB: Database + DbQuerySystem<DB>,
     {
-        let concat =
-            |cond1: &Condition, operator: &str, sql_conditions: &Vec<Condition>| -> String {
-                let mut res = cond1.to_sql::<DB>().to_string();
+        // let concat = |cond1: &Condition<FnArg>,
+        //               operator: &str,
+        //               sql_conditions: &Vec<Condition<FnArg>>|
+        //  -> String {
+        //     let mut res = cond1.to_sql::<DB>().to_string();
 
-                for condition in sql_conditions {
-                    res.push_str(&format!(" {operator} {}", condition.to_sql::<DB>()));
-                }
+        //     for condition in sql_conditions {
+        //         res.push_str(&format!(" {operator} {}", condition.to_sql::<DB>()));
+        //     }
 
-                res
-            };
+        //     res
+        // };
 
         match self {
             Condition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
@@ -214,243 +81,30 @@ impl Condition {
                 format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
             }
             Condition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
-            Condition::AndVec(cond1, sql_conditions) => concat(cond1, "AND", sql_conditions),
-            Condition::OrVec(cond1, sql_conditions) => concat(cond1, "OR", sql_conditions),
-            Condition::Exists(sql_select_query) => {
-                format!("EXISTS({})", DB::to_sql(sql_select_query))
-            }
         }
     }
 }
 
-/// Represents a comparison that can be used in an Sql where clause.
-/// Note that an [`SqlComparison`] is a [`SqlCondition`] and therefore can be turned into one.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Comparison {
-    /// `a > b`
-    Greater(MathExpression, MathExpression),
-    /// `a >= b` / `a > b or |a - b| < epsilon`
-    GreaterEqual(MathExpression, MathExpression, Option<f64>),
-    /// `a < b`
-    Less(MathExpression, MathExpression),
-    /// `a <= b` / `a < b or |a - b| < epsilon`
-    LessEqual(MathExpression, MathExpression, Option<f64>),
-    /// `a = b` / `|a - b| < epsilon`
-    Equal(MathExpression, MathExpression, Option<f64>),
-    /// `a != b` / `|a - b| >= epsilon`
-    NotEqual(MathExpression, MathExpression, Option<f64>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MathExpression {
-    Primitif(ParsedArgType),
-    // Unary op
-    Negation(Box<MathExpression>),
-    Floor(Box<MathExpression>),
-    Ceil(Box<MathExpression>),
-    Abs(Box<MathExpression>),
-    Sqrt(Box<MathExpression>),
-    // Bin operations
-    BinOperation {
-        left: Box<MathExpression>,
-        op: ArithmOp,
-        right: Box<MathExpression>,
-    },
-}
-
-impl MathExpression {
-    pub fn floor(expr: impl Into<MathExpression>) -> Self {
-        Self::Floor(Box::new(expr.into()))
-    }
-    pub fn ceil(expr: impl Into<MathExpression>) -> Self {
-        Self::Ceil(Box::new(expr.into()))
-    }
-    pub fn abs(expr: impl Into<MathExpression>) -> Self {
-        Self::Abs(Box::new(expr.into()))
-    }
-    pub fn negation(expr: impl Into<MathExpression>) -> Self {
-        Self::Negation(Box::new(expr.into()))
-    }
-    pub fn sqrt(expr: impl Into<MathExpression>) -> Self {
-        Self::Sqrt(Box::new(expr.into()))
-    }
-
-    pub fn primitif(arg: impl Into<ParsedArgType>) -> Self {
-        Self::Primitif(arg.into())
-    }
-    pub fn bin_operation(
-        left: impl Into<MathExpression>,
-        op: ArithmOp,
-        right: impl Into<MathExpression>,
-    ) -> Self {
-        Self::BinOperation {
-            left: Box::new(left.into()),
-            op,
-            right: Box::new(right.into()),
-        }
-    }
-
-    /// Searches recursively in the given math expression for any identifiers.
-    pub fn get_all_identifiers(&self) -> HashSet<String> {
-        let mut res: HashSet<String> = HashSet::new();
-        match self {
-            MathExpression::Primitif(arg_type) => {
-                // if let ArgType::Identifier(id) = arg_type {
-                //     res.insert(id.clone());
-                // }
-                // TODO: Same here as bellow
-            }
-            MathExpression::Negation(math_expression)
-            | MathExpression::Floor(math_expression)
-            | MathExpression::Sqrt(math_expression)
-            | MathExpression::Ceil(math_expression)
-            | MathExpression::Abs(math_expression) => {
-                res.extend(math_expression.get_all_identifiers());
-            }
-            MathExpression::BinOperation { left, op: _, right } => {
-                res.extend(left.get_all_identifiers());
-                res.extend(right.get_all_identifiers());
-            }
-        };
-        res
-    }
-
-    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
-    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
-        let prefix = prefix.to_string();
-        match self {
-            MathExpression::Primitif(arg_type) => {
-                // if let ArgType::Identifier(name) = arg_type {
-                //     *name = format!("{prefix}{name}");
-                // }
-                // TODO: This entire function will have to be redone
-            }
-            MathExpression::Negation(math_expression)
-            | MathExpression::Floor(math_expression)
-            | MathExpression::Ceil(math_expression)
-            | MathExpression::Sqrt(math_expression)
-            | MathExpression::Abs(math_expression) => {
-                math_expression.add_prefix_identifier(prefix);
-            }
-            MathExpression::BinOperation { left, op: _, right } => {
-                left.add_prefix_identifier(&prefix);
-                right.add_prefix_identifier(prefix);
-            }
-        };
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ArithmOp {
-    Add,
-    Subtract,
-    Power,
-    Multiply,
-    Divide,
-    Modulo,
-}
-
-/// Used to correctly identify arguments type,
-/// otherwise it would be hard to guess if they refer to a value or an identifier.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ParsedArgType {
-    Value(String),
-    Graph,
-    Function(ParsedFunction),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParsedFunction {
-    pub name: String,
-    pub first_arg: Box<MathExpression>,
-    pub other_args: Vec<MathExpression>,
-}
-
-impl From<ParsedFunction> for ParsedArgType {
-    fn from(value: ParsedFunction) -> Self {
-        ParsedArgType::Function(value)
-    }
-}
-
-impl From<ParsedArgType> for MathExpression {
-    fn from(value: ParsedArgType) -> Self {
-        MathExpression::Primitif(value)
-    }
-}
-
-impl ParsedArgType {
-    pub fn value(value: impl ToString) -> Self {
-        ParsedArgType::Value(value.to_string())
-    }
-    // pub fn identifier(name: impl ToString) -> Self {
-    //     ArgType::Identifier(name.to_string())
-    // }
-    pub fn function(
-        name: impl ToString,
-        first_arg: impl Into<MathExpression>,
-        args: Vec<impl Into<MathExpression>>,
-    ) -> Self {
-        let args = args.into_iter().map(|m| m.into()).collect();
-        ParsedFunction {
-            name: name.to_string(),
-            first_arg: Box::new(first_arg.into()),
-            other_args: args,
-        }
-        .into()
-    }
-
-    pub fn invariant(name: impl ToString) -> Self {
-        ParsedFunction {
-            name: name.to_string(),
-            first_arg: Box::new(ParsedArgType::Graph.into()),
-            other_args: Vec::new(),
-        }
-        .into()
-    }
-}
-
-impl Display for ParsedArgType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ParsedArgType::Value(v) => v.to_string(),
-                ParsedArgType::Graph => "G".to_string(),
-                // ArgType::Identifier(v) => v.to_string(),
-                ParsedArgType::Function(function) => format!(
-                    "{}({:?},{:?})",
-                    function.name, function.first_arg, function.other_args
-                ), // FIXME: this is not valid SQL !!!
-            }
-        )
-    }
-}
-
-impl From<Comparison> for Condition {
-    fn from(val: Comparison) -> Self {
-        Condition::Operation(val)
-    }
-}
-
-impl Comparison {
-    /// Adds the given prefix to the [`ArgType::Identifier`] present inside this comparison.
-    pub fn add_prefix_identifier(&mut self, prefix: impl ToString) {
-        let prefix = prefix.to_string();
-        match self {
-            Comparison::Greater(left, right)
-            | Comparison::GreaterEqual(left, right, _)
-            | Comparison::Less(left, right)
-            | Comparison::LessEqual(left, right, _)
-            | Comparison::Equal(left, right, _)
-            | Comparison::NotEqual(left, right, _) => {
-                left.add_prefix_identifier(&prefix);
-                right.add_prefix_identifier(prefix);
-            }
-        }
-    }
-
+impl SqlWhereClause {
     pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let sql_cond = self.condition.to_sql::<DB>();
+        match &self.not_exists {
+            Some(not_exist_query) => {
+                format!(
+                    "{sql_cond} AND NOT(EXISTS({}))",
+                    DB::to_sql(not_exist_query)
+                )
+            }
+            None => sql_cond,
+        }
+    }
+}
+
+impl Comparison<FnArg> {
+    fn to_sql<DB>(&self) -> String
     where
         DB: Database + DbQuerySystem<DB>,
     {
@@ -508,7 +162,7 @@ impl Comparison {
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        ParsedArgType::value(eps).into(),
+                        FnArg::Constant(ConstantValue::Numeric(*eps)).into(),
                     )
                     .to_sql::<DB>()
                 }
@@ -529,7 +183,7 @@ impl Comparison {
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        ParsedArgType::value(eps).into(),
+                        FnArg::Constant(ConstantValue::Numeric(*eps)).into(),
                         None,
                     )
                     .to_sql::<DB>()
@@ -546,13 +200,46 @@ impl Comparison {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SqlJoin {
+    table_name: String,
+    alias_name: String,
+    on_cond: Condition<FnArg>,
+}
+
+impl SqlJoin {
+    pub fn new(
+        table_name: impl Into<String>,
+        alias_name: impl Into<String>,
+        on_cond: Condition<FnArg>,
+    ) -> Self {
+        Self {
+            table_name: table_name.into(),
+            alias_name: alias_name.into(),
+            on_cond,
+        }
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        format!(
+            "JOIN {} {} ON {}",
+            self.table_name,
+            self.alias_name,
+            self.on_cond.to_sql::<DB>()
+        )
+    }
+}
+
 /// Represents a table in the From section of an Sql Query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlTableSelection {
     /// The table to select
     pub selected_table: SqlTable,
-    /// Contains all the table to join to this selected table  and the column name to use for each.
-    pub join_clause: Option<(Vec<String>, String)>,
+    // /// Contains all the table to join to this selected table  and the column name to use for each.
+    // pub join_clause: Option<(Vec<String>, String)>,
     /// What to rename the table in the From section of the query
     pub rename_as: Option<String>,
 }
@@ -562,7 +249,7 @@ impl SqlTableSelection {
     pub fn new(table: impl Into<SqlTable>) -> Self {
         Self {
             selected_table: table.into(),
-            join_clause: None,
+            // join_clause: None,
             rename_as: None,
         }
     }
@@ -571,28 +258,28 @@ impl SqlTableSelection {
     pub fn new_rename(table: impl Into<SqlTable>, new_name: impl ToString) -> Self {
         Self {
             selected_table: table.into(),
-            join_clause: None,
+            // join_clause: None,
             rename_as: Some(new_name.to_string()),
         }
     }
 
-    /// Selects a table and joins it with the given table name by using for each one the same common column name.
-    pub fn new_join(
-        table: impl Into<SqlTable>,
-        with_tables: Vec<String>,
-        using: impl ToString,
-        rename_as: Option<String>,
-    ) -> Self {
-        let mut rename = None;
-        if let Some(new_name) = rename_as {
-            rename = Some(new_name.to_string());
-        }
-        Self {
-            selected_table: table.into(),
-            join_clause: Some((with_tables, using.to_string())),
-            rename_as: rename,
-        }
-    }
+    // /// Selects a table and joins it with the given table name by using for each one the same common column name.
+    // pub fn new_join(
+    //     table: impl Into<SqlTable>,
+    //     with_tables: Vec<String>,
+    //     using: impl ToString,
+    //     rename_as: Option<String>,
+    // ) -> Self {
+    //     let mut rename = None;
+    //     if let Some(new_name) = rename_as {
+    //         rename = Some(new_name.to_string());
+    //     }
+    //     Self {
+    //         selected_table: table.into(),
+    //         join_clause: Some((with_tables, using.to_string())),
+    //         rename_as: rename,
+    //     }
+    // }
 }
 impl From<String> for SqlTableSelection {
     fn from(value: String) -> Self {
@@ -638,8 +325,10 @@ pub struct SqlSelectQuery {
     pub select: Vec<String>,
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
+    /// The list of joins to add to the query.
+    pub joins: Vec<SqlJoin>,
     /// The condition to impose to the selection
-    pub where_clause: Option<Condition>,
+    pub where_clause: Option<SqlWhereClause>,
     /// What to group the selection by
     pub group_by: Vec<String>,
     /// The limit of data to return.
@@ -660,6 +349,7 @@ impl SqlSelectQuery {
         Self {
             select: vec![column_name.to_string()],
             from: vec![table.into()],
+            joins: Vec::new(),
             where_clause: None,
             group_by: vec![],
             limit: None,
@@ -672,23 +362,23 @@ impl SqlSelectQuery {
         Self::select_column_from_table("COUNT(*)", table)
     }
 
-    /// Returns the *same* query but with the given **where** clause.
-    pub fn set_where_clause(mut self, where_clause: impl Into<Condition>) -> Self {
+    /// Returns the *same* query but with the given **where** clause, overwritting the previous one if it existed.
+    pub fn set_where_clause(mut self, where_clause: impl Into<SqlWhereClause>) -> Self {
         self.where_clause = Some(where_clause.into());
         self
     }
 
-    /// Encapsulates the previous conditions with an [`SqlCondition::And`] composed of the previous condition and the given one.
+    /// Encapsulates the previous conditions with an [`Condition::And`] composed of the previous condition and the given one.
     ///
     /// And if no conditions were given before then it will be added directly.
-    pub fn add_and(&mut self, additional_cond: impl Into<Condition>) {
+    pub fn add_and(&mut self, additional_cond: impl Into<Condition<FnArg>>) {
         if self.where_clause.is_some() {
-            self.where_clause = Some(Condition::and(
-                self.where_clause.take().expect("is some"),
-                additional_cond,
-            ))
+            // We do this to keep the previous condition as well as the possible NotExists clause.
+            let mut where_clause = self.where_clause.take().expect("is some");
+            where_clause.condition = Condition::and(where_clause.condition, additional_cond);
+            self.where_clause = Some(where_clause);
         } else {
-            self.where_clause = Some(additional_cond.into());
+            self.where_clause = Some(additional_cond.into().into());
         }
     }
 
@@ -701,6 +391,10 @@ impl SqlSelectQuery {
         for table in tables {
             self.add_table(table);
         }
+    }
+
+    pub fn add_join(&mut self, join: SqlJoin) {
+        self.joins.push(join);
     }
 
     /// Returns the *same* query but with the given **limit/offset** clause.
@@ -814,9 +508,27 @@ where
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
 
-    fn translate_math_expr(expr: &MathExpression) -> String {
+    fn translate_constant(constant: &ConstantValue) -> String {
+        match constant {
+            ConstantValue::Numeric(num) => num.to_string(),
+            ConstantValue::String(string) => format!("\"{string}\""),
+            ConstantValue::Bool(_) => todo!(
+                "Bool can differ from function to function, this has to be revisited in the future !"
+            ),
+        }
+    }
+
+    fn translate_math_expr(expr: &MathExpression<FnArg>) -> String {
         match expr {
-            MathExpression::Primitif(arg_type) => arg_type.to_string(),
+            MathExpression::Primitif(arg_type) => match arg_type {
+                FnArg::FnCall(fn_ref) => {
+                    // At this point, the function table must already be part of the join chain.
+                    format!("{}{}.{INVARIANT_COLUMN_NAME}", fn_ref.0, fn_ref.1)
+                }
+                FnArg::Constant(constant_value) => Self::translate_constant(constant_value),
+                // At this point, the dataset table must already be part of the join chain.
+                FnArg::Graph => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
+            },
             MathExpression::Negation(math_expression) => {
                 format!("-({})", Self::translate_math_expr(math_expression))
             }

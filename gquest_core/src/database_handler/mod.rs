@@ -44,8 +44,8 @@ pub use postgre_handler::*;
 pub mod db_query_system;
 pub use db_query_system::*;
 
-pub mod graph_queries;
-pub use graph_queries::*;
+// pub mod graph_queries;
+// pub use graph_queries::*;
 
 use crate::utils::subject::Observer;
 

@@ -1,8 +1,12 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
-use crate::database_handler::{
-    ArithmOp, ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError,
-    GraphDbStartupError, MathExpression, SqlSelectQuery, SqlTable,
+use crate::{
+    data_handler::rel_graph::FnArg,
+    database_handler::{
+        ColumnType, DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError,
+        GraphDbStartupError, SqlSelectQuery, SqlTable,
+    },
+    parser::parsed_expression::{ArithmOp, MathExpression},
 };
 
 /// An alias for a [`GraphDatabase`] specialized for Postgres
@@ -148,12 +152,12 @@ WHERE schemaname != 'pg_catalog' AND
                 }
                 SqlTable::TableName(name) => res.push_str(name),
             }
-            // Join query
-            if let Some((tables_to_join, using)) = &table.join_clause {
-                for table_name in tables_to_join {
-                    res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
-                }
-            }
+            // // Inner Join query
+            // if let Some((tables_to_join, using)) = &table.join_clause {
+            //     for table_name in tables_to_join {
+            //         res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
+            //     }
+            // }
 
             if let Some(alias) = &table.rename_as {
                 res.push_str(&format!(" as {alias}"));
@@ -162,6 +166,11 @@ WHERE schemaname != 'pg_catalog' AND
             if i != query.from.len() - 1 {
                 res.push_str(", ");
             }
+        }
+
+        // Join clauses
+        for sql_join in &query.joins {
+            res.push_str(&sql_join.to_sql::<Self>());
         }
 
         // Where clause
@@ -256,9 +265,9 @@ WHERE schemaname != 'pg_catalog' AND
         }
     }
 
-    fn translate_math_expr(expr: &MathExpression) -> String {
+    fn translate_math_expr(expr: &MathExpression<FnArg>) -> String {
         match expr {
-            MathExpression::Primitif(arg_type) => arg_type.to_string(),
+            MathExpression::Primitif(arg_type) => todo!("Translate into postgre primitives"),
             MathExpression::Negation(math_expression) => {
                 format!("-({})", Self::translate_math_expr(math_expression))
             }

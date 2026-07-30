@@ -6,7 +6,8 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
-    utils::config_file::ConfigFile,
+    parser::query_parser::QueryParser,
+    utils::config_file2::ConfigFile,
     workplace::GquestEngine,
 };
 use log::{LevelFilter, info};
@@ -24,31 +25,31 @@ async fn main() {
         .await
         .expect("no problem");
 
-    let geng =
-        GengProcess::call_geng(None, 8, &"".to_string(), (None, None)).expect("correct call");
+    let config = ConfigFile::read_json_file(
+        &"gquest_core/examples/use_case/resources/configs_cooler.json".to_string(),
+    )
+    .expect("valid config file");
+    db.add_to_dataset(
+        GengProcess::call_geng(None, 7, &"".to_string(), (None, None))
+            .expect("correct call")
+            .get_reader(),
+        config.get_batch_size(),
+        None,
+    )
+    .await
+    .expect("no issues while filling the dataset");
 
-    db.add_to_dataset(geng.get_reader(), 1500, None)
-        .await
-        .expect("correct");
+    let wp = GquestEngine::new(db, config);
 
-    let config = ConfigFile::read_json_file(&CONFIG_PATH.to_string()).expect("File should correct");
+    let cond = QueryParser::parse_condition("D(2, max_degree(G)*2) and is_planar", None)
+        .expect("valid condition");
+    println!("Read cond: {cond:?}");
+    println!("_____________");
 
-    let mut _wp = GquestEngine::new(db.clone(), config);
+    let typed_cond = wp.exec_condition_no_multithread(cond);
+    println!("res: {typed_cond:?}");
 
-    // let mut table =
-    //     QueryTable::new_no_header(gquest_core::utils::table_handler::QueryTableOptions::Full);
-    // wp.query_extremal_conjecture(
-    //     QueryParser::parse_query("min(ag: n,m), n = 8 => conj1 = 1", None)
-    //         .expect("correct"),
-    //     &mut table,
-    // )
-    // .await
-    // .expect("correct wp");
-
-    // db.clear_database().await.expect("no issues");
-
-    // println!("{table}");
-    db.close_connection().await;
+    wp.close().await;
 
     info!("Program ends");
 }

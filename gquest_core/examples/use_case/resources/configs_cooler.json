@@ -1,0 +1,30 @@
+{
+  "batch_size": 5000,
+  "modules": [
+    {
+      "function": "D",
+      "path": "d_nm.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        }
+      ],
+      "output": "numeric"
+    },
+    {
+      "function": "is_planar",
+      "path": "is_planar.py",
+      "output": "numeric"
+    },
+    {
+      "function": "max_degree",
+      "path": "max_degree.py",
+      "output": "numeric"
+    }
+  ]
+}

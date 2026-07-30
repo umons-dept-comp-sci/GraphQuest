@@ -32,6 +32,7 @@ comparison = {
     expr ~ comp_operator ~ expr
   | "(" ~ condition ~ ")"
   | not_comparison
+  | function
   | identifier
 }
 
@@ -80,7 +81,7 @@ function = { identifier ~ "(" ~ expr ~ ("," ~ expr)* ~ ")" }
 value = { number | string }
 
 // A value representing an identifier (must start with a letter)
-identifier = @{ graph | ASCII_ALPHA ~ valid_ascii* }
+identifier = @{ graph | ASCII_ALPHA ~ (valid_ascii)* }
 
 string        =  { double_quotes ~ (valid_ascii | "." | "_")+ ~ double_quotes }
 double_quotes = _{ "\"" }

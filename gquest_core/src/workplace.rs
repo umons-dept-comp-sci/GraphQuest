@@ -11,17 +11,11 @@ use tokio::{
 
 use crate::{
     data_handler::{
-        data_types::ConstantValue,
-        invariant_execs::{Module, ModuleError, ModuleIterator, ModuleSorter},
-        rel_graph::{FnArg, FnRef, RelationGraph, RelationGraphError},
-    },
-    database_handler::{
-        AllowedGraphDb, ClassSelection, ExtremalConjecture, GraphDbRuntimeError,
-        GraphDbStartupError, PK_NAME, SqlSelectQuery, SqlTableSelection, VERTICES_TABLE_NAME,
-        graph_queries,
-    },
-    parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType},
-    utils::{SaveOutput, config_file2::ConfigFile, subject::Observer},
+        data_types::ConstantValue, invariant_execs::{Module, ModuleError, ModuleIterator, ModuleSorter}, rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
+    }, database_handler::{
+        AllowedGraphDb, GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery,
+        SqlTableSelection, VERTICES_TABLE_NAME,
+    }, parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType}, utils::{SaveOutput, config_file2::ConfigFile, subject::Observer},
 };
 
 #[derive(Debug, Error)]
@@ -40,33 +34,37 @@ pub enum WorkplaceError {
 
 /// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
 pub struct GquestEngine {
-    // pub db: AllowedGraphDb,
+    pub db: AllowedGraphDb,
     config: ConfigFile,
 }
 
 impl GquestEngine {
-    // /// Creates a new [`GquestEngine`].
-    // pub fn new(db: impl Into<AllowedGraphDb>, config: ConfigFile) -> Self {
-    //     let db = db.into();
+    /// Creates a new [`GquestEngine`].
+    pub fn new(db: impl Into<AllowedGraphDb>, config: ConfigFile) -> Self {
+        let db = db.into();
 
-    //     Self { db, config }
-    // }
-    pub fn new(config: ConfigFile) -> Self {
-        Self { config }
+        Self { db, config }
     }
 
-    pub fn exec_condition(&self, cond: Condition<ParsedArgType>) -> Result<(), WorkplaceError> {
+    pub async fn close(self) {
+        self.db.close_connection().await
+    }
+
+    pub fn exec_condition_no_multithread(
+        &self,
+        cond: Condition<ParsedArgType>,
+    ) -> Result<(), WorkplaceError> {
         let mut rel_graph = RelationGraph::new(self.config.get_module_refs());
         let flattened_cond = Self::fill_graph_cond(&mut rel_graph, cond)?;
 
-        // println!("{:?}", flattened_cond);
-        // println!("Engine: {:?}", rel_graph);
-        let iter: crate::data_handler::rel_graph::AutoFnCallIterator<'_> =
+        let mut iter: AutoFnCallIterator<'_> =
             rel_graph.into_iter().into();
 
-        for re in iter {
-            println!("{re:?}");
+        while let Some(re) = iter.next() {
+            let (module, args) = iter.get_module_args(&re);
+
         }
+
         Ok(())
     }
 
@@ -162,7 +160,6 @@ impl GquestEngine {
         p: ParsedArgType,
     ) -> Result<FnArg, WorkplaceError> {
         Ok(match p {
-            // FIXME: ADD MORE THAN JUST "" LIKE BOOL, NUMERIC, STRING, ETC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             ParsedArgType::PrimString(s) => FnArg::Constant(ConstantValue::String(s)),
             ParsedArgType::PrimNumeric(n) => FnArg::Constant(ConstantValue::Numeric(n)),
             ParsedArgType::Graph => FnArg::Graph,

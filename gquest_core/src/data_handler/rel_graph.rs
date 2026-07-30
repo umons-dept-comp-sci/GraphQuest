@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use serde_json::map::Iter;
 use thiserror::Error;
 
 use crate::{
@@ -285,6 +284,12 @@ pub struct AutoFnCallIterator<'a> {
     module_iterator: FnCallIterator<'a>,
 }
 
+impl<'a> AutoFnCallIterator<'a> {
+    pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
+        self.module_iterator.get_module_args(fn_ref)
+    }
+}
+
 impl<'a> Iterator for AutoFnCallIterator<'a> {
     type Item = FnRef;
 
@@ -344,6 +349,19 @@ impl<'a> FnCallIterator<'a> {
         } else {
             None
         }
+    }
+
+    pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
+        let module = self
+            .relation_graph
+            .get_module(&fn_ref.0)
+            .expect("correct module name");
+        let fn_args = &self
+            .relation_graph
+            .get_call(&fn_ref)
+            .expect("valid reference")
+            .args;
+        (module, fn_args)
     }
 }
 

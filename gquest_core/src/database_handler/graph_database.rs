@@ -6,8 +6,9 @@ use sqlx::{Column, Row, TypeInfo};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::invariant_execs::{AsyncModuleInput, AsyncModuleOutput, Module};
+use crate::data_handler::module::{AsyncModuleInput, AsyncModuleOutput, Module};
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
+use crate::parser::parsed_expression::{Comparison, Condition, ParsedArgType};
 use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
@@ -728,42 +729,41 @@ where
         };
 
         /* if an inv table already exists, adds a condition so that only gets values not present in it */
-        // Remember that since all invariants are computed together from an executable we can simply check for one and it will apply to all.
         {
-            let first_inv = executable.invariant_names.last().expect("at least one val");
-            if self.is_table_added(first_inv).await? {
-                dataset.add_and(Condition::not(Condition::exists(
-                    SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
-                        .set_where_clause(Comparison::Equal(
-                            // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
-                            ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
-                            ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
-                            None,
-                        )),
-                )));
-            }
+            // let first_inv = executable.invariant_names.last().expect("at least one val");
+            // if self.is_table_added(first_inv).await? {
+            //     dataset.add_and(Condition::not(Condition::exists(
+            //         SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
+            //             .set_where_clause(Comparison::Equal(
+            //                 // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
+            //                 ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
+            //                 ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")).into(),
+            //                 None,
+            //             )),
+            //     )));
+            // }
         }
         // All needed signatures are selected
 
         /* Join query to fetch dependencies if any are required */
-        let join_query = {
-            if let Some(dep) = &executable.dependencies
-                && !dep.is_empty()
-            {
-                SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
-                    dataset,
-                    dep.clone(),
-                    PK_NAME,
-                    Some(CANONICAL_TABLE_NAME.to_string()),
-                ))
-            } else {
-                dataset
-            }
-        };
+        // let join_query = {
+        //     if let Some(dep) = &executable.dependencies
+        //         && !dep.is_empty()
+        //     {
+        //         SqlSelectQuery::select_all_from_table(SqlTableSelection::new_join(
+        //             dataset,
+        //             dep.clone(),
+        //             PK_NAME,
+        //             Some(CANONICAL_TABLE_NAME.to_string()),
+        //         ))
+        //     } else {
+        //         dataset
+        //     }
+        // };
 
-        // build query
-        let query_str = join_query.to_sql::<DB>();
-
+        // // build query
+        // let query_str = join_query.to_sql::<DB>();
+        let query_str = "WRONG".to_string();
         // Set the capacity of the vector to save time (since we know their sizes)
         let mut signatures: Vec<String> = Vec::with_capacity(batch_size);
         let mut batch_to_store: Vec<Vec<f64>> =

@@ -11,7 +11,6 @@ use thiserror::Error;
 
 use crate::{
     data_handler::invariant_execs::Module,
-    database_handler::{ClassSelection, ClassSelectionError, ClassType},
     parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression, ParsedArgType},
 };
 
@@ -26,8 +25,8 @@ pub enum ParsingError {
         /// The missing token that could possibly fix the error
         missing_token: Option<String>,
     },
-    #[error("Error when creating the class selection \"{0}\", reason : \"{1}\"")]
-    ClassSelectionError(String, ClassSelectionError),
+    // #[error("Error when creating the class selection \"{0}\", reason : \"{1}\"")]
+    // ClassSelectionError(String, ClassSelectionError),
 }
 
 impl ParsingError {
@@ -312,14 +311,19 @@ impl QueryParser {
                     }
                 }
                 Rule::condition => Self::parse_condition_rule(inner_rule, epsilon),
-                // FIXME: Add back this shortcut later when the structure is more stable
-                // Rule::identifier => SqlComparison::Equal(
-                //     ArgType::identifier(inner_rule.as_str()).into(),
-                //     ArgType::value(1).into(),
-                //     None,
-                // )
-                // .into(),
-                _ => unreachable!(),
+                Rule::function => Comparison::Equal(
+                    parse_function(inner_rule).into(),
+                    ParsedArgType::prim_numeric(1.).into(),
+                    None,
+                )
+                .into(),
+                Rule::identifier => Comparison::Equal(
+                    ParsedArgType::invariant(inner_rule.as_str()).into(),
+                    ParsedArgType::prim_numeric(1.).into(),
+                    None,
+                )
+                .into(),
+                _ => unreachable!("{inner_rule:?}"),
             }
         } else {
             // expression - comp_operator - expression
@@ -338,48 +342,48 @@ impl QueryParser {
         }
     }
 
-    fn parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
-        let rule_str = rule.as_str();
-        let inner_rules = rule.into_inner();
+    // fn parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
+    //     let rule_str = rule.as_str();
+    //     let inner_rules = rule.into_inner();
 
-        let mut first_identifier = None;
-        let mut identifiers = Vec::new();
-        let mut class_type = ClassType::Max;
-        for inner_rule in inner_rules {
-            match &inner_rule.as_rule() {
-                Rule::extremal_func => {
-                    let inner_rule = inner_rule.into_inner().next().expect("at least one");
-                    match &inner_rule.as_rule() {
-                        Rule::max_func => {
-                            class_type = ClassType::Max;
-                        }
-                        Rule::min_func => {
-                            class_type = ClassType::Min;
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                Rule::identifier => {
-                    // TODO: not sure this is correct but oh well
-                    let new_prim = ParsedArgType::invariant(inner_rule.as_str());
-                    if first_identifier.is_none() {
-                        first_identifier = Some(new_prim)
-                    } else {
-                        identifiers.push(new_prim);
-                    }
-                }
-                _ => unreachable!(),
-            }
-        }
-        match ClassSelection::new(
-            class_type,
-            first_identifier.expect("at least one"),
-            identifiers,
-        ) {
-            Ok(val) => Ok(val),
-            Err(e) => Err(ParsingError::ClassSelectionError(rule_str.to_string(), e)),
-        }
-    }
+    //     let mut first_identifier = None;
+    //     let mut identifiers = Vec::new();
+    //     let mut class_type = ClassType::Max;
+    //     for inner_rule in inner_rules {
+    //         match &inner_rule.as_rule() {
+    //             Rule::extremal_func => {
+    //                 let inner_rule = inner_rule.into_inner().next().expect("at least one");
+    //                 match &inner_rule.as_rule() {
+    //                     Rule::max_func => {
+    //                         class_type = ClassType::Max;
+    //                     }
+    //                     Rule::min_func => {
+    //                         class_type = ClassType::Min;
+    //                     }
+    //                     _ => unreachable!(),
+    //                 }
+    //             }
+    //             Rule::identifier => {
+    //                 // TODO: not sure this is correct but oh well
+    //                 let new_prim = ParsedArgType::invariant(inner_rule.as_str());
+    //                 if first_identifier.is_none() {
+    //                     first_identifier = Some(new_prim)
+    //                 } else {
+    //                     identifiers.push(new_prim);
+    //                 }
+    //             }
+    //             _ => unreachable!(),
+    //         }
+    //     }
+    //     match ClassSelection::new(
+    //         class_type,
+    //         first_identifier.expect("at least one"),
+    //         identifiers,
+    //     ) {
+    //         Ok(val) => Ok(val),
+    //         Err(e) => Err(ParsingError::ClassSelectionError(rule_str.to_string(), e)),
+    //     }
+    // }
 
     fn parse_expr_rule(pairs: Pairs<Rule>) -> MathExpression {
         PRATT_PARSER
@@ -447,31 +451,32 @@ fn create_condition(
     }
 }
 
+fn parse_function(fn_rule: Pair<'_, Rule>) -> ParsedArgType {
+    let mut inner_rule = fn_rule.into_inner();
+    // Function name
+    let fn_name = inner_rule
+        .next()
+        .expect("fn identifier present")
+        .as_str()
+        .to_string();
+    // First argument
+    let first_arg =
+        QueryParser::parse_expr_rule(inner_rule.next().expect("first arg present").into_inner());
+    // zero or more arguments
+    let mut args = Vec::new();
+    for rule in inner_rule {
+        args.push(QueryParser::parse_expr_rule(rule.into_inner()));
+    }
+    ParsedArgType::function(fn_name, first_arg, args)
+}
+
 fn create_primitif(prim_rule: Pair<'_, Rule>) -> ParsedArgType {
     let inner_rule = prim_rule
         .into_inner()
         .next()
         .expect("at least one sub rule");
     match &inner_rule.as_rule() {
-        Rule::function => {
-            let mut inner_rule = inner_rule.into_inner();
-            // Function name
-            let fn_name = inner_rule
-                .next()
-                .expect("fn identifier present")
-                .as_str()
-                .to_string();
-            // First argument
-            let first_arg = QueryParser::parse_expr_rule(
-                inner_rule.next().expect("first arg present").into_inner(),
-            );
-            // zero or more arguments
-            let mut args = Vec::new();
-            for rule in inner_rule {
-                args.push(QueryParser::parse_expr_rule(rule.into_inner()));
-            }
-            ParsedArgType::function(fn_name, first_arg, args)
-        }
+        Rule::function => parse_function(inner_rule),
         // Shorthand for invariants or for the graph G identifier
         Rule::identifier => {
             // Either a function or the identifier of a graph.

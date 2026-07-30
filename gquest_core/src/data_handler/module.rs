@@ -1,19 +1,16 @@
-use indexmap::{IndexMap, IndexSet};
 use is_executable::IsExecutable;
 use log::debug;
 use regex::Regex;
 use std::{
-    collections::HashMap,
     env,
-    fmt::{Debug, Display},
+    fmt::Debug,
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
 };
 use thiserror::Error;
-use topo_sort::TopoSort;
 
-use crate::{data_handler::data_types::ValueType, database_handler::ParsedFunction};
+use crate::data_handler::{data_types::ValueType, rel_graph::FnRef};
 
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
 
@@ -111,21 +108,6 @@ pub struct Module {
     /// The type of output to return
     pub output: ValueType,
     pub batch_size: Option<usize>,
-}
-
-/// Trait used to provide a stream of data to provided to a module
-pub trait AsyncModuleInput<E> {
-    /// Returns the next values to feed to the module. None if everything was already given.
-    fn call(&mut self) -> impl std::future::Future<Output = Option<Result<Vec<String>, E>>> + Send;
-}
-
-/// Trait used to save the data returned from the module.
-pub trait AsyncModuleOutput<E> {
-    /// Provides the module's returned values.
-    fn call(
-        &mut self,
-        values: Vec<String>,
-    ) -> impl std::future::Future<Output = Result<(), E>> + Send;
 }
 
 impl Module {
@@ -232,5 +214,248 @@ impl Module {
             return Err(ModuleError::InvalidName(value.name.to_string()));
         }
         Ok(())
+    }
+}
+
+/// Trait used to provide a stream of data to provided to a module
+pub trait AsyncModuleInput<E> {
+    /// Returns the next values to feed to the invariant. None if everything was already given.
+    fn call(&mut self) -> impl std::future::Future<Output = Option<Result<Vec<String>, E>>> + Send;
+}
+
+/// Trait used to save the data returned from the invariants.
+pub trait AsyncModuleOutput<E> {
+    /// Provides the invariant returned values.
+    fn call(
+        &mut self,
+        values: Vec<String>,
+    ) -> impl std::future::Future<Output = Result<(), E>> + Send;
+}
+
+impl Module {
+    /// Execute this module by feeding it the given `input_buffer` into its *stdin* and sending every output read to the given `output_function`
+    /// # Errors
+    /// Returns an [`ModuleExecutionError`] if something goes wrong during the execution of the process.
+    pub async fn execute<T, F, E>(
+        &self,
+        fn_ref: &FnRef,
+        mut input_function: T,
+        mut output_function: F,
+        batch_size: usize,
+    ) -> Result<(), ModuleExecutionError>
+    where
+        T: AsyncModuleInput<E>,
+        F: AsyncModuleOutput<E>,
+        E: Debug,
+    {
+        debug!(
+            "Starts function {:?} at {}",
+            fn_ref,
+            self.exec_path.as_os_str().display()
+        );
+        let mut call_res = match Command::new(self.exec_path.as_os_str())
+            .stdout(Stdio::piped())
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(res) => res,
+            Err(e) => return Err(ModuleExecutionError::FailedExecution(e.to_string())),
+        };
+
+        let Some(mut stderr) = call_res.stderr.take() else {
+            return Err(ModuleExecutionError::ClosedStream(
+                "stderr".to_string(),
+                self.exec_path.display().to_string(),
+            ));
+        };
+
+        let Some(mut stdout) = call_res.stdout.take() else {
+            return Err(ModuleExecutionError::ClosedStream(
+                "stdout".to_string(),
+                self.exec_path.display().to_string(),
+            ));
+        };
+
+        let mut waiting_in_stdin = 0;
+
+        // This block forces to close the opened stdin before
+        // waiting for the child process to exit.
+        // Otherwise a deadlock might appear because the child didn't flush in time.
+        {
+            let Some(mut stdin) = call_res.stdin.take() else {
+                return Err(ModuleExecutionError::ClosedStream(
+                    "stdin".to_string(),
+                    self.exec_path.display().to_string(),
+                ));
+            };
+
+            // For every value to send
+            while let Some(val) = input_function.call().await {
+                let val = match val {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Err(ModuleExecutionError::FailedInput(format!("{e:?}")));
+                    }
+                };
+
+                // Check if the child closed or not during the execution
+                self.check_child_state(&mut call_res, &mut stderr)?;
+
+                // Push this value to content
+                if self.args.len() != val.len() {
+                    return Err(ModuleExecutionError::UnexpectedInput(
+                        self.exec_path.display().to_string(),
+                        val.len(),
+                        self.args.len(),
+                    ));
+                }
+                let val = val.join(" ");
+                debug!("Wrote to child stdin ({:?}): {val:?}", fn_ref);
+
+                self.exec_stdin_io_call(&mut || stdin.write(format!("{val}\n").as_bytes()))?;
+                waiting_in_stdin += 1;
+
+                // Send value to buffer
+                if waiting_in_stdin >= batch_size {
+                    self.exec_stdin_io_call(&mut || stdin.flush())?;
+                    self.flush_wait_output(
+                        &fn_ref,
+                        &mut call_res,
+                        waiting_in_stdin,
+                        &mut output_function,
+                        &mut stdout,
+                        &mut stderr,
+                    )
+                    .await?;
+                    waiting_in_stdin = 0;
+                }
+            }
+            self.exec_stdin_io_call(&mut || stdin.flush())?;
+        }
+        // If there are still data to send
+        if waiting_in_stdin > 0 {
+            self.flush_wait_output(
+                &fn_ref,
+                &mut call_res,
+                waiting_in_stdin,
+                &mut output_function,
+                &mut stdout,
+                &mut stderr,
+            )
+            .await?;
+        }
+        debug!(
+            "Finished child execution ({:?}): {}",
+            fn_ref,
+            self.exec_path.display()
+        );
+
+        // Check if the child closed or not during the execution
+        self.check_child_state(&mut call_res, &mut stderr)?;
+
+        Ok(())
+    }
+
+    async fn flush_wait_output<T, E>(
+        &self,
+        fn_ref: &FnRef,
+        child: &mut Child,
+        sent_in_stdin: usize,
+        output_function: &mut T,
+        stdout: &mut ChildStdout,
+        stderr: &mut ChildStderr,
+    ) -> Result<(), ModuleExecutionError>
+    where
+        T: AsyncModuleOutput<E>,
+        E: Debug,
+    {
+        debug!(
+            "Flusing stdin then waiting for {sent_in_stdin} responses ({:?})",
+            fn_ref
+        );
+
+        // A buffer helps us to not read all lines at the time but as a flow of data.
+        let child_output = BufReader::new(stdout);
+
+        let mut received = 0;
+
+        for response in child_output.lines() {
+            debug!("Received ({:?}): {response:?}", fn_ref);
+            // We are waiting for the exact number of data sent to be sent back to us.
+            if let Ok(s) = response {
+                let vals: Vec<String> = s.split(' ').map(|v| v.to_string()).collect();
+                // Should return the arguments it used to compute a value + the outputted value
+                if vals.len() != self.args.len() + 1 {
+                    return Err(ModuleExecutionError::UnexpectedOutput(
+                        self.exec_path.display().to_string(),
+                        vals.len(),
+                        self.args.len() + 1,
+                    ));
+                }
+                if let Err(e) = output_function.call(vals).await {
+                    return Err(ModuleExecutionError::FailedOutput(format!("{e:?}")));
+                }
+            }
+
+            received += 1;
+            if received == sent_in_stdin {
+                break;
+            }
+        }
+        debug!("Finished waiting ({:?})", fn_ref);
+        // If the stdout finished *before* receiving all the values sent
+        // then it means the child probably crashed.
+        if received != sent_in_stdin {
+            // We loop multiple time because sometimes the stdin closes before the program
+            // has actually the time to write to the stderr and close itself
+            loop {
+                self.check_child_state(child, stderr)?
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Checks if the child is closed or not.
+    /// # Errors :
+    /// If the program was closed and an error code is returned, then a
+    ///  [`ModuleExecutionError::EarlyExit`] with the error read from the `stderr` will be returned.
+    fn check_child_state(
+        &self,
+        child: &mut Child,
+        stderr: &mut ChildStderr,
+    ) -> Result<(), ModuleExecutionError> {
+        if let Ok(Some(status)) = child.try_wait() {
+            if status.success() {
+                return Ok(());
+            }
+            let child_buffer_stderr = BufReader::new(stderr);
+            let mut err = String::new();
+            for mut c in child_buffer_stderr.lines().map_while(Result::ok) {
+                c.push('\n');
+                err.push_str(&c);
+            }
+            Err(ModuleExecutionError::EarlyExit(
+                self.exec_path.display().to_string(),
+                status.to_string(),
+                err,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn exec_stdin_io_call<T>(
+        &self,
+        to_call: &mut dyn FnMut() -> Result<T, io::Error>,
+    ) -> Result<T, ModuleExecutionError> {
+        match to_call() {
+            Ok(t) => Ok(t),
+            Err(e) => Err(ModuleExecutionError::FailedWriteStdin(
+                e,
+                self.exec_path.display().to_string(),
+            )),
+        }
     }
 }
