@@ -484,7 +484,7 @@ fn create_primitif(prim_rule: Pair<'_, Rule>) -> ParsedArgType {
             if let Some(g) = inner_rule.into_inner().next()
                 && let Rule::graph = g.as_rule()
             {
-                ParsedArgType::Graph
+                ParsedArgType::Dataset
             } else {
                 ParsedArgType::invariant(str_val)
             }

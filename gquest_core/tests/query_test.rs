@@ -348,21 +348,21 @@ fn parse_function() {
     assert!(matches!(
         QueryParser::parse_condition("fn(G, 12) > 0", None),
         Ok(Condition::Operation(Comparison::Greater(a, b)))
-        if a == ParsedArgType::function("fn", ParsedArgType::Graph, vec![ParsedArgType::value("12.0")]).into()
+        if a == ParsedArgType::function("fn", ParsedArgType::Dataset, vec![ParsedArgType::value("12.0")]).into()
         && b == ParsedArgType::value("0.0").into()
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("fn(G) > 0", None),
         Ok(Condition::Operation(Comparison::Greater(a, b)))
-        if a == ParsedArgType::function("fn", ParsedArgType::Graph, Vec::<ParsedArgType>::new()).into()
+        if a == ParsedArgType::function("fn", ParsedArgType::Dataset, Vec::<ParsedArgType>::new()).into()
         && b == ParsedArgType::value("0.0").into()
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("fn > 0", None),
         Ok(Condition::Operation(Comparison::Greater(a, b)))
-        if a == ParsedArgType::function("fn", ParsedArgType::Graph, Vec::<ParsedArgType>::new()).into()
+        if a == ParsedArgType::function("fn", ParsedArgType::Dataset, Vec::<ParsedArgType>::new()).into()
         && b == ParsedArgType::value("0.0").into()
     ));
 }

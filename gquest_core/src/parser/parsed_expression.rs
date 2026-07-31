@@ -220,7 +220,7 @@ pub enum ArithmOp {
 pub enum ParsedArgType {
     PrimString(String),
     PrimNumeric(f64),
-    Graph,
+    Dataset,
     Function(ParsedFunction),
 }
 
@@ -263,7 +263,7 @@ impl ParsedArgType {
     pub fn invariant(name: impl ToString) -> Self {
         ParsedFunction {
             name: name.to_string(),
-            first_arg: Box::new(ParsedArgType::Graph.into()),
+            first_arg: Box::new(ParsedArgType::Dataset.into()),
             other_args: Vec::new(),
         }
         .into()
@@ -278,12 +278,11 @@ impl Display for ParsedArgType {
             match self {
                 ParsedArgType::PrimString(v) => v.to_string(),
                 ParsedArgType::PrimNumeric(v) => v.to_string(),
-                ParsedArgType::Graph => "G".to_string(),
-                // ArgType::Identifier(v) => v.to_string(),
+                ParsedArgType::Dataset => "G".to_string(),
                 ParsedArgType::Function(function) => format!(
                     "{}({:?},{:?})",
                     function.name, function.first_arg, function.other_args
-                ), // FIXME: this is not valid SQL !!!
+                ),
             }
         )
     }

@@ -147,7 +147,7 @@ WHERE schemaname != 'pg_catalog' AND
         if !query.joins.is_empty() {
             res.push(' ');
             for sql_join in &query.joins {
-                res.push_str(&sql_join.to_sql::<Self>());
+                res.push_str(&format!("{} ", sql_join.to_sql::<Self>()));
             }
         }
 

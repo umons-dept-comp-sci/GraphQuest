@@ -14,7 +14,7 @@ def eci(G: nx.Graph):
 mem = {}
 
 if __name__ == "__main__":
-    for sig, d_nm in map(str.split, map(str.strip, sys.stdin)):
+    for (sig,) in map(str.split, map(str.strip, sys.stdin)):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
         
         print(sig, eci(G), flush=True)

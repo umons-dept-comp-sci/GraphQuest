@@ -57,8 +57,8 @@ pub enum FnArg {
     FnCall(FnRef),
     /// A constant value.
     Constant(ConstantValue),
-    /// The ref to a dataset.
-    Graph,
+    /// The ref to the dataset.
+    Dataset,
 }
 
 impl<'a> RelationGraph<'a> {
@@ -243,7 +243,7 @@ impl<'a> RelationGraph<'a> {
                         "Identifiers are not supposed to be used outside of SQL clauses"
                     ),
                 },
-                FnArg::Graph => ValueType::Graph,
+                FnArg::Dataset => ValueType::Graph,
             })
         } else {
             // TODO: Numeric types should also be checked to be compatible or not (STRING + NUMERIC = ERROR)

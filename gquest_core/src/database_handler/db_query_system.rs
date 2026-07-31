@@ -560,7 +560,7 @@ where
                 }
                 FnArg::Constant(constant_value) => Self::translate_constant(constant_value),
                 // At this point, the dataset table must already be part of the join chain.
-                FnArg::Graph => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
+                FnArg::Dataset => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
             },
             MathExpression::Negation(math_expression) => {
                 format!("-({})", Self::translate_math_expr(math_expression))

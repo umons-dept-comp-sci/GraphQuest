@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use indexmap::{IndexMap, IndexSet};
 use log::info;
@@ -64,23 +67,24 @@ impl GquestEngine {
         let mut rel_graph = RelationGraph::new(self.config.get_module_refs());
         let flattened_cond = Self::fill_graph_cond(&mut rel_graph, cond)?;
         // Create
-        let mut join_map: IndexMap<FnRef, SqlJoin> = IndexMap::new();
+        let mut join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)> = IndexMap::new();
 
         let mut iter: AutoFnCallIterator<'_> = rel_graph.into_iter().into();
 
         while let Some(re) = iter.next() {
-            println!("sdqsd");
             let (module, args) = iter.get_module_args(&re);
+
             // Fetch all needed function to join for this module.
             let mut needed_joins = Vec::new();
+            let mut already_added = HashSet::new();
             for expr in args {
                 for prim in expr.get_all_primitives_rec() {
                     if let FnArg::FnCall(dependency) = prim {
-                        needed_joins.push(
-                            join_map
-                                .get(&dependency)
-                                .expect("present by the iterator topological sort logic")
-                                .clone(),
+                        add_rec_needed_joins(
+                            &dependency,
+                            &mut needed_joins,
+                            &mut already_added,
+                            &join_dep_map,
                         );
                     }
                 }
@@ -113,10 +117,17 @@ impl GquestEngine {
                     None,
                 ));
             }
+            println!(
+                "JOIIIIIINNNNN: {:?} | ALREADY ADDED : {:?}",
+                join_conditions, already_added
+            );
 
-            join_map.insert(
+            join_dep_map.insert(
                 re.clone(),
-                SqlJoin::new(re.0.clone(), format!("{}{}", re.0, re.1), join_conditions),
+                (
+                    SqlJoin::new(re.0.clone(), format!("{}{}", re.0, re.1), join_conditions),
+                    already_added,
+                ),
             );
         }
 
@@ -217,7 +228,7 @@ impl GquestEngine {
         Ok(match p {
             ParsedArgType::PrimString(s) => FnArg::Constant(ConstantValue::String(s)),
             ParsedArgType::PrimNumeric(n) => FnArg::Constant(ConstantValue::Numeric(n)),
-            ParsedArgType::Graph => FnArg::Graph,
+            ParsedArgType::Dataset => FnArg::Dataset,
             ParsedArgType::Function(parsed_function) => {
                 //  Recursively adds all possible functions to the graphs that are in the arguments of this function.
                 // as well as turning parsed argument into FnArg, thus flattening the functions arguments.
@@ -271,6 +282,27 @@ async fn compute_module(
         }
     }
     Ok(())
+}
+
+fn add_rec_needed_joins(
+    to_add: &FnRef,
+    res: &mut Vec<SqlJoin>,
+    already_in_res: &mut HashSet<FnRef>,
+    join_dep_map: &IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
+) {
+    if already_in_res.contains(to_add) {
+        return;
+    }
+    let add_join_and_dep = join_dep_map
+        .get(to_add)
+        .expect("present by the iterator topological sort logic");
+    // add all dependency for this join
+    for dep in &add_join_and_dep.1 {
+        add_rec_needed_joins(dep, res, already_in_res, join_dep_map);
+    }
+    // then add it
+    res.push(add_join_and_dep.0.clone());
+    already_in_res.insert(to_add.clone());
 }
 
 // impl Workplace {

@@ -30,7 +30,7 @@ async fn main() {
     )
     .expect("valid config file");
     db.add_to_dataset(
-        GengProcess::call_geng(None, 8, &"".to_string(), (None, None))
+        GengProcess::call_geng(None, 6, &"c".to_string(), (None, None))
             .expect("correct call")
             .get_reader(),
         config.get_batch_size(),
@@ -40,13 +40,16 @@ async fn main() {
     .expect("no issues while filling the dataset");
 
     let mut wp = GquestEngine::new(db, config);
-
-    let cond = QueryParser::parse_condition("eci(e_nm(n,m, D(n,m)))) = 1", None)
+    // is_planar(e_nm(n,m, D(n,m)))) = 1
+    // 
+    let cond = QueryParser::parse_condition("eci(G) = eci(e_nm(n,m,D(n,m)))", None)
         .expect("valid condition");
     println!("Read cond: {cond:?}");
     println!("_____________");
 
-    wp.exec_condition_no_multithread(cond).await.expect("no issues");
+    wp.exec_condition_no_multithread(cond)
+        .await
+        .expect("no issues");
 
     wp.close().await;
 
