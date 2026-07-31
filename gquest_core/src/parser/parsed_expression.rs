@@ -1,5 +1,30 @@
 use std::fmt::Display;
 
+#[derive(Debug, PartialEq)]
+pub enum QueryStatement {
+    Condition(Condition),
+    IfThen(Condition, Box<QueryStatement>),
+}
+
+impl From<Condition> for QueryStatement {
+    fn from(val: Condition) -> Self {
+        QueryStatement::Condition(val)
+    }
+}
+
+impl QueryStatement {
+    pub fn condition(condition: impl Into<Condition>) -> Self {
+        Self::Condition(condition.into())
+    }
+
+    pub fn if_then(
+        condition: impl Into<Condition>,
+        query_statement: impl Into<QueryStatement>,
+    ) -> Self {
+        Self::IfThen(condition.into(), Box::new(query_statement.into()))
+    }
+}
+
 /// Represents a **parsed** condition. Not yet typed checked.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Condition<P = ParsedArgType> {

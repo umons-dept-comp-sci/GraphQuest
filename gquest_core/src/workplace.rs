@@ -142,7 +142,7 @@ impl GquestEngine {
         let mut selection =
             SqlSelectQuery::select_columns_from_table(all_output, CANONICAL_TABLE_NAME)
                 .set_where_clause(flattened_cond);
-        selection.set_distinct_values(true);
+        selection.set_distinct_values(false);
         // Thanks to the topological sort, this is already in the correct order.
         for join in all_joins {
             selection.add_join(join);

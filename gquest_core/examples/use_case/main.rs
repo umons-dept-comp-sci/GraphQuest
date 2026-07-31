@@ -32,26 +32,26 @@ async fn main() {
         &"gquest_core/examples/use_case/resources/configs_cooler.json".to_string(),
     )
     .expect("valid config file");
-    db.add_to_dataset(
-        GengProcess::call_geng(None, 9, &"c".to_string(), (None, None))
-            .expect("correct call")
-            .get_reader(),
-        config.get_batch_size(),
-        None,
-    )
-    .await
-    .expect("no issues while filling the dataset");
+    // db.add_to_dataset(
+    //     GengProcess::call_geng(None, 9, &"c".to_string(), (None, None))
+    //         .expect("correct call")
+    //         .get_reader(),
+    //     config.get_batch_size(),
+    //     None,
+    // )
+    // .await
+    // .expect("no issues while filling the dataset");
 
     let mut wp = GquestEngine::new(db, config);
     // is_planar(e_nm(n,m, D(n,m)))) = 1
     // eci(G) = eci(e_nm(n,m,D(n,m)))
-    
-    let cond = QueryParser::parse_condition("D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) and not(iso(G, e_nm(n,m,D(n,m))))", None)
+    // D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) and not iso(G, e_nm(n,m,D(n,m)))
+    let cond = QueryParser::parse_condition("is_connected and eci(G) == eci(e_nm(n,m,D(n,m)))", None)
         .expect("valid condition");
     println!("Read cond: {cond:?}");
     println!("_____________");
 
-    let mut sql_table = QueryTable::new_no_header(true, QueryTableOptions::Full);
+    let mut sql_table = QueryTable::new_no_header(true, QueryTableOptions::Partial { first_rows_count: 1, last_rows_count: 1 });
 
     wp.exec_condition_no_multithread(cond, &mut sql_table)
         .await

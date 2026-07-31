@@ -57,6 +57,11 @@
       "output": "numeric"
     },
     {
+      "function": "is_connected",
+      "path": "is_connected.py",
+      "output": "numeric"
+    },
+    {
       "function": "max_degree",
       "path": "max_degree.py",
       "output": "numeric"

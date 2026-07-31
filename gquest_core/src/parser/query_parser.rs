@@ -11,7 +11,9 @@ use thiserror::Error;
 
 use crate::{
     data_handler::invariant_execs::Module,
-    parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression, ParsedArgType},
+    parser::parsed_expression::{
+        ArithmOp, Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -145,17 +147,30 @@ impl QueryParser {
     //     }
     // }
 
-    pub fn parse_input(
+    pub fn parse_query(
         input: impl ToString,
         epsilon: Option<f64>,
-        fn_map: &HashMap<String, Module>,
-    ) -> Result<(), ParsingError> {
-        let condition = Self::parse_condition(input, epsilon)?;
+    ) -> Result<QueryStatement, ParsingError> {
+        let input_str = input.to_string();
+        let input = Self::parse(Rule::query, &input_str);
+        match input {
+            Ok(mut rules) => {
+                let mut rules = rules
+                    .next()
+                    .expect("first rule should be a query rule")
+                    .into_inner();
 
-        // Check compatibility
-
-        Ok(())
+                let inner_rule = rules.next().expect("always at least one subrule");
+                Ok(match inner_rule.as_rule() {
+                    Rule::if_query => Self::parse_if_query_rule(inner_rule, epsilon),
+                    Rule::condition => Self::parse_condition_rule(inner_rule, epsilon).into(),
+                    _ => unreachable!(),
+                })
+            }
+            Err(e) => Err(get_parsing_error(e)),
+        }
     }
+
     /// Parses a condition using a string value into an equivalent [`Condition`].
     /// For example : `(a = 2 or not(x < y))`
     pub fn parse_condition(
@@ -196,24 +211,6 @@ impl QueryParser {
             Err(e) => Err(get_parsing_error(e)),
         }
     }
-
-    // fn parse_if_query_rule(
-    //     rule: Pair<'_, Rule>,
-    //     epsilon: Option<f64>,
-    // ) -> Result<ParsedQuery, ParsingError> {
-    //     let mut inner_rules = rule.into_inner();
-
-    //     // Two tokens : `extremal_condition` and `condition`
-    //     let extremal_cond = Self::parse_extremal_condition_rule(
-    //         inner_rules.next().expect("extremal_condition present"),
-    //         epsilon,
-    //     )?;
-
-    //     let condition =
-    //         Self::parse_condition_rule(inner_rules.next().expect("condition present"), epsilon);
-
-    //     Ok(ParsedQuery::IfElse(extremal_cond, condition))
-    // }
 
     // fn parse_extremal_condition_rule(
     //     rule: Pair<'_, Rule>,
@@ -258,6 +255,27 @@ impl QueryParser {
     //         _ => unreachable!(),
     //     }
     // }
+    fn parse_if_query_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> QueryStatement {
+        let mut inner_rules = rule.into_inner();
+
+        // Always starts with a condition:
+        let left_cond = Self::parse_condition_rule(
+            inner_rules
+                .next()
+                .expect("left condition of if-then statement present"),
+            epsilon,
+        );
+
+        // Can be either a condition of another if-then statement:
+        let right_statement_rule = inner_rules.next().expect("present");
+        let right_statement = match right_statement_rule.as_rule() {
+            Rule::condition => Self::parse_condition_rule(right_statement_rule, epsilon).into(),
+            Rule::if_query => Self::parse_if_query_rule(right_statement_rule, epsilon),
+            _ => unreachable!(),
+        };
+
+        QueryStatement::if_then(left_cond, right_statement)
+    }
 
     fn parse_condition_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> Condition {
         let mut inner_rules = rule.into_inner();
@@ -296,12 +314,18 @@ impl QueryParser {
                     match inner_rule.as_rule() {
                         // FIXME: Add back this shortcut later when the structure is more stable
                         // !inv is a shortcut for inv = 0 (reduces query sizes)
-                        // Rule::identifier => SqlComparison::Equal(
-                        //     ArgType::identifier(inner_rule.as_str()).into(),
-                        //     ArgType::value(0).into(),
-                        //     None,
-                        // )
-                        // .into(),
+                        Rule::identifier => Comparison::Equal(
+                            ParsedArgType::invariant(inner_rule.as_str()).into(),
+                            ParsedArgType::prim_numeric(0.).into(),
+                            None,
+                        )
+                        .into(),
+                        Rule::function => Comparison::Equal(
+                            parse_function(inner_rule).into(),
+                            ParsedArgType::prim_numeric(0.).into(),
+                            None,
+                        )
+                        .into(),
                         Rule::condition => {
                             Condition::not(Self::parse_condition_rule(inner_rule, epsilon))
                         }
