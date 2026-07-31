@@ -7,7 +7,10 @@ use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     parser::query_parser::QueryParser,
-    utils::config_file2::ConfigFile,
+    utils::{
+        config_file2::ConfigFile,
+        table_handler::{QueryTable, QueryTableOptions},
+    },
     workplace::GquestEngine,
 };
 use log::{LevelFilter, info};
@@ -30,7 +33,7 @@ async fn main() {
     )
     .expect("valid config file");
     db.add_to_dataset(
-        GengProcess::call_geng(None, 6, &"c".to_string(), (None, None))
+        GengProcess::call_geng(None, 9, &"c".to_string(), (None, None))
             .expect("correct call")
             .get_reader(),
         config.get_batch_size(),
@@ -41,15 +44,20 @@ async fn main() {
 
     let mut wp = GquestEngine::new(db, config);
     // is_planar(e_nm(n,m, D(n,m)))) = 1
-    // 
-    let cond = QueryParser::parse_condition("eci(G) = eci(e_nm(n,m,D(n,m)))", None)
+    // eci(G) = eci(e_nm(n,m,D(n,m)))
+    
+    let cond = QueryParser::parse_condition("D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) and not(iso(G, e_nm(n,m,D(n,m))))", None)
         .expect("valid condition");
     println!("Read cond: {cond:?}");
     println!("_____________");
 
-    wp.exec_condition_no_multithread(cond)
+    let mut sql_table = QueryTable::new_no_header(true, QueryTableOptions::Full);
+
+    wp.exec_condition_no_multithread(cond, &mut sql_table)
         .await
         .expect("no issues");
+
+    println!("{sql_table}");
 
     wp.close().await;
 

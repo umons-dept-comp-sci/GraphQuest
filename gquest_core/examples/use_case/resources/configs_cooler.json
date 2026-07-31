@@ -65,6 +65,21 @@
       "function": "eci",
       "path": "eci.py",
       "output": "numeric"
+    },
+    {
+      "function": "iso",
+      "path": "iso.py",
+      "args": [
+        {
+          "name": "g1",
+          "class": "graph"
+        },
+        {
+          "name": "g2",
+          "class": "graph"
+        }
+      ],
+      "output": "numeric"
     }
   ]
 }
