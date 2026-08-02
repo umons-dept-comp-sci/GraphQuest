@@ -92,16 +92,6 @@ impl GquestEngine {
         cond_engine.get_result(output).await
     }
 
-    // async fn exec_query_rec<'a, O: SaveOutput>(
-    //     &mut self,
-    //     cond_engine: ConditionEngine<'a>,
-    //     mut query: QueryStatement,
-    //     output: &mut O,
-    // ) -> Result<(), EngineError> {
-
-    //     Ok(())
-    // }
-
     pub async fn exec_condition<O: SaveOutput>(
         &mut self,
         cond: Condition<ParsedArgType>,
@@ -115,118 +105,12 @@ impl GquestEngine {
 
         cond_engine.get_result(output).await
     }
-
-    // pub async fn exec_cond_modules_no_multithread(
-    //     &mut self,
-    //     cond: Condition<ParsedArgType>,
-    //     dataset_to_use: Option<SqlSelectQuery>,
-    //     restrict_to_sig: bool,
-    // ) -> Result<SqlSelectQuery, EngineError> {
-    // let mut rel_graph = RelationGraph::new(self.config.get_module_refs());
-    // let flattened_cond = fill_graph_cond(&mut rel_graph, cond)?;
-    // // This hashmap will contain the ref to SqlJoin that can
-    // // be used to not have to recompute functions for no reasons alongside their dependencies.
-    // let mut join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)> = IndexMap::new();
-
-    // let mut iter: AutoFnCallIterator<'_> = rel_graph.into_iter().into();
-
-    // while let Some(re) = iter.next() {
-    //     let (module, args) = iter.get_module_args(&re);
-
-    //     // Fetch all needed function to join for this module.
-    //     let mut needed_joins = Vec::new();
-    //     let mut already_added = HashSet::new();
-    //     for expr in args {
-    //         for prim in expr.get_all_primitives_rec() {
-    //             if let FnArg::FnCall(dependency) = prim {
-    //                 add_rec_needed_joins(
-    //                     &dependency,
-    //                     &mut needed_joins,
-    //                     &mut already_added,
-    //                     &join_dep_map,
-    //                 );
-    //             }
-    //         }
-    //     }
-
-    //     // Execute the function
-    //     compute_module(
-    //         &mut self.db,
-    //         &re,
-    //         module,
-    //         args,
-    //         dataset_to_use.clone(),
-    //         needed_joins,
-    //         self.config.get_batch_size(),
-    //         None,
-    //     )
-    //     .await?;
-
-    //     // Save the result as a join query for later uses (as well as its dependencies).
-    //     let mut join_conditions: Vec<Comparison<FnArg>> = Vec::new();
-    //     for i in 0..args.len() {
-    //         let arg_name = module.args[i].name.clone();
-    //         let arg_value = args[i].clone();
-    //         join_conditions.push(Comparison::Equal(
-    //             FnArg::Constant(ConstantValue::Identifier(format!(
-    //                 "{}{}.{arg_name}",
-    //                 re.0, re.1
-    //             )))
-    //             .into(),
-    //             arg_value,
-    //             None,
-    //         ));
-    //     }
-
-    //     join_dep_map.insert(
-    //         re.clone(),
-    //         (
-    //             SqlJoin::new(re.0.clone(), format!("{}{}", re.0, re.1), join_conditions),
-    //             already_added,
-    //         ),
-    //     );
-    // }
-
-    // let mut all_output = vec![MathExpression::Primitif(FnArg::Constant(
-    //     ConstantValue::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-    // ))];
-
-    // let all_joins: Vec<SqlJoin> = join_dep_map
-    //     .into_iter()
-    //     .map(|(fn_ref, j)| {
-    //         all_output.push(MathExpression::Primitif(FnArg::Constant(
-    //             ConstantValue::Identifier(format!(
-    //                 "{}{}.{FUNCTION_OUTPUT_COL_NAME} as {}{}",
-    //                 fn_ref.0, fn_ref.1, fn_ref.0, fn_ref.1
-    //             )),
-    //         )));
-    //         j.0
-    //     })
-    //     .collect();
-
-    // let mut selection = if restrict_to_sig {
-    //     SqlSelectQuery::select_column_from_table(
-    //         format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
-    //         CANONICAL_TABLE_NAME,
-    //     )
-    // } else {
-    //     SqlSelectQuery::select_columns_from_table(all_output, CANONICAL_TABLE_NAME)
-    // }
-    // .set_where_clause(flattened_cond);
-
-    // // selection.set_distinct_values(false);
-    // // Thanks to the topological sort, this is already in the correct order.
-    // for join in all_joins {
-    //     selection.add_join(join);
-    // }
-
-    // Ok(selection)
-    // }
 }
 
 pub struct ConditionEngine<'a> {
     db: &'a mut AllowedGraphDb,
-    modules: Option<&'a HashMap<String, Module>>,
+    // modules: Option<&'a HashMap<String, Module>>,
+    graph: Option<RelationGraph<'a>>,
     /// The query that can provide the expected result.
     result: SqlSelectQuery,
     /// Contains the reference of the function's call that have already been computed before.
@@ -237,7 +121,8 @@ impl<'a> ConditionEngine<'a> {
     fn new(db: &'a mut AllowedGraphDb, modules: &'a HashMap<String, Module>) -> Self {
         Self {
             db,
-            modules: Some(modules),
+            // modules: Some(modules),
+            graph: Some(RelationGraph::new(modules)),
             result: SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME),
             already_computed: HashSet::new(),
         }
@@ -249,11 +134,9 @@ impl<'a> ConditionEngine<'a> {
         batch_size: usize,
     ) -> Result<(), EngineError> {
         // Borrow the relation graph to use it as a mutable variable alongside the engine.
-        let modules = self.modules.take().expect("present");
-        // let mut graph = self.graph.take().expect("present");
+        let mut graph = self.graph.take().expect("present");
         {
-            let mut graph = RelationGraph::new(modules);
-            // Add cond to the current relation graph.
+            // Add cond to the relation graph.
             let flattened_cond = fill_graph_cond(&mut graph, cond)?;
 
             // This hashmap will contain the ref to SqlJoin that can
@@ -364,7 +247,8 @@ impl<'a> ConditionEngine<'a> {
             self.result = selection;
         }
         // Give ownership back of the graph to the engine.
-        self.modules = Some(modules);
+        graph.set_all_unused();
+        self.graph = Some(graph);
 
         Ok(())
     }

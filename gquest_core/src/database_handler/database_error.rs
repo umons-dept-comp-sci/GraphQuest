@@ -1,7 +1,9 @@
 use thiserror::Error;
 
-use crate::data_handler::{data_types::ValueTypeError, module::{Module, ModuleExecutionError}};
-
+use crate::data_handler::{
+    data_types::ValueTypeError,
+    module::{Module, ModuleExecutionError},
+};
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.
@@ -21,9 +23,7 @@ pub enum GraphDbStartupError {
 #[derive(Debug, Error)]
 /// Represents databases error that can happen while the database is already connected.
 pub enum GraphDbRuntimeError {
-    #[error(
-        "Tried to execute a module when the dataset was not initialised"
-    )]
+    #[error("Tried to execute a module when the dataset was not initialised")]
     DatasetNotInitialisedError,
     #[error("The given table name does not exist \"{table_name}\"")]
     TableNotFoundError { table_name: String },
@@ -48,5 +48,5 @@ pub enum GraphDbRuntimeError {
     #[error("The given value is not a valid signature: \"{0}\"")]
     InvalidSignature(String),
     #[error("Error while parsing a returned value : \"{0}\"")]
-    ValueTypeError(#[from]ValueTypeError),
+    ValueTypeError(#[from] ValueTypeError),
 }

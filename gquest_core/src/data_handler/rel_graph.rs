@@ -42,6 +42,7 @@ struct Relation {
     dep: HashSet<usize>,
     /// The dependency left to compute for this function call.
     dep_left: usize,
+    is_used: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,7 @@ struct FnCall {
     fn_name: String,
     args: Vec<MathExpression<FnArg>>,
     graph_id: usize,
+    is_used: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -118,7 +120,7 @@ impl<'a> RelationGraph<'a> {
         for dep in fn_deps {
             let fn_dep_on = self.relations.get_mut(dep).expect("correct value");
             fn_dep_on.dep_left -= 1;
-            if fn_dep_on.dep_left == 0 {
+            if fn_dep_on.dep_left == 0 && fn_dep_on.is_used {
                 newly_free.push(dep);
             }
         }
@@ -141,6 +143,10 @@ impl<'a> RelationGraph<'a> {
     ) -> Result<FnRef, RelationGraphError> {
         // Check if it was already added
         if let Some(fn_ref) = self.get_ref(&fn_name, args) {
+            let graph_id = self.get_call(&fn_ref)?.graph_id;
+            let relation = self.relations.get_mut(graph_id).expect("correct graph id");
+
+            relation.is_used = true;
             Ok(fn_ref)
         }
         // if it wasn't, perform some additional compatibility verifications
@@ -157,6 +163,7 @@ impl<'a> RelationGraph<'a> {
             calls.push(FnCall {
                 fn_name: fn_name.clone(),
                 args: args.to_vec(),
+                is_used: true,
                 graph_id,
             });
 
@@ -166,6 +173,7 @@ impl<'a> RelationGraph<'a> {
                 id: fn_ref.clone(),
                 dep: HashSet::new(),
                 dep_left: 0,
+                is_used: true,
             });
 
             Ok(fn_ref)
@@ -260,6 +268,12 @@ impl<'a> RelationGraph<'a> {
 
         Some((fn_name.clone(), i))
     }
+
+    pub fn set_all_unused(&mut self) {
+        for relations in &mut self.relations {
+            relations.is_used = false;
+        }
+    }
 }
 
 impl<'g, 'a> IntoIterator for &'g mut RelationGraph<'a> {
@@ -270,7 +284,7 @@ impl<'g, 'a> IntoIterator for &'g mut RelationGraph<'a> {
     fn into_iter(self) -> Self::IntoIter {
         let mut can_now_exec = Vec::new();
         for (i, rel) in self.relations.iter().enumerate() {
-            if rel.dep_left == 0 {
+            if rel.dep_left == 0 && rel.is_used {
                 can_now_exec.push(i);
             }
         }

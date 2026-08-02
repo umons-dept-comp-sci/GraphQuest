@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::data_handler::{
     data_types::ValueTypeError,
-    module::{TypedArg, Module, ModuleError},
+    module::{Module, ModuleError, TypedArg},
 };
 
 #[derive(Error, Debug)]

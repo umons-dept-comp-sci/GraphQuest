@@ -4,7 +4,7 @@ const CONFIG_PATH: &str = "gquest_core/examples/use_case/resources/configs.json"
 use std::time::Duration;
 
 use gquest_core::{
-    data_handler::data_loader::GengProcess,
+    data_handler::data_loader::{GengProcess, read_file},
     database_handler::{SqliteGraphDB, SqlxLogLevels},
     engine::GquestEngine,
     parser::query_parser::QueryParser,
@@ -32,7 +32,15 @@ async fn main() {
         &"gquest_core/examples/use_case/resources/configs_cooler.json".to_string(),
     )
     .expect("valid config file");
-    for i in [10] {
+    // db.add_to_dataset(
+    //     read_file(&"gquest_core/examples/use_case/resources/dataset_10.txt".to_string())
+    //         .expect("no issues"),
+    //     1000,
+    //     None,
+    // )
+    // .await
+    // .expect("no issues");
+    for i in [6, 7, 8, 9] {
         db.add_to_dataset(
             GengProcess::call_geng(None, i, &"".to_string(), (None, None))
                 .expect("correct call")
@@ -51,7 +59,7 @@ async fn main() {
     // m % 2 == 0 and n == 5 -> n >= 3 and m > 0
     // n == 5 -> m % 2 = 1 -> is_planar
     // n = 6 -> n-1 <= m and m <= n*(n-1)/2 -> is_connected -> D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) -> not iso(G, e_nm(n,m,D(n,m)))
-    let cond = QueryParser::parse_query("n-1 <= m and m <= n*(n-1)/2  and is_connected -> D(n,m) >= 3 -> eci(G) = eci(e_nm(n,m,D(n,m))) -> not iso(G, e_nm(n,m,D(n,m)))", None)
+    let cond = QueryParser::parse_query("n-1 <= m and m <= n*(n-1)/2 -> is_connected -> D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) -> not iso(G, e_nm(n,m,D(n,m)))", None)
         .expect("valid condition");
     // let cond = QueryParser::parse_condition("m % 2 == 0 and D(m,m) >= 34", None).expect("valid condition");
 

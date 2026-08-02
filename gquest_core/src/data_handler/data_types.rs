@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash};
 
 use thiserror::Error;
 
@@ -64,6 +64,14 @@ pub enum ConstantValue {
     String(String),
     Identifier(String),
     Bool(bool),
+}
+
+impl Eq for ConstantValue {}
+
+impl Hash for ConstantValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+    }
 }
 
 impl TryFrom<&str> for ValueType {

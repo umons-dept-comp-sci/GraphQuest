@@ -1,5 +1,6 @@
 use gquest_core::{
-    database_handler::SqliteGraphDB, parser::query_parser::QueryParser, utils::config_file2::ConfigFile, engine::GquestEngine,
+    database_handler::SqliteGraphDB, engine::GquestEngine, parser::query_parser::QueryParser,
+    utils::config_file2::ConfigFile,
 };
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
@@ -13,8 +14,11 @@ async fn parse_expression_comparison() {
     let config = ConfigFile::read_json_file(&CONFIG_FILE.to_string()).expect("valid config file");
     let wp = GquestEngine::new(test, config);
 
-    let cond =
-        QueryParser::parse_condition("P(G, chromatic_nb) * n < 23 + P(G, chromatic_nb) + Q(\"123.12\")", None).expect("valid condition");
+    let cond = QueryParser::parse_condition(
+        "P(G, chromatic_nb) * n < 23 + P(G, chromatic_nb) + Q(\"123.12\")",
+        None,
+    )
+    .expect("valid condition");
     println!("Read cond: {cond:?}");
     println!("_____________");
 
