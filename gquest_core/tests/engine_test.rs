@@ -1,5 +1,5 @@
 use gquest_core::{
-    database_handler::SqliteGraphDB, parser::query_parser::QueryParser, utils::config_file2::ConfigFile, workplace::GquestEngine,
+    database_handler::SqliteGraphDB, parser::query_parser::QueryParser, utils::config_file2::ConfigFile, engine::GquestEngine,
 };
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";
@@ -18,6 +18,6 @@ async fn parse_expression_comparison() {
     println!("Read cond: {cond:?}");
     println!("_____________");
 
-    let typed_cond = wp.exec_condition_no_multithread(cond);
+    let typed_cond = wp.exec_cond_modules_no_multithread(cond);
     println!("res: {typed_cond:?}");
 }

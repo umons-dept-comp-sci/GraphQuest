@@ -6,12 +6,12 @@ use std::time::Duration;
 use gquest_core::{
     data_handler::data_loader::GengProcess,
     database_handler::{SqliteGraphDB, SqlxLogLevels},
+    engine::GquestEngine,
     parser::query_parser::QueryParser,
     utils::{
         config_file2::ConfigFile,
         table_handler::{QueryTable, QueryTableOptions},
     },
-    workplace::GquestEngine,
 };
 use log::{LevelFilter, info};
 
@@ -32,28 +32,38 @@ async fn main() {
         &"gquest_core/examples/use_case/resources/configs_cooler.json".to_string(),
     )
     .expect("valid config file");
-    // db.add_to_dataset(
-    //     GengProcess::call_geng(None, 9, &"c".to_string(), (None, None))
-    //         .expect("correct call")
-    //         .get_reader(),
-    //     config.get_batch_size(),
-    //     None,
-    // )
-    // .await
-    // .expect("no issues while filling the dataset");
+    for i in [10] {
+        db.add_to_dataset(
+            GengProcess::call_geng(None, i, &"".to_string(), (None, None))
+                .expect("correct call")
+                .get_reader(),
+            config.get_batch_size(),
+            None,
+        )
+        .await
+        .expect("no issues while filling the dataset");
+    }
 
     let mut wp = GquestEngine::new(db, config);
     // is_planar(e_nm(n,m, D(n,m)))) = 1
     // eci(G) = eci(e_nm(n,m,D(n,m)))
     // D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) and not iso(G, e_nm(n,m,D(n,m)))
-    let cond = QueryParser::parse_condition("is_connected and eci(G) == eci(e_nm(n,m,D(n,m)))", None)
+    // m % 2 == 0 and n == 5 -> n >= 3 and m > 0
+    // n == 5 -> m % 2 = 1 -> is_planar
+    // n = 6 -> n-1 <= m and m <= n*(n-1)/2 -> is_connected -> D(n,m) >= 3 and eci(G) = eci(e_nm(n,m,D(n,m))) -> not iso(G, e_nm(n,m,D(n,m)))
+    let cond = QueryParser::parse_query("n-1 <= m and m <= n*(n-1)/2  and is_connected -> D(n,m) >= 3 -> eci(G) = eci(e_nm(n,m,D(n,m))) -> not iso(G, e_nm(n,m,D(n,m)))", None)
         .expect("valid condition");
+    // let cond = QueryParser::parse_condition("m % 2 == 0 and D(m,m) >= 34", None).expect("valid condition");
+
     println!("Read cond: {cond:?}");
     println!("_____________");
 
-    let mut sql_table = QueryTable::new_no_header(true, QueryTableOptions::Partial { first_rows_count: 1, last_rows_count: 1 });
+    let mut sql_table = QueryTable::new_no_header(true, QueryTableOptions::Full);
 
-    wp.exec_condition_no_multithread(cond, &mut sql_table)
+    // wp.exec_condition(cond, &mut sql_table)
+    //     .await
+    //     .expect("no issues");
+    wp.exec_query(cond, &mut sql_table)
         .await
         .expect("no issues");
 

@@ -9,9 +9,9 @@ if __name__ == "__main__":
         n = int(n)
 
         sq_content = 17 + 8 * (m - n)
-        if sq_content < 0:
-            print(n, m, -1, flush=True)
-        else:
-            d_nm = floor((2* n + 1 - sqrt(sq_content)) /2 )
+        # if sq_content < 0:
+        #     print(n, m, -1, flush=True)
+        # else:
+        d_nm = floor((2* n + 1 - sqrt(sq_content)) /2 )
                     
-            print(n, m, d_nm, flush=True)
+        print(n, m, d_nm, flush=True)

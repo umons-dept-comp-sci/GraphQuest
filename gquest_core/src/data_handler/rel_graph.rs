@@ -262,10 +262,10 @@ impl<'a> RelationGraph<'a> {
     }
 }
 
-impl<'a> IntoIterator for RelationGraph<'a> {
+impl<'g, 'a> IntoIterator for &'g mut RelationGraph<'a> {
     type Item = FnRef;
 
-    type IntoIter = FnCallIterator<'a>;
+    type IntoIter = FnCallIterator<'g, 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let mut can_now_exec = Vec::new();
@@ -274,6 +274,7 @@ impl<'a> IntoIterator for RelationGraph<'a> {
                 can_now_exec.push(i);
             }
         }
+
         FnCallIterator {
             relation_graph: self,
             being_computed: HashSet::new(),
@@ -283,17 +284,17 @@ impl<'a> IntoIterator for RelationGraph<'a> {
 }
 
 #[derive(Debug)]
-pub struct AutoFnCallIterator<'a> {
-    module_iterator: FnCallIterator<'a>,
+pub struct AutoFnCallIterator<'g, 'a> {
+    module_iterator: FnCallIterator<'g, 'a>,
 }
 
-impl<'a> AutoFnCallIterator<'a> {
+impl<'g, 'a> AutoFnCallIterator<'g, 'a> {
     pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
         self.module_iterator.get_module_args(fn_ref)
     }
 }
 
-impl<'a> Iterator for AutoFnCallIterator<'a> {
+impl<'g, 'a> Iterator for AutoFnCallIterator<'g, 'a> {
     type Item = FnRef;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -306,8 +307,8 @@ impl<'a> Iterator for AutoFnCallIterator<'a> {
     }
 }
 
-impl<'a> From<FnCallIterator<'a>> for AutoFnCallIterator<'a> {
-    fn from(val: FnCallIterator<'a>) -> Self {
+impl<'g, 'a> From<FnCallIterator<'g, 'a>> for AutoFnCallIterator<'g, 'a> {
+    fn from(val: FnCallIterator<'g, 'a>) -> Self {
         AutoFnCallIterator {
             module_iterator: val,
         }
@@ -315,14 +316,14 @@ impl<'a> From<FnCallIterator<'a>> for AutoFnCallIterator<'a> {
 }
 
 #[derive(Debug)]
-pub struct FnCallIterator<'a> {
-    relation_graph: RelationGraph<'a>,
+pub struct FnCallIterator<'g, 'a> {
+    relation_graph: &'g mut RelationGraph<'a>,
     being_computed: HashSet<FnRef>,
     /// the list of graph id of functions that can now be executed.
     can_now_exec: Vec<usize>,
 }
 
-impl<'a> FnCallIterator<'a> {
+impl<'g, 'a> FnCallIterator<'g, 'a> {
     /// Checks if the iterator currently has an available function to return.
     pub fn has_next(&self) -> bool {
         !self.can_now_exec.is_empty()
@@ -345,6 +346,7 @@ impl<'a> FnCallIterator<'a> {
     /// The iterator will suppose that the function is being executed until
     /// the function [`FnCallIterator::finish_function`] is called for the reference.
     pub fn next_function(&mut self) -> Option<FnRef> {
+        println!("I CAN COMPUTE: {:?}", self.can_now_exec);
         if let Some(next_graph_id) = self.can_now_exec.pop() {
             let fn_ref = self.relation_graph.relations[next_graph_id].id.clone();
             self.being_computed.insert(fn_ref.clone());
@@ -368,7 +370,7 @@ impl<'a> FnCallIterator<'a> {
     }
 }
 
-impl<'a> Iterator for FnCallIterator<'a> {
+impl<'g, 'a> Iterator for FnCallIterator<'g, 'a> {
     type Item = FnRef;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -704,7 +704,8 @@ where
         &mut self,
         fn_ref: &FnRef,
         module: &Module,
-        args: &Vec<MathExpression<FnArg>>,
+        args: &[MathExpression<FnArg>],
+        dataset_to_use: Option<SqlSelectQuery>,
         join_list: Vec<SqlJoin>,
         batch_size: usize,
         mut optional_obs: Option<&mut dyn Observer>,
@@ -713,26 +714,18 @@ where
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
             return Err(GraphDbRuntimeError::DatasetNotInitialisedError);
         }
-
-        // // Check if we can compute this invariant
-        // // by checking that every function it relies on was added before
-        // if let Some(deps) = &module.dependencies {
-        //     for dep in deps {
-        //         if !&self.is_table_added(dep).await? {
-        //             return Err(GraphDbRuntimeError::InvariantDependencyError(
-        //                 module.clone(),
-        //                 dep.to_string(),
-        //             ));
-        //         }
-        //     }
-        // }
-
         // TODO: Check if there are only constants (since this will not require the need for a join...)
 
         // Using the given join list, we can restrict the dataset.
 
-        let mut input_selection =
-            SqlSelectQuery::select_columns_from_table(args.clone(), CANONICAL_TABLE_NAME);
+        let mut input_selection = match dataset_to_use {
+            Some(dataset) => {
+                // Rename it to dataset for it to act as the classic table.
+                let dataset_table = SqlTableSelection::new_rename(dataset, CANONICAL_TABLE_NAME);
+                SqlSelectQuery::select_columns_from_table(args.to_vec(), dataset_table)
+            }
+            None => SqlSelectQuery::select_columns_from_table(args.to_vec(), CANONICAL_TABLE_NAME),
+        };
 
         // We do not want to re send a row multiple times (useful for functions that do not depend on a graph signature like d(n,m) for example)
         input_selection.set_distinct_values(true);

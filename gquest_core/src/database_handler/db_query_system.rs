@@ -30,8 +30,8 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlWhereClause {
-    not_exists: Option<Box<SqlSelectQuery>>,
-    condition: Option<Condition<FnArg>>,
+    pub not_exists: Option<Box<SqlSelectQuery>>,
+    pub condition: Option<Condition<FnArg>>,
 }
 
 impl From<Condition<FnArg>> for SqlWhereClause {
@@ -404,6 +404,15 @@ impl SqlSelectQuery {
 
     pub fn set_distinct_values(&mut self, value: bool) {
         self.distinct = value;
+    }
+
+    pub fn set_col_selection(&mut self, column_name: impl ToString) {
+        self.select =
+            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()];
+    }
+
+    pub fn set_cols_selection(&mut self, columns: Vec<MathExpression<FnArg>>) {
+        self.select = columns;
     }
 
     /// Encapsulates the previous conditions with an [`Condition::And`] composed of the previous condition and the given one.
