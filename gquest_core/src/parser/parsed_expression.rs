@@ -240,6 +240,23 @@ pub enum ArithmOp {
     Modulo,
 }
 
+impl Display for ArithmOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ArithmOp::Add => "+",
+                ArithmOp::Subtract => "-",
+                ArithmOp::Power => "**",
+                ArithmOp::Multiply => "*",
+                ArithmOp::Divide => "/",
+                ArithmOp::Modulo => "%",
+            }
+        )
+    }
+}
+
 /// Used to correctly identify *parsed* arguments type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedArgType {

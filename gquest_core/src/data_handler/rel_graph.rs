@@ -48,6 +48,7 @@ struct Relation {
 #[derive(Debug, Clone, PartialEq)]
 struct FnCall {
     fn_name: String,
+    string_value: String,
     args: Vec<MathExpression<FnArg>>,
     graph_id: usize,
     is_used: bool,
@@ -156,13 +157,15 @@ impl<'a> RelationGraph<'a> {
 
             // Get the new graph id
             let graph_id = self.relations.len();
-
+            // Create string value in case it needs to be displayed later
+            let string_value = self.create_call_string(&fn_name, args)?;
             // Add it to the calls map
             let calls = self.fn_calls_map.get_mut(&fn_name).expect("module present");
             let call_id = calls.len();
             calls.push(FnCall {
                 fn_name: fn_name.clone(),
                 args: args.to_vec(),
+                string_value,
                 is_used: true,
                 graph_id,
             });
@@ -273,6 +276,80 @@ impl<'a> RelationGraph<'a> {
         for relations in &mut self.relations {
             relations.is_used = false;
         }
+    }
+
+    fn create_call_string(
+        &mut self,
+        fn_name: &str,
+        fn_args: &[MathExpression<FnArg>],
+    ) -> Result<String, RelationGraphError> {
+        let mut string_value = fn_name.to_string();
+        if !is_invariant(fn_args) {
+            string_value.push('(');
+            let mut args = fn_args.iter();
+            // Add all args:
+            string_value.push_str(
+                &self.expression_to_string(args.next().expect("always at least one argument"))?,
+            );
+
+            for arg in args {
+                string_value.push_str(&format!(",{}", self.expression_to_string(arg)?));
+            }
+            string_value.push(')');
+        }
+
+        Ok(string_value)
+    }
+
+    pub fn func_to_string(&self, fn_ref: &FnRef) -> Result<String, RelationGraphError> {
+        Ok(self.get_call(fn_ref)?.string_value.to_string())
+    }
+
+    fn expression_to_string(
+        &self,
+        expr: &MathExpression<FnArg>,
+    ) -> Result<String, RelationGraphError> {
+        Ok(match expr {
+            MathExpression::Primitif(p) => self.arg_to_string(p)?,
+            MathExpression::Negation(math_expression) => {
+                format!("-({})", self.expression_to_string(math_expression)?)
+            }
+            MathExpression::Floor(math_expression) => {
+                format!("floor({})", self.expression_to_string(math_expression)?)
+            }
+            MathExpression::Ceil(math_expression) => {
+                format!("ceil({})", self.expression_to_string(math_expression)?)
+            }
+            MathExpression::Abs(math_expression) => {
+                format!("abs({})", self.expression_to_string(math_expression)?)
+            }
+            MathExpression::Sqrt(math_expression) => {
+                format!("sqrt({})", self.expression_to_string(math_expression)?)
+            }
+            MathExpression::BinOperation { left, op, right } => {
+                format!(
+                    "{} {op} {}",
+                    self.expression_to_string(left)?,
+                    self.expression_to_string(right)?
+                )
+            }
+        })
+    }
+
+    fn arg_to_string(&self, arg: &FnArg) -> Result<String, RelationGraphError> {
+        Ok(match arg {
+            FnArg::FnCall(call) => {
+                let fn_call = self.get_call(call)?;
+                fn_call.string_value.clone()
+            }
+            FnArg::Constant(constant_value) => match constant_value {
+                ConstantValue::Numeric(val) => val.to_string(),
+                ConstantValue::String(val) => val.to_string(),
+                ConstantValue::Identifier(id) => id.to_string(),
+                ConstantValue::Bool(val) => val.to_string(),
+            },
+            FnArg::Dataset => "G".to_string(),
+        })
     }
 }
 
@@ -389,5 +466,13 @@ impl<'g, 'a> Iterator for FnCallIterator<'g, 'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_function()
+    }
+}
+
+fn is_invariant(args: &[MathExpression<FnArg>]) -> bool {
+    if args.len() == 1 {
+        matches!(args[0], MathExpression::Primitif(FnArg::Dataset))
+    } else {
+        false
     }
 }

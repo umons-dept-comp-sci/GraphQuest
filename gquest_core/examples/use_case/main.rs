@@ -40,17 +40,17 @@ async fn main() {
     // )
     // .await
     // .expect("no issues");
-    for i in [6, 7, 8, 9] {
-        db.add_to_dataset(
-            GengProcess::call_geng(None, i, &"".to_string(), (None, None))
-                .expect("correct call")
-                .get_reader(),
-            config.get_batch_size(),
-            None,
-        )
-        .await
-        .expect("no issues while filling the dataset");
-    }
+    // for i in [6, 7, 8] {
+    //     db.add_to_dataset(
+    //         GengProcess::call_geng(None, i, &"".to_string(), (None, None))
+    //             .expect("correct call")
+    //             .get_reader(),
+    //         config.get_batch_size(),
+    //         None,
+    //     )
+    //     .await
+    //     .expect("no issues while filling the dataset");
+    // }
 
     let mut wp = GquestEngine::new(db, config);
     // is_planar(e_nm(n,m, D(n,m)))) = 1

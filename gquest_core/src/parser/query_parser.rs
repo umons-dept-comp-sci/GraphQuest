@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 
 use pest::{
     Parser,
@@ -9,11 +9,8 @@ use pest::{
 use pest_derive::Parser;
 use thiserror::Error;
 
-use crate::{
-    data_handler::invariant_execs::Module,
-    parser::parsed_expression::{
-        ArithmOp, Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
-    },
+use crate::parser::parsed_expression::{
+    ArithmOp, Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
 };
 
 #[derive(Debug, Error)]
@@ -120,33 +117,6 @@ static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
 });
 
 impl QueryParser {
-    // /// Parses a given query into one of the available queries. See [`ParsedQuery`] for more information.
-    // pub fn parse_query(
-    //     input: impl ToString,
-    //     epsilon: Option<f64>,
-    // ) -> Result<ParsedQuery, ParsingError> {
-    //     let input_str = input.to_string();
-    //     let input = Self::parse(Rule::query, &input_str);
-    //     match input {
-    //         Ok(mut rules) => {
-    //             let mut rules = rules
-    //                 .next()
-    //                 .expect("first rule should be a query rule")
-    //                 .into_inner();
-
-    //             let inner_rule = rules.next().expect("always at least one subrule");
-    //             match inner_rule.as_rule() {
-    //                 Rule::if_query => Self::parse_if_query_rule(inner_rule, epsilon),
-    //                 Rule::extremal_condition => Ok(ParsedQuery::Condition(
-    //                     Self::parse_extremal_condition_rule(inner_rule, epsilon)?,
-    //                 )),
-    //                 _ => unreachable!(),
-    //             }
-    //         }
-    //         Err(e) => Err(get_parsing_error(e)),
-    //     }
-    // }
-
     pub fn parse_query(
         input: impl ToString,
         epsilon: Option<f64>,
@@ -188,23 +158,6 @@ impl QueryParser {
         Ok(Self::parse_condition_rule(input, epsilon))
     }
 
-    // /// Parses a conjecture query into an equivalent [`ExtremalCounterQuery`]
-    // /// For example : `min(p_gn: n,m), d_nm >= 3 => conj1 = 1`
-    // pub fn parse_extremal_condition(
-    //     input: impl ToString,
-    //     epsilon: Option<f64>,
-    // ) -> Result<ParsedConditionDEPRECATED, ParsingError> {
-    //     let input_str = input.to_string();
-    //     let input = match QueryParser::parse(Rule::extremal_condition_eoi, &input_str) {
-    //         Ok(mut input) => input.next().expect("one present"),
-    //         Err(e) => {
-    //             return Err(get_parsing_error(e));
-    //         }
-    //     };
-
-    //     Self::parse_extremal_condition_rule(input, epsilon)
-    // }
-
     pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
         match Self::parse(Rule::expr, &input.to_string()) {
             Ok(rules) => Ok(Self::parse_expr_rule(rules)),
@@ -212,49 +165,6 @@ impl QueryParser {
         }
     }
 
-    // fn parse_extremal_condition_rule(
-    //     rule: Pair<'_, Rule>,
-    //     epsilon: Option<f64>,
-    // ) -> Result<ParsedConditionDEPRECATED, ParsingError> {
-    //     let mut inner_rules = rule.into_inner();
-
-    //     /*
-    //     Three possibilities here :
-    //     * `condition`
-    //     * `extremal`
-    //     * `extremal and_op condition`
-    //      */
-    //     if inner_rules.len() == 3 {
-    //         // get `extremal`
-    //         let extremal_selection =
-    //             QueryParser::parse_extremal(inner_rules.next().expect("extremal present"))?;
-    //         // skip `and_op`
-    //         inner_rules.next();
-    //         // get `condition`
-    //         let condition = QueryParser::parse_condition_rule(
-    //             inner_rules.next().expect("condition present"),
-    //             epsilon,
-    //         );
-    //         return Ok(ParsedConditionDEPRECATED::ExtremalCondition(
-    //             extremal_selection,
-    //             Some(condition),
-    //         ));
-    //     }
-    //     let first_rule = inner_rules
-    //         .next()
-    //         .expect("either extremal or condition rule");
-
-    //     match first_rule.as_rule() {
-    //         Rule::extremal => Ok(ParsedConditionDEPRECATED::ExtremalCondition(
-    //             Self::parse_extremal(first_rule)?,
-    //             None,
-    //         )),
-    //         Rule::condition => Ok(ParsedConditionDEPRECATED::Condition(
-    //             Self::parse_condition_rule(first_rule, epsilon),
-    //         )),
-    //         _ => unreachable!(),
-    //     }
-    // }
     fn parse_if_query_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> QueryStatement {
         let mut inner_rules = rule.into_inner();
 
@@ -312,7 +222,6 @@ impl QueryParser {
                     // parse inner condition or identifier
                     let inner_rule = inner_rule.into_inner().next().expect("at least one");
                     match inner_rule.as_rule() {
-                        // FIXME: Add back this shortcut later when the structure is more stable
                         // !inv is a shortcut for inv = 0 (reduces query sizes)
                         Rule::identifier => Comparison::Equal(
                             ParsedArgType::invariant(inner_rule.as_str()).into(),
@@ -365,49 +274,6 @@ impl QueryParser {
             Condition::Operation(create_comparison(prim_1, operator, prim_2, epsilon))
         }
     }
-
-    // fn parse_extremal(rule: Pair<'_, Rule>) -> Result<ClassSelection, ParsingError> {
-    //     let rule_str = rule.as_str();
-    //     let inner_rules = rule.into_inner();
-
-    //     let mut first_identifier = None;
-    //     let mut identifiers = Vec::new();
-    //     let mut class_type = ClassType::Max;
-    //     for inner_rule in inner_rules {
-    //         match &inner_rule.as_rule() {
-    //             Rule::extremal_func => {
-    //                 let inner_rule = inner_rule.into_inner().next().expect("at least one");
-    //                 match &inner_rule.as_rule() {
-    //                     Rule::max_func => {
-    //                         class_type = ClassType::Max;
-    //                     }
-    //                     Rule::min_func => {
-    //                         class_type = ClassType::Min;
-    //                     }
-    //                     _ => unreachable!(),
-    //                 }
-    //             }
-    //             Rule::identifier => {
-    //                 // TODO: not sure this is correct but oh well
-    //                 let new_prim = ParsedArgType::invariant(inner_rule.as_str());
-    //                 if first_identifier.is_none() {
-    //                     first_identifier = Some(new_prim)
-    //                 } else {
-    //                     identifiers.push(new_prim);
-    //                 }
-    //             }
-    //             _ => unreachable!(),
-    //         }
-    //     }
-    //     match ClassSelection::new(
-    //         class_type,
-    //         first_identifier.expect("at least one"),
-    //         identifiers,
-    //     ) {
-    //         Ok(val) => Ok(val),
-    //         Err(e) => Err(ParsingError::ClassSelectionError(rule_str.to_string(), e)),
-    //     }
-    // }
 
     fn parse_expr_rule(pairs: Pairs<Rule>) -> MathExpression {
         PRATT_PARSER

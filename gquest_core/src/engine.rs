@@ -221,8 +221,10 @@ impl<'a> ConditionEngine<'a> {
                 .map(|(fn_ref, j)| {
                     all_output.push(MathExpression::Primitif(FnArg::Constant(
                         ConstantValue::Identifier(format!(
-                            "{}{}.{FUNCTION_OUTPUT_COL_NAME} as {}{}",
-                            fn_ref.0, fn_ref.1, fn_ref.0, fn_ref.1
+                            "{}{}.{FUNCTION_OUTPUT_COL_NAME} as \"{}\"",
+                            fn_ref.0,
+                            fn_ref.1,
+                            graph.func_to_string(&fn_ref).expect("correct val")
                         )),
                     )));
                     j.0

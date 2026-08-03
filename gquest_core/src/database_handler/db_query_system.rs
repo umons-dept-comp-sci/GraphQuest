@@ -284,24 +284,6 @@ impl SqlTableSelection {
             rename_as: Some(new_name.to_string()),
         }
     }
-
-    // /// Selects a table and joins it with the given table name by using for each one the same common column name.
-    // pub fn new_join(
-    //     table: impl Into<SqlTable>,
-    //     with_tables: Vec<String>,
-    //     using: impl ToString,
-    //     rename_as: Option<String>,
-    // ) -> Self {
-    //     let mut rename = None;
-    //     if let Some(new_name) = rename_as {
-    //         rename = Some(new_name.to_string());
-    //     }
-    //     Self {
-    //         selected_table: table.into(),
-    //         join_clause: Some((with_tables, using.to_string())),
-    //         rename_as: rename,
-    //     }
-    // }
 }
 impl From<String> for SqlTableSelection {
     fn from(value: String) -> Self {

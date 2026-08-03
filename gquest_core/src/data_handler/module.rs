@@ -320,7 +320,7 @@ impl Module {
                 if waiting_in_stdin >= batch_size {
                     self.exec_stdin_io_call(&mut || stdin.flush())?;
                     self.flush_wait_output(
-                        &fn_ref,
+                        fn_ref,
                         &mut call_res,
                         waiting_in_stdin,
                         &mut output_function,
@@ -336,7 +336,7 @@ impl Module {
         // If there are still data to send
         if waiting_in_stdin > 0 {
             self.flush_wait_output(
-                &fn_ref,
+                fn_ref,
                 &mut call_res,
                 waiting_in_stdin,
                 &mut output_function,
