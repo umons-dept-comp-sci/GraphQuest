@@ -48,7 +48,6 @@ impl ParsingError {
                     Self::get_arrow_under(input, *col_pos)
                 )
             }
-            _ => self.to_string(),
         }
     }
     fn get_arrow_under(value: &String, col: usize) -> String {
@@ -142,7 +141,7 @@ impl QueryParser {
     }
 
     /// Parses a condition using a string value into an equivalent [`Condition`].
-    /// For example : `(a = 2 or not(x < y))`
+    /// For example : `(a = 2 or not(x < y))`.
     pub fn parse_condition(
         input: impl ToString,
         epsilon: Option<f64>,
@@ -158,9 +157,20 @@ impl QueryParser {
         Ok(Self::parse_condition_rule(input, epsilon))
     }
 
+    /// Parses an expression using a string value into an equivalent [`MathExpression<ParsedArgType>`].
+    /// For example : `(a + b**2) / 4`.
     pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
-        match Self::parse(Rule::expr, &input.to_string()) {
-            Ok(rules) => Ok(Self::parse_expr_rule(rules)),
+        match Self::parse(Rule::expr_EOI, &input.to_string()) {
+            Ok(mut rules) => {
+                // expr_EOI rules are made of an expr and an EOI rule:
+                let expr_rule = rules
+                    .next()
+                    .expect("moving into the expr_eoi rule")
+                    .into_inner()
+                    .next()
+                    .expect("expr rule");
+                Ok(Self::parse_expr_rule(expr_rule.into_inner()))
+            }
             Err(e) => Err(get_parsing_error(e)),
         }
     }
@@ -389,6 +399,7 @@ fn create_primitif(prim_rule: Pair<'_, Rule>) -> ParsedArgType {
                         .trim()
                         .parse::<f64>()
                         .expect("correct f64 value")
+                        .into()
                 }),
                 Rule::string => {
                     let value = inner_rule.as_str().replace("\"", "");

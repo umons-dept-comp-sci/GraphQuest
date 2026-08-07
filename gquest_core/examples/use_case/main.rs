@@ -9,7 +9,7 @@ use gquest_core::{
     engine::GquestEngine,
     parser::query_parser::QueryParser,
     utils::{
-        config_file2::ConfigFile,
+        config_file::ConfigFile,
         table_handler::{QueryTable, QueryTableOptions},
     },
 };

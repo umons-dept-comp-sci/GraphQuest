@@ -1,9 +1,9 @@
 use gquest_core::{
     data_handler::data_loader::MethodError,
     database_handler::{GraphDbRuntimeError, GraphDbStartupError},
+    engine::EngineError,
     parser::query_parser::ParsingError,
     utils::{config_file::ConfigFileError, csv_utils::CsvFileError},
-    workplace::WorkplaceError,
 };
 use thiserror::Error;
 
@@ -38,8 +38,8 @@ pub enum CliError {
     QueryParserError(#[from] ParsingError),
     #[error("Something went wrong with the config file -> {0}")]
     ConfigFileError(#[from] ConfigFileError),
-    #[error("Something went wrong with the workplace -> {0}")]
-    WorplaceError(#[from] WorkplaceError),
+    #[error("Something went wrong with the engine -> {0}")]
+    WorplaceError(#[from] EngineError),
     #[error("Something went wrong with the database -> {0}")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
 

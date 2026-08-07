@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::data_handler::{
     data_types::ValueTypeError,
-    module::{Module, ModuleExecutionError},
+    module::ModuleExecError,
 };
 
 #[derive(Debug, Error)]
@@ -39,12 +39,8 @@ pub enum GraphDbRuntimeError {
     ViolationError(sqlx::Error),
     #[error("Too many bind characters found when working on the query : \"{0}\"")]
     QueryCreationError(String),
-    #[error(
-        "Could not compute the module \"{0:?}\" because the \"{1}\" is not present in the database"
-    )]
-    InvariantDependencyError(Module, String),
-    #[error("Ran into an error while computing an executable : \"{0}\"")]
-    InvariantExecutionError(#[from] ModuleExecutionError),
+    #[error("Ran into a module error : \"{0}\"")]
+    InvariantExecutionError(#[from] ModuleExecError),
     #[error("The given value is not a valid signature: \"{0}\"")]
     InvalidSignature(String),
     #[error("Error while parsing a returned value : \"{0}\"")]

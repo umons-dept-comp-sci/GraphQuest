@@ -1,6 +1,6 @@
 use gquest_core::{
     database_handler::SqliteGraphDB, engine::GquestEngine, parser::query_parser::QueryParser,
-    utils::config_file2::ConfigFile,
+    utils::config_file::ConfigFile,
 };
 
 const MEMORY_DB_URL: &str = "sqlite::memory:";

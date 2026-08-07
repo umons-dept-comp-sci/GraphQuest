@@ -1,10 +1,21 @@
-use std::{fs::File, io, path::Path};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fs::File,
+    io,
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::data_handler::invariant_execs::{Module, ModuleError};
+use crate::{
+    data_handler::{
+        data_types::ValueTypeError,
+        module::{Module, ModuleError, TypedArg},
+    },
+    parser::query_parser::{ParsingError, QueryParser},
+};
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {
@@ -16,20 +27,32 @@ pub enum ConfigFileError {
     InvariantError(#[from] ModuleError),
     #[error("At least one invariant should be provided in the file")]
     NoInvariantError,
+    #[error("Could not create a module : `{0}`")]
+    ArgParseError(#[from] ValueTypeError),
+    #[error("The modules at the paths \"{0}\" and \"{1}\" have the same function name.")]
+    SameFunctionNameError(String, String),
+    #[error("While parsing the expression \"{0}\" for \"{1}\" ran into an error: {2}")]
+    ParsingError(String, String, ParsingError),
 }
 
-/// Private struct simply used to not directly create an executable.
+/// Private struct simply used to not directly create a module.
 #[derive(Serialize, Deserialize)]
 struct ModuleJson {
     /// The path to the file to execute.
     pub path: String,
+    /// The name of the function
+    pub function: String,
+    pub args: Option<Vec<ArgJson>>,
+    /// The list of additional expression results to pass to the module.
+    pub add_args: Option<Vec<String>>,
+    pub output: String,
+    pub batch_size: Option<usize>,
+}
 
-    /// The name of the computed invariants in the returned order
-    pub names: Vec<String>,
-
-    /// The vector of dependencies requiered to compute this invariant.
-    /// A dependency cannot be present in the invariant names field.
-    pub dep: Option<Vec<String>>,
+#[derive(Serialize, Deserialize)]
+struct ArgJson {
+    pub name: String,
+    pub class: String,
 }
 
 /// Private struct simply used to not directly create a config file.
@@ -53,14 +76,14 @@ struct ConfigJsonFile {
 pub struct ConfigFile {
     /// The precision to use when checking if two numbers are equal or not. By default set to 0.
     epsilon: Option<f64>,
-    /// The number of data being sent between the executables and the databases
+    /// The maximum number of data being sent between the modules and the databases.
     batch_size: usize,
     /// The maximum number of threads to use when computing invariants
     nb_threads: usize,
-    /// The list of executables that should be executed by the program.
-    modules: Vec<Module>,
-    /// The list of aliases : `key` -> `value`
-    aliases: Vec<(String, String)>,
+    /// An hashmap containing the modules that the program can use : `Function name` -> `Module`.
+    modules: HashMap<String, Module>,
+    // /// The list of aliases : `key` -> `value`
+    // aliases: Vec<(String, String)>,
 }
 
 impl ConfigFile {
@@ -97,7 +120,7 @@ impl ConfigFile {
         from_json_data(serde_json::from_value(value)?)
     }
 
-    pub fn get_execs_ref(&self) -> &Vec<Module> {
+    pub fn get_module_refs(&self) -> &HashMap<String, Module> {
         &self.modules
     }
 
@@ -110,30 +133,88 @@ impl ConfigFile {
     pub fn get_epsilon(&self) -> &Option<f64> {
         &self.epsilon
     }
-    pub fn get_aliases(&self) -> &Vec<(String, String)> {
-        &self.aliases
-    }
+    // pub fn get_aliases(&self) -> &Vec<(String, String)> {
+    //     &self.aliases
+    // }
 }
 
 fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileError> {
     if config_json.modules.is_empty() {
         return Err(ConfigFileError::NoInvariantError);
     }
-    let mut executables = vec![];
+    let mut modules: HashMap<String, Module> = HashMap::new();
 
-    for exec in config_json.modules {
-        if let Some(dep) = exec.dep {
-            executables.push(Module::new(exec.path, exec.names, dep)?);
-        } else {
-            executables.push(Module::new_no_dep(exec.path, exec.names)?);
+    for module in config_json.modules {
+        match modules.entry(module.function.clone()) {
+            Entry::Occupied(occupied_entry) => {
+                return Err(ConfigFileError::SameFunctionNameError(
+                    occupied_entry
+                        .get()
+                        .exec_path
+                        .as_os_str()
+                        .to_str()
+                        .expect("correct path string") // it was inputted as a string so this is safe
+                        .to_string(),
+                    module.path,
+                ));
+            }
+            Entry::Vacant(vacant_entry) => {
+                let module = if let Some(args_json) = module.args {
+                    let add_args = match module.add_args {
+                        Some(args) => {
+                            let mut add_args = Vec::with_capacity(args.len());
+                            for arg in args {
+                                match QueryParser::parse_expression(&arg) {
+                                    Ok(expr) => {
+                                        add_args.push(expr);
+                                    }
+                                    Err(e) => {
+                                        return Err(ConfigFileError::ParsingError(
+                                            arg,
+                                            module.function,
+                                            e,
+                                        ));
+                                    }
+                                }
+                            }
+                            add_args
+                        }
+                        None => Vec::new(),
+                    };
+                    // From JSON to real module types
+                    let mut args = Vec::with_capacity(args_json.len());
+                    for arg in args_json {
+                        args.push(TypedArg {
+                            name: arg.name,
+                            data_type: arg.class.try_into()?,
+                        });
+                    }
+                    Module::new(
+                        module.path,
+                        module.function,
+                        args,
+                        add_args,
+                        module.output.try_into()?,
+                        module.batch_size,
+                    )
+                } else {
+                    Module::new_invariant(
+                        module.path,
+                        module.function,
+                        module.output.try_into()?,
+                        module.batch_size,
+                    )
+                }?;
+                vacant_entry.insert_entry(module);
+            }
         }
     }
 
     Ok(ConfigFile {
         epsilon: config_json.epsilon,
-        modules: executables,
+        modules,
         nb_threads: config_json.nb_threads.unwrap_or(1),
-        batch_size: config_json.batch_size.unwrap_or(1000),
-        aliases: config_json.aliases.unwrap_or_default(),
+        batch_size: config_json.batch_size.unwrap_or(5000),
+        // aliases: config_json.aliases.unwrap_or_default(),
     })
 }

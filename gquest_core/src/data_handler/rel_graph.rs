@@ -369,6 +369,7 @@ impl<'g, 'a> IntoIterator for &'g mut RelationGraph<'a> {
         FnCallIterator {
             relation_graph: self,
             being_computed: HashSet::new(),
+            was_computed: 0,
             can_now_exec,
         }
     }
@@ -412,6 +413,7 @@ pub struct FnCallIterator<'g, 'a> {
     being_computed: HashSet<FnRef>,
     /// the list of graph id of functions that can now be executed.
     can_now_exec: Vec<usize>,
+    was_computed: usize,
 }
 
 impl<'g, 'a> FnCallIterator<'g, 'a> {
@@ -420,10 +422,16 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
         !self.can_now_exec.is_empty()
     }
 
-    /// Tells the iterator that the given function is over and that the
+    /// Checks if the iterator currently has an available function to return.
+    pub fn is_finished(&self) -> bool {
+        self.was_computed == self.relation_graph.relations.len()
+    }
+
+    /// Signals to the iterator that the given function is over and that the
     /// other dependencies can be free'ed.
     pub fn finish_function(&mut self, fn_ref: &FnRef) {
         if self.being_computed.remove(fn_ref) {
+            self.was_computed += 1;
             self.can_now_exec.append(
                 &mut self
                     .relation_graph
@@ -433,11 +441,10 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
         }
     }
 
-    /// Get the next function to execute.
+    /// Gets the next function to execute.
     /// The iterator will suppose that the function is being executed until
     /// the function [`FnCallIterator::finish_function`] is called for the reference.
     pub fn next_function(&mut self) -> Option<FnRef> {
-        println!("I CAN COMPUTE: {:?}", self.can_now_exec);
         if let Some(next_graph_id) = self.can_now_exec.pop() {
             let fn_ref = self.relation_graph.relations[next_graph_id].id.clone();
             self.being_computed.insert(fn_ref.clone());
@@ -447,6 +454,7 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
         }
     }
 
+    /// Gets the module alongside the arguments from the relation graph using a [`FnRef`].
     pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
         let module = self
             .relation_graph

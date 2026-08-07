@@ -1,5 +1,5 @@
 {
-  "batch_size": 5000,
+  "batch_size": 6500,
   "modules": [
     {
       "function": "D",
@@ -33,6 +33,7 @@
           "class": "numeric"
         }
       ],
+      "add_args": ["D(n,m)"],
       "output": "graph"
     },
     {
@@ -84,6 +85,7 @@
           "class": "graph"
         }
       ],
+      "batch_size": 5000,
       "output": "numeric"
     }
   ]

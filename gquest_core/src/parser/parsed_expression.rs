@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::EqF64;
+
 #[derive(Debug, PartialEq)]
 pub enum QueryStatement {
     Condition(Condition),
@@ -136,7 +138,7 @@ pub enum Comparison<P = ParsedArgType> {
     NotEqual(MathExpression<P>, MathExpression<P>, Option<f64>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MathExpression<P = ParsedArgType> {
     Primitif(P),
     // Unary op
@@ -230,7 +232,7 @@ impl<P: Clone> MathExpression<P> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArithmOp {
     Add,
     Subtract,
@@ -258,15 +260,15 @@ impl Display for ArithmOp {
 }
 
 /// Used to correctly identify *parsed* arguments type.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedArgType {
     PrimString(String),
-    PrimNumeric(f64),
+    PrimNumeric(EqF64),
     Dataset,
     Function(ParsedFunction),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedFunction {
     pub name: String,
     pub first_arg: Box<MathExpression>,
@@ -285,7 +287,7 @@ impl ParsedArgType {
     }
 
     pub fn prim_numeric(value: f64) -> Self {
-        ParsedArgType::PrimNumeric(value)
+        ParsedArgType::PrimNumeric(value.into())
     }
 
     pub fn function(

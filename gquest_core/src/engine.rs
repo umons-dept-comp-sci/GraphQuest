@@ -1,34 +1,24 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
-use indexmap::{IndexMap, IndexSet};
-use log::info;
-use sqlx::Sqlite;
-use tabled::grid::config;
+use indexmap::IndexMap;
+use log::{debug, info};
 use thiserror::Error;
-use tokio::{
-    sync::Mutex,
-    task::{JoinError, JoinSet},
-};
+use tokio::task::JoinError;
 
 use crate::{
     data_handler::{
         data_types::ConstantValue,
-        invariant_execs,
         module::{Module, ModuleError},
         rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
     },
     database_handler::{
         AllowedGraphDb, CANONICAL_TABLE_NAME, FUNCTION_OUTPUT_COL_NAME, GraphDbRuntimeError,
         GraphDbStartupError, PK_NAME, SqlJoin, SqlSelectQuery, SqlTableSelection,
-        VERTICES_TABLE_NAME,
     },
     parser::parsed_expression::{
         Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
     },
-    utils::{SaveOutput, config_file2::ConfigFile, subject::Observer},
+    utils::{SaveOutput, config_file::ConfigFile, subject::Observer},
 };
 
 #[derive(Debug, Error)]
@@ -70,6 +60,7 @@ impl GquestEngine {
     ) -> Result<(), EngineError> {
         let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
 
+        info!("Starting query's modules executions");
         loop {
             match query {
                 QueryStatement::Condition(condition) => {
@@ -84,10 +75,12 @@ impl GquestEngine {
                         .await?;
 
                     query = *query_statement;
-                    println!("MOVING ON TO {query:?}");
+                    info!("Moving on to the next If-Then clause");
                 }
             };
         }
+
+        info!("Finished query's modules execution");
 
         cond_engine.get_result(output).await
     }
@@ -97,11 +90,13 @@ impl GquestEngine {
         cond: Condition<ParsedArgType>,
         output: &mut O,
     ) -> Result<(), EngineError> {
+        info!("Starting condition's modules execution");
         let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
 
         cond_engine
             .add_new_cond(cond, self.config.get_batch_size())
             .await?;
+        info!("Finished condition's modules execution");
 
         cond_engine.get_result(output).await
     }
@@ -121,7 +116,6 @@ impl<'a> ConditionEngine<'a> {
     fn new(db: &'a mut AllowedGraphDb, modules: &'a HashMap<String, Module>) -> Self {
         Self {
             db,
-            // modules: Some(modules),
             graph: Some(RelationGraph::new(modules)),
             result: SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME),
             already_computed: HashSet::new(),
@@ -143,25 +137,21 @@ impl<'a> ConditionEngine<'a> {
             // be used to not have to recompute functions for no reasons alongside their dependencies.
             let mut join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)> = IndexMap::new();
 
-            // Execute the necessary modules if needed :
-
             let mut iter: AutoFnCallIterator<'_, '_> = graph.into_iter().into();
-
-            while let Some(re) = iter.next() {
-                let (module, args) = iter.get_module_args(&re);
-                println!(
-                    "DOING {re:?} with args: {args:?} \n* Already computed: {:?} | join dep map : {:?} | result_cond: {}",
-                    self.already_computed,
-                    join_dep_map,
-                    self.result.to_sql::<Sqlite>()
-                );
-                println!();
-
-                // Fetch all needed function to join for this module.
+            // Iterate over all function references that are stored in the graph and that are needed.
+            while let Some(function_ref) = iter.next() {
+                // Get the module and the arguments that are linked to this function call.
+                let (module, args) = iter.get_module_args(&function_ref);
+                debug!("The function {function_ref:?} has to be executed.");
+                // The list of all needed results to join for the selection query of this module.
                 let mut needed_joins = Vec::new();
+                // The set of already added function joined to the previous vec.
                 let mut already_added = HashSet::new();
+
                 for expr in args {
                     for prim in expr.get_all_primitives_rec() {
+                        // For every other function calls located in the args of this function call
+                        // add them (and their own function calls) to the list of needed joins
                         if let FnArg::FnCall(dependency) = prim {
                             add_rec_needed_joins(
                                 &dependency,
@@ -173,7 +163,8 @@ impl<'a> ConditionEngine<'a> {
                     }
                 }
 
-                // Save the result as a join query for later uses (as well as its dependencies).
+                // Save the result as a join query for later uses
+                // by saving the selected args first in a vector of comparison.
                 let mut join_conditions: Vec<Comparison<FnArg>> = Vec::new();
                 for i in 0..args.len() {
                     let arg_name = module.args[i].name.clone();
@@ -181,45 +172,59 @@ impl<'a> ConditionEngine<'a> {
                     join_conditions.push(Comparison::Equal(
                         FnArg::Constant(ConstantValue::Identifier(format!(
                             "{}{}.{arg_name}",
-                            re.0, re.1
+                            function_ref.0, function_ref.1
                         )))
                         .into(),
                         arg_value,
                         None,
                     ));
                 }
-
+                // then create the join for the function
                 join_dep_map.insert(
-                    re.clone(),
+                    function_ref.clone(),
                     (
-                        SqlJoin::new(re.0.clone(), format!("{}{}", re.0, re.1), join_conditions),
-                        already_added,
+                        SqlJoin::new(
+                            function_ref.0.clone(),
+                            format!("{}{}", function_ref.0, function_ref.1),
+                            join_conditions,
+                        ),
+                        already_added, // Already added contains all dependencies of this function call.
                     ),
                 );
 
-                if self.already_computed.contains(&re) {
-                    println!("\t -=-=-=-> but it was already computed so i'm skiping this");
+                if self.already_computed.contains(&function_ref) {
+                    debug!("But it was already computed previously so we skip it");
                     continue;
                 }
 
                 // Save this function as already computed.
-                self.already_computed.insert(re.clone());
+                self.already_computed.insert(function_ref.clone());
 
                 // Execute the function
-                self.compute_module(&re, module, args, needed_joins, batch_size, None)
-                    .await?;
+                debug!("Executing the function call {function_ref:?}");
+                compute_module(
+                    self.db,
+                    &function_ref,
+                    module,
+                    args,
+                    self.result.clone(),
+                    needed_joins,
+                    batch_size,
+                    None,
+                )
+                .await?;
             }
 
+            debug!("All function call for this condition were executed.");
             // Update the result query :
-
-            let mut all_output = vec![MathExpression::Primitif(FnArg::Constant(
+            let mut all_columns = vec![MathExpression::Primitif(FnArg::Constant(
                 ConstantValue::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
             ))];
 
             let all_joins: Vec<SqlJoin> = join_dep_map
                 .into_iter()
                 .map(|(fn_ref, j)| {
-                    all_output.push(MathExpression::Primitif(FnArg::Constant(
+                    all_columns.push(MathExpression::Primitif(FnArg::Constant(
                         ConstantValue::Identifier(format!(
                             "{}{}.{FUNCTION_OUTPUT_COL_NAME} as \"{}\"",
                             fn_ref.0,
@@ -237,10 +242,10 @@ impl<'a> ConditionEngine<'a> {
                 SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
 
             let mut selection =
-                SqlSelectQuery::select_columns_from_table(all_output, dataset_table)
+                SqlSelectQuery::select_columns_from_table(all_columns, dataset_table)
                     .set_where_clause(flattened_cond);
 
-            // selection.set_distinct_values(false);
+            selection.set_distinct_values(true);
             // Thanks to the topological sort, this is already in the correct order.
             for join in all_joins {
                 selection.add_join(join);
@@ -256,6 +261,7 @@ impl<'a> ConditionEngine<'a> {
     }
 
     async fn get_result<O: SaveOutput>(&self, output: &mut O) -> Result<(), EngineError> {
+        info!("Start fetching the result");
         match &self.db {
             AllowedGraphDb::Sqlite(sqlite_db) => {
                 sqlite_db.fetch_all_row_query(&self.result, output).await
@@ -264,51 +270,53 @@ impl<'a> ConditionEngine<'a> {
                 pg_db.fetch_all_row_query(&self.result, output).await
             }
         }?;
+        info!("Finished fetching the result");
         Ok(())
     }
+}
 
-    async fn compute_module(
-        &mut self,
-        fn_ref: &FnRef,
-        module: &Module,
-        args: &[MathExpression<FnArg>],
-        join_list: Vec<SqlJoin>,
-        batch_size: usize,
-        optional_obs: Option<&mut dyn Observer>,
-    ) -> Result<(), GraphDbRuntimeError> {
-        let mut dataset_to_use = self.result.clone();
-        dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"));
+#[allow(clippy::too_many_arguments)]
+async fn compute_module(
+    db: &mut AllowedGraphDb,
+    fn_ref: &FnRef,
+    module: &Module,
+    args: &[MathExpression<FnArg>],
+    mut dataset_to_use: SqlSelectQuery,
+    join_list: Vec<SqlJoin>,
+    batch_size: usize,
+    optional_obs: Option<&mut dyn Observer>,
+) -> Result<(), GraphDbRuntimeError> {
+    dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"));
 
-        match self.db {
-            AllowedGraphDb::Sqlite(sqlite_db) => {
-                sqlite_db
-                    .compute_module(
-                        fn_ref,
-                        module,
-                        args,
-                        Some(dataset_to_use),
-                        join_list,
-                        batch_size,
-                        optional_obs,
-                    )
-                    .await?;
-            }
-            AllowedGraphDb::Postgres(pg_db) => {
-                pg_db
-                    .compute_module(
-                        fn_ref,
-                        module,
-                        args,
-                        Some(self.result.clone()),
-                        join_list,
-                        batch_size,
-                        optional_obs,
-                    )
-                    .await?;
-            }
+    match db {
+        AllowedGraphDb::Sqlite(sqlite_db) => {
+            sqlite_db
+                .compute_module(
+                    fn_ref,
+                    module,
+                    args,
+                    Some(dataset_to_use),
+                    join_list,
+                    batch_size,
+                    optional_obs,
+                )
+                .await?;
         }
-        Ok(())
+        AllowedGraphDb::Postgres(pg_db) => {
+            pg_db
+                .compute_module(
+                    fn_ref,
+                    module,
+                    args,
+                    Some(dataset_to_use),
+                    join_list,
+                    batch_size,
+                    optional_obs,
+                )
+                .await?;
+        }
     }
+    Ok(())
 }
 
 // ___________________________ UTILS ___________________________
@@ -316,7 +324,7 @@ impl<'a> ConditionEngine<'a> {
 fn fill_graph_cond(
     rel_graph: &mut RelationGraph,
     cond: Condition<ParsedArgType>,
-) -> Result<Condition<FnArg>, EngineError> {
+) -> Result<Condition<FnArg>, RelationGraphError> {
     Ok(match cond {
         Condition::Operation(comparison) => fill_graph_comp(rel_graph, comparison)?.into(),
         Condition::Not(condition) => Condition::not(fill_graph_cond(rel_graph, *condition)?),
@@ -334,7 +342,7 @@ fn fill_graph_cond(
 fn fill_graph_comp(
     rel_graph: &mut RelationGraph,
     comp: Comparison<ParsedArgType>,
-) -> Result<Comparison<FnArg>, EngineError> {
+) -> Result<Comparison<FnArg>, RelationGraphError> {
     Ok(match comp {
         Comparison::Greater(left_expr, right_expr) => Comparison::Greater(
             fill_graph_expr(rel_graph, left_expr)?,
@@ -370,7 +378,7 @@ fn fill_graph_comp(
 fn fill_graph_expr(
     rel_graph: &mut RelationGraph,
     expr: MathExpression<ParsedArgType>,
-) -> Result<MathExpression<FnArg>, EngineError> {
+) -> Result<MathExpression<FnArg>, RelationGraphError> {
     Ok(match expr {
         MathExpression::Primitif(p) => fill_graph_primitif(rel_graph, p)?.into(),
         MathExpression::Negation(math_expression) => {
@@ -399,7 +407,7 @@ fn fill_graph_expr(
 fn fill_graph_primitif(
     rel_graph: &mut RelationGraph,
     p: ParsedArgType,
-) -> Result<FnArg, EngineError> {
+) -> Result<FnArg, RelationGraphError> {
     Ok(match p {
         ParsedArgType::PrimString(s) => FnArg::Constant(ConstantValue::String(s)),
         ParsedArgType::PrimNumeric(n) => FnArg::Constant(ConstantValue::Numeric(n)),

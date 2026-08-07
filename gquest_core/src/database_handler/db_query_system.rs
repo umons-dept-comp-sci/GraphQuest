@@ -179,7 +179,7 @@ impl Comparison<FnArg> {
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        FnArg::Constant(ConstantValue::Numeric(*eps)).into(),
+                        FnArg::Constant(ConstantValue::Numeric((*eps).into())).into(),
                     )
                     .to_sql::<DB>()
                 }
@@ -200,7 +200,7 @@ impl Comparison<FnArg> {
                             ArithmOp::Subtract,
                             b.clone(),
                         )),
-                        FnArg::Constant(ConstantValue::Numeric(*eps)).into(),
+                        FnArg::Constant(ConstantValue::Numeric((*eps).into())).into(),
                         None,
                     )
                     .to_sql::<DB>()
@@ -301,13 +301,13 @@ impl From<&str> for SqlTableSelection {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlTable {
     /// The query used to get this temporary table
-    SqlQuery(SqlSelectQuery),
+    SqlQuery(Box<SqlSelectQuery>),
     /// The name of the table
     TableName(String),
 }
 impl From<SqlSelectQuery> for SqlTable {
     fn from(val: SqlSelectQuery) -> Self {
-        SqlTable::SqlQuery(val)
+        SqlTable::SqlQuery(Box::new(val))
     }
 }
 impl From<String> for SqlTable {

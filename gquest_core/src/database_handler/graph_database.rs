@@ -2,16 +2,15 @@ use std::io::BufRead;
 use std::{fmt::Debug, time::Duration};
 
 use log::debug;
-use sqlx::{Column, Row, TypeInfo};
+use sqlx::{Column, Row};
 use sqlx::{Database, FromRow, Pool, QueryBuilder, migrate::MigrateDatabase, pool::PoolOptions};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::data_handler::data_types::ValueType::Graph;
 use crate::data_handler::data_types::{ConstantValue, ValueType};
 use crate::data_handler::module::{AsyncModuleInput, AsyncModuleOutput, Module, TypedArg};
 use crate::data_handler::rel_graph::{FnArg, FnRef};
 use crate::database_handler::{DbQuerySystem, GraphDbRuntimeError, *};
-use crate::parser::parsed_expression::{Comparison, Condition, MathExpression, ParsedArgType};
+use crate::parser::parsed_expression::{Comparison, MathExpression};
 use crate::utils::SaveOutput;
 use crate::utils::subject::Observer;
 use crate::utils::table_handler::{QueryTable, QueryTableOptions};
@@ -584,7 +583,7 @@ where
             let value = get_nb_vertices(&canonical_form)?;
             data_batch.push(vec![
                 ConstantValue::String(canonical_form.clone()),
-                ConstantValue::Numeric(value as f64),
+                ConstantValue::Numeric((value as f64).into()),
             ]);
 
             signature_batch.push(canonical_form);
@@ -622,7 +621,7 @@ where
         &mut self,
         function_name: impl ToString,
         nb_args: usize,
-        results_to_store: &mut Vec<Vec<ConstantValue>>,
+        results_to_store: &mut [Vec<ConstantValue>],
     ) -> Result<(), GraphDbRuntimeError> {
         let inv_name = function_name.to_string();
 
@@ -635,7 +634,7 @@ where
     fn create_safe_insert_query(
         query_str: String,
         nb_cols: usize,
-        results_to_store: &Vec<Vec<ConstantValue>>,
+        results_to_store: &[Vec<ConstantValue>],
     ) -> Result<sqlx::QueryBuilder<'static, DB>, GraphDbRuntimeError> {
         let mut builder = QueryBuilder::<DB>::new("");
         let mut value_id = 0;
@@ -646,7 +645,7 @@ where
                 let value = &results_to_store[value_id][col_id];
                 match &value {
                     ConstantValue::Numeric(nb) => {
-                        builder.push_bind::<f64>(*nb);
+                        builder.push_bind::<f64>(nb.0);
                     }
                     ConstantValue::Identifier(str) | ConstantValue::String(str) => {
                         builder.push_bind::<String>(str.clone());
@@ -700,6 +699,7 @@ where
     /// * When provided, only signatures contained inside the result of this query will be inputed to the invariant, further restricting the input space.
     ///     * The [`PK_NAME`] column must be the only one present in this query, else an error might happen.
     /// * If provided, the given observer will be ticked for every data received and notified of the data pushed.
+    #[allow(clippy::too_many_arguments)]
     pub async fn compute_module(
         &mut self,
         fn_ref: &FnRef,
@@ -714,6 +714,13 @@ where
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
             return Err(GraphDbRuntimeError::DatasetNotInitialisedError);
         }
+
+        // Take the minimum between the two batch sizes.
+        let batch_size = match module.batch_size {
+            Some(module_batch) => module_batch.min(batch_size),
+            None => batch_size,
+        };
+
         // TODO: Check if there are only constants (since this will not require the need for a join...)
 
         // Using the given join list, we can restrict the dataset.
@@ -734,15 +741,6 @@ where
             input_selection.add_join(join);
         }
 
-        // let mut dataset = if let Some(select_query) = add_query {
-        //     SqlSelectQuery::select_all_from_table(SqlTableSelection::new_rename(
-        //         select_query,
-        //         CANONICAL_TABLE_NAME,
-        //     ))
-        // } else {
-        //     SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
-        // };
-
         /* if the table already exists, adds a condition so that only gets values not present in it */
         {
             if self.is_table_added(&module.fn_name).await? {
@@ -758,27 +756,13 @@ where
                 }
                 input_selection.where_clause =
                     Some(SqlWhereClause::not_exists(not_exist_selection));
-
-                // input_selection.where_clause.no add_and(Condition::not(Condition::exists(
-                //     SqlSelectQuery::select_column_from_table(PK_NAME, first_inv.to_string())
-                //         .set_where_clause(Comparison::Equal(
-                //             // FIXME: This is so wrong but i'm kind of desperate to compile rn so oh well
-                //             ParsedArgType::invariant(format!("{first_inv}.{PK_NAME}")).into(),
-                //             ParsedArgType::invariant(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"))
-                //                 .into(),
-                //             None,
-                //         )),
-                // )));
             }
         }
 
         // Build the final query
         let query_str = input_selection.to_sql::<DB>();
         // Set the capacity of the vectors to save time (since we know their maximum sizes)
-        // let mut results: Vec<ConstantValue> = Vec::with_capacity(batch_size);
         let mut args_to_store: Vec<Vec<ConstantValue>> = Vec::with_capacity(batch_size);
-        // (0..module.args.len())
-        //     .for_each(|_| args_to_store.push(Vec::with_capacity(module.args.len())));
 
         let mut count = 0;
 

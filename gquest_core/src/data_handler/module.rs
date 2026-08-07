@@ -3,41 +3,19 @@ use log::debug;
 use regex::Regex;
 use std::{
     env,
-    fmt::Debug,
+    fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
 };
 use thiserror::Error;
 
-use crate::data_handler::{data_types::ValueType, rel_graph::FnRef};
+use crate::{
+    data_handler::{data_types::ValueType, rel_graph::FnRef},
+    parser::parsed_expression::MathExpression,
+};
 
 const INVARIANT_REGEX: &str = "^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$";
-
-#[derive(Debug, Error)]
-pub enum ModuleExecutionError {
-    #[error("Failed to start executing the module \"{0}\"")]
-    FailedExecution(String),
-    #[error("Failed to write to the stdin of the module: \"{1}\", reason \"{0}\"")]
-    FailedWriteStdin(io::Error, String),
-    #[error("Failed to open the {0} of module \"{1}\"")]
-    ClosedStream(String, String),
-    #[error(
-        "The module \"{0}\" finished it's execution earlier than expected : Exit status \"{1}\" | stderr : \n\"{2}\" "
-    )]
-    EarlyExit(String, String, String),
-    #[error("The module \"{0}\" returned \"{1}\" values instead of \"{2}\"")]
-    UnexpectedOutput(String, usize, usize),
-    #[error("Tried to input \"{1}\" values instead of \"{2}\" to module \"{0}\"")]
-    UnexpectedInput(String, usize, usize),
-    #[error("The output function returned an error during the execution : \"{0}\"")]
-    FailedOutput(String),
-    #[error("The input function returned an error during the execution : \"{0}\"")]
-    FailedInput(String),
-}
-
-// TODO: Encapsulate the errors into a wrapper that always contains important informations
-// neccessary to identify the problematic module for the user (path, output, name, etc...)
 
 #[derive(Debug, Error)]
 pub enum ModuleError {
@@ -47,28 +25,53 @@ pub enum ModuleError {
     InvalidPath(PathBuf),
     #[error("The given file at \"{0}\" is not executable")]
     NotExecutable(PathBuf),
-    #[error("The given invariant name \"{0}\" is not part of any of the given modules")]
-    UnknownInvariant(String),
-    #[error("Encountered an IoError : \"{0}\"")]
-    IoError(#[from] io::Error),
     #[error(
-        "The given name \"{0}\" is not a valid invariant name. An invariant name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$"
+        "The given name \"{0}\" is not a valid function name. An function name must follow the following regex : ^([a-z]|[A-Z]|_)(_|[a-z]|[A-Z]|[0-9])*$"
     )]
     InvalidName(String),
-    #[error(
-        "The given invariant \"{0}\" is not present, yet it is a dependency of the module \"{1}\""
-    )]
-    MissingDependency(String, PathBuf),
-    #[error("The module \"{0}\" depends on itself")]
-    DependsOnSelf(String),
-    #[error("The module returns a value with the same name as one needed as an argument: \"{0}\"")]
+    #[error("The module function has the same name as one of needed argument: \"{0}\"")]
     ReturnSelf(String),
-    #[error("Tried to add the following module \"{0}\" twice")]
-    AlreadyAddedModule(PathBuf),
-    #[error("Tried to add an invariant with the name \"{0}\" twice")]
-    AlreadyAddedInvariant(String),
-    #[error("Encountered a dependency cycle, thus making the invariant computation impossible")]
-    DependencyCycle,
+    #[error("Encountered an IoError : \"{0}\"")]
+    IoError(#[from] io::Error),
+}
+
+#[derive(Debug, Error)]
+pub struct ModuleExecError {
+    fn_name: String,
+    path: String,
+    reason: ExecErrorReason,
+}
+
+impl Display for ModuleExecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "The module computing function \"{}\" (at path:\"{}\") ran into an issue: {}",
+            self.fn_name, self.path, self.reason
+        )
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ExecErrorReason {
+    #[error("Failed to start the execution of the module: \"{0}\"")]
+    FailedExecution(io::Error),
+    #[error("Failed to write to the stdin of the module: \"{0}\"")]
+    FailedWriteStdin(io::Error),
+    #[error("Failed to open the {0} of module")]
+    ClosedStream(String),
+    #[error(
+        "The module finished its execution earlier than expected : Exit status \"{0}\" | stderr : \n\"{1}\" "
+    )]
+    EarlyExit(String, String),
+    #[error("The module returned \"{0}\" values instead of \"{1}\"")]
+    UnexpectedOutput(usize, usize),
+    #[error("Tried to input \"{0}\" values instead of \"{1}\" to the module")]
+    UnexpectedInput(usize, usize),
+    #[error("The output function returned an error during the execution : \"{0}\"")]
+    FailedOutput(String),
+    #[error("The input function returned an error during the execution : \"{0}\"")]
+    FailedInput(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +108,7 @@ pub struct Module {
     pub exec_path: PathBuf,
     pub fn_name: String,
     pub args: Vec<TypedArg>,
+    pub add_args: Vec<MathExpression>,
     /// The type of output to return
     pub output: ValueType,
     pub batch_size: Option<usize>,
@@ -116,6 +120,7 @@ impl Module {
         exec_path: impl Into<String>,
         fn_name: impl Into<String>,
         args: Vec<impl Into<TypedArg>>,
+        add_args: Vec<MathExpression>,
         output: ValueType,
         batch_size: Option<usize>,
     ) -> Result<Self, ModuleError> {
@@ -132,6 +137,7 @@ impl Module {
             fn_name,
             output,
             args,
+            add_args,
             batch_size,
         };
 
@@ -155,6 +161,7 @@ impl Module {
         let i = Module {
             exec_path,
             args,
+            add_args: Vec::new(),
             fn_name,
             output,
             batch_size,
@@ -242,7 +249,7 @@ impl Module {
         mut input_function: T,
         mut output_function: F,
         batch_size: usize,
-    ) -> Result<(), ModuleExecutionError>
+    ) -> Result<(), ModuleExecError>
     where
         T: AsyncModuleInput<E>,
         F: AsyncModuleOutput<E>,
@@ -260,21 +267,15 @@ impl Module {
             .spawn()
         {
             Ok(res) => res,
-            Err(e) => return Err(ModuleExecutionError::FailedExecution(e.to_string())),
+            Err(e) => return Err(self.get_exec_error(ExecErrorReason::FailedExecution(e))),
         };
 
         let Some(mut stderr) = call_res.stderr.take() else {
-            return Err(ModuleExecutionError::ClosedStream(
-                "stderr".to_string(),
-                self.exec_path.display().to_string(),
-            ));
+            return Err(self.get_exec_error(ExecErrorReason::ClosedStream("stderr".to_string())));
         };
 
         let Some(mut stdout) = call_res.stdout.take() else {
-            return Err(ModuleExecutionError::ClosedStream(
-                "stdout".to_string(),
-                self.exec_path.display().to_string(),
-            ));
+            return Err(self.get_exec_error(ExecErrorReason::ClosedStream("stdout".to_string())));
         };
 
         let mut waiting_in_stdin = 0;
@@ -284,10 +285,7 @@ impl Module {
         // Otherwise a deadlock might appear because the child didn't flush in time.
         {
             let Some(mut stdin) = call_res.stdin.take() else {
-                return Err(ModuleExecutionError::ClosedStream(
-                    "stdin".to_string(),
-                    self.exec_path.display().to_string(),
-                ));
+                return Err(self.get_exec_error(ExecErrorReason::ClosedStream("stdin".to_string())));
             };
 
             // For every value to send
@@ -295,7 +293,9 @@ impl Module {
                 let val = match val {
                     Ok(val) => val,
                     Err(e) => {
-                        return Err(ModuleExecutionError::FailedInput(format!("{e:?}")));
+                        return Err(
+                            self.get_exec_error(ExecErrorReason::FailedInput(format!("{e:?}")))
+                        );
                     }
                 };
 
@@ -304,11 +304,10 @@ impl Module {
 
                 // Push this value to content
                 if self.args.len() != val.len() {
-                    return Err(ModuleExecutionError::UnexpectedInput(
-                        self.exec_path.display().to_string(),
+                    return Err(self.get_exec_error(ExecErrorReason::UnexpectedInput(
                         val.len(),
                         self.args.len(),
-                    ));
+                    )));
                 }
                 let val = val.join(" ");
                 debug!("Wrote to child stdin ({:?}): {val:?}", fn_ref);
@@ -365,7 +364,7 @@ impl Module {
         output_function: &mut T,
         stdout: &mut ChildStdout,
         stderr: &mut ChildStderr,
-    ) -> Result<(), ModuleExecutionError>
+    ) -> Result<(), ModuleExecError>
     where
         T: AsyncModuleOutput<E>,
         E: Debug,
@@ -387,14 +386,15 @@ impl Module {
                 let vals: Vec<String> = s.split(' ').map(|v| v.to_string()).collect();
                 // Should return the arguments it used to compute a value + the outputted value
                 if vals.len() != self.args.len() + 1 {
-                    return Err(ModuleExecutionError::UnexpectedOutput(
-                        self.exec_path.display().to_string(),
+                    return Err(self.get_exec_error(ExecErrorReason::UnexpectedOutput(
                         vals.len(),
                         self.args.len() + 1,
-                    ));
+                    )));
                 }
                 if let Err(e) = output_function.call(vals).await {
-                    return Err(ModuleExecutionError::FailedOutput(format!("{e:?}")));
+                    return Err(
+                        self.get_exec_error(ExecErrorReason::FailedOutput(format!("{e:?}")))
+                    );
                 }
             }
 
@@ -425,7 +425,7 @@ impl Module {
         &self,
         child: &mut Child,
         stderr: &mut ChildStderr,
-    ) -> Result<(), ModuleExecutionError> {
+    ) -> Result<(), ModuleExecError> {
         if let Ok(Some(status)) = child.try_wait() {
             if status.success() {
                 return Ok(());
@@ -436,11 +436,7 @@ impl Module {
                 c.push('\n');
                 err.push_str(&c);
             }
-            Err(ModuleExecutionError::EarlyExit(
-                self.exec_path.display().to_string(),
-                status.to_string(),
-                err,
-            ))
+            Err(self.get_exec_error(ExecErrorReason::EarlyExit(status.to_string(), err)))
         } else {
             Ok(())
         }
@@ -449,13 +445,18 @@ impl Module {
     fn exec_stdin_io_call<T>(
         &self,
         to_call: &mut dyn FnMut() -> Result<T, io::Error>,
-    ) -> Result<T, ModuleExecutionError> {
+    ) -> Result<T, ModuleExecError> {
         match to_call() {
             Ok(t) => Ok(t),
-            Err(e) => Err(ModuleExecutionError::FailedWriteStdin(
-                e,
-                self.exec_path.display().to_string(),
-            )),
+            Err(e) => Err(self.get_exec_error(ExecErrorReason::FailedWriteStdin(e))),
+        }
+    }
+
+    fn get_exec_error(&self, reason: ExecErrorReason) -> ModuleExecError {
+        ModuleExecError {
+            fn_name: self.fn_name.clone(),
+            path: self.exec_path.display().to_string(),
+            reason,
         }
     }
 }

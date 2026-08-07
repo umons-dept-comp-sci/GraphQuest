@@ -1,5 +1,4 @@
 pub mod config_file;
-pub mod config_file2;
 pub mod csv_utils;
 pub mod subject;
 pub mod table_handler;

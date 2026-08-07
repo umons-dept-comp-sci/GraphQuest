@@ -71,6 +71,7 @@ divide       =  { "/" }
 modulo       =  { "%" }
 
 expr = { atom ~ (bin_op ~ atom)* }
+expr_EOI = { expr ~ EOI }
 
 // _________ OTHERS _________
 
