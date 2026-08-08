@@ -18,52 +18,51 @@ use crate::{
 };
 
 pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<(), CliError> {
-    // info!("Opening database");
-    // let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
+    info!("Opening database");
+    let db = AllowedGraphDb::connect_from_url(path.url, None).await?;
 
-    // info!("Sending raw sql query");
+    info!("Sending raw sql query");
 
-    // let output = get_default_output(query_args.output);
+    let output = get_default_output(query_args.output);
 
-    // match output {
-    //     OutputChoice::File { path, separator } => {
-    //         // open csv file
-    //         let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
-    //         GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut csv).await?;
-    //     }
-    //     OutputChoice::Stdout => {
-    //         GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut StdoutOutput).await?;
-    //     }
-    //     OutputChoice::Table {
-    //         no_id,
-    //         partial,
-    //         latex,
-    //     } => {
-    //         let options = if let Some(partial_input) = partial {
-    //             ArgParser::parse_partial_table(&partial_input)?
-    //         } else {
-    //             QueryTableOptions::Full
-    //         };
-    //         let mut table = QueryTable::new_no_header(!no_id, options);
+    match output {
+        OutputChoice::File { path, separator } => {
+            // open csv file
+            let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
+            GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut csv).await?;
+        }
+        OutputChoice::Stdout => {
+            GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut StdoutOutput).await?;
+        }
+        OutputChoice::Table {
+            no_id,
+            partial,
+            latex,
+        } => {
+            let options = if let Some(partial_input) = partial {
+                ArgParser::parse_partial_table(&partial_input)?
+            } else {
+                QueryTableOptions::Full
+            };
+            let mut table = QueryTable::new_no_header(!no_id, options);
 
-    //         GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut table).await?;
+            GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut table).await?;
 
-    //         println!(
-    //             "{}",
-    //             if latex {
-    //                 table.to_latex()
-    //             } else {
-    //                 table.to_string()
-    //             }
-    //         );
-    //     }
-    // };
-    // info!("Finished executing query");
+            println!(
+                "{}",
+                if latex {
+                    table.to_latex()
+                } else {
+                    table.to_string()
+                }
+            );
+        }
+    };
+    info!("Finished executing query");
 
-    // info!("Closing database");
-    // db.close_connection().await;
-    // Ok(())
-    todo!("add raw sql to core")
+    info!("Closing database");
+    db.close_connection().await;
+    Ok(())
 }
 
 pub async fn query_database(
@@ -99,7 +98,10 @@ async fn execute_query(
     counter: bool,
 ) -> Result<(), CliError> {
     // try to parse query:
-    let query = QueryParser::parse_query(query.clone(), epsilon)?;
+    let mut query = QueryParser::parse_query(query.clone(), epsilon)?;
+    if counter {
+        query.to_counter();
+    }
     info!("Executing query with the engine");
     match output {
         OutputChoice::File { path, separator } => {

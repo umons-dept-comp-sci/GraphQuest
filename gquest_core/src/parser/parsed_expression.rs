@@ -25,6 +25,21 @@ impl QueryStatement {
     ) -> Self {
         Self::IfThen(condition.into(), Box::new(query_statement.into()))
     }
+
+    pub fn to_counter(&mut self) {
+        let mut statement = self;
+        loop {
+            match statement {
+                QueryStatement::Condition(condition) => {
+                    *condition = Condition::not(condition.clone());
+                    break;
+                }
+                QueryStatement::IfThen(_, query_statement) => {
+                    statement = query_statement;
+                }
+            }
+        }
+    }
 }
 
 /// Represents a **parsed** condition. Not yet typed checked.

@@ -1,9 +1,6 @@
 use thiserror::Error;
 
-use crate::data_handler::{
-    data_types::ValueTypeError,
-    module::ModuleExecError,
-};
+use crate::data_handler::{data_types::ValueTypeError, module::ModuleExecError};
 
 #[derive(Debug, Error)]
 /// Represents errors that can happen when trying to conntect to a database.

@@ -184,12 +184,12 @@ pub enum OutputChoice {
 /// Removes data from the database
 #[derive(Subcommand, Debug, Clone)]
 pub enum RemoveChoice {
-    // #[command(alias = "i")]
-    // /// Removes an invariant from the databe.
-    // Invariant {
-    //     /// The name of the invariant to remove.
-    //     name: String,
-    // },
+    #[command(alias = "i")]
+    /// Removes an invariant from the databe.
+    Invariant {
+        /// The name of the invariant to remove.
+        name: String,
+    },
     #[command(alias = "ai")]
     /// Removes all tables except the dataset.
     AllInvariant,

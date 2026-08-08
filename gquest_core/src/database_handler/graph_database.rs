@@ -510,14 +510,29 @@ where
 
     async fn remove_tables(&mut self, table_names: &[String]) -> Result<(), GraphDbRuntimeError> {
         for table in table_names {
-            DB::execute_query_no_return(
-                &self.pool,
-                QueryBuilder::new(DB::get_delete_table_query(table)),
-            )
-            .await?;
+            self.remove_table(table).await?;
         }
 
         Ok(())
+    }
+
+    /// Removes the given table from the dataset **except** the dataset (and vertices) table.
+    pub async fn remove_table(
+        &mut self,
+        table_name: impl ToString,
+    ) -> Result<(), GraphDbRuntimeError> {
+        let table = table_name.to_string().to_lowercase();
+        if table == CANONICAL_TABLE_NAME || table == VERTICES_TABLE_NAME {
+            return Err(GraphDbRuntimeError::ForbiddenActionError {
+                action: format!("Tried to remove the table \"{table}\" which is not allowed."),
+            });
+        }
+
+        DB::execute_query_no_return(
+            &self.pool,
+            QueryBuilder::new(DB::get_delete_table_query(table_name)),
+        )
+        .await
     }
 
     /// Removes all tables from the dataset **except** the dataset (and vertices) table.

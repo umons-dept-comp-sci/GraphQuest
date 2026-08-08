@@ -53,6 +53,23 @@ impl GquestEngine {
         self.db.close_connection().await
     }
 
+    /// Sends a raw sql query to the database and displays its return value.
+    pub async fn send_raw_sql<O: SaveOutput>(
+        db: AllowedGraphDb,
+        query: impl Into<String>,
+        output: &mut O,
+    ) -> Result<(), EngineError> {
+        match db {
+            AllowedGraphDb::Sqlite(sqlite_db) => {
+                sqlite_db.fetch_all_rows_raw_sql(query.into(), output).await
+            }
+            AllowedGraphDb::Postgres(pg_db) => {
+                pg_db.fetch_all_rows_raw_sql(query.into(), output).await
+            }
+        }?;
+        Ok(())
+    }
+
     pub async fn exec_query<O: SaveOutput>(
         &mut self,
         mut query: QueryStatement,
@@ -134,15 +151,16 @@ impl<'a> ConditionEngine<'a> {
             let flattened_cond = fill_graph_cond(&mut graph, cond)?;
 
             // This hashmap will contain the ref to SqlJoin that can
-            // be used to not have to recompute functions for no reasons alongside their dependencies.
+            // be used to not have to recompute functions alongside their dependencies.
             let mut join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)> = IndexMap::new();
 
             let mut iter: AutoFnCallIterator<'_, '_> = graph.into_iter().into();
             // Iterate over all function references that are stored in the graph and that are needed.
             while let Some(function_ref) = iter.next() {
+                let fn_name = iter.get_inner_iter().get_function_name(&function_ref);
                 // Get the module and the arguments that are linked to this function call.
-                let (module, args) = iter.get_module_args(&function_ref);
-                debug!("The function {function_ref:?} has to be executed.");
+                let (module, args) = iter.get_inner_iter().get_module_args(&function_ref);
+                debug!("The function {fn_name} has to be executed.");
                 // The list of all needed results to join for the selection query of this module.
                 let mut needed_joins = Vec::new();
                 // The set of already added function joined to the previous vec.
@@ -201,7 +219,7 @@ impl<'a> ConditionEngine<'a> {
                 self.already_computed.insert(function_ref.clone());
 
                 // Execute the function
-                debug!("Executing the function call {function_ref:?}");
+                debug!("Executing the function call {fn_name}");
                 compute_module(
                     self.db,
                     &function_ref,
@@ -217,47 +235,57 @@ impl<'a> ConditionEngine<'a> {
 
             debug!("All function call for this condition were executed.");
             // Update the result query :
-            let mut all_columns = vec![MathExpression::Primitif(FnArg::Constant(
-                ConstantValue::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
-            ))];
-
-            let all_joins: Vec<SqlJoin> = join_dep_map
-                .into_iter()
-                .map(|(fn_ref, j)| {
-                    all_columns.push(MathExpression::Primitif(FnArg::Constant(
-                        ConstantValue::Identifier(format!(
-                            "{}{}.{FUNCTION_OUTPUT_COL_NAME} as \"{}\"",
-                            fn_ref.0,
-                            fn_ref.1,
-                            graph.func_to_string(&fn_ref).expect("correct val")
-                        )),
-                    )));
-                    j.0
-                })
-                .collect();
-
-            let mut new_dataset = self.result.clone();
-            new_dataset.set_col_selection(PK_NAME);
-            let dataset_table =
-                SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
-
-            let mut selection =
-                SqlSelectQuery::select_columns_from_table(all_columns, dataset_table)
-                    .set_where_clause(flattened_cond);
-
-            selection.set_distinct_values(true);
-            // Thanks to the topological sort, this is already in the correct order.
-            for join in all_joins {
-                selection.add_join(join);
-            }
-
-            self.result = selection;
+            self.result = self.build_result(&graph, flattened_cond, join_dep_map);
         }
         // Give ownership back of the graph to the engine.
         graph.set_all_unused();
         self.graph = Some(graph);
 
         Ok(())
+    }
+
+    /// Builds the result query.
+    fn build_result(
+        &self,
+        graph: &RelationGraph,
+        flattened_cond: Condition<FnArg>,
+        join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
+    ) -> SqlSelectQuery {
+        // Fetch all columns needed for this query always starting with the signatures from the current dataset.
+        let mut all_columns = vec![MathExpression::Primitif(FnArg::Constant(
+            ConstantValue::Identifier(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}")),
+        ))];
+
+        //  Collect all needed joins
+        let all_joins: Vec<SqlJoin> = join_dep_map
+            .into_iter()
+            .map(|(fn_ref, j)| {
+                // as well as adding them to the resulting query outcome.
+                all_columns.push(MathExpression::Primitif(FnArg::Constant(
+                    ConstantValue::Identifier(format!(
+                        "{}{}.{FUNCTION_OUTPUT_COL_NAME} as \"{}\"",
+                        fn_ref.0,
+                        fn_ref.1,
+                        graph.func_to_string(&fn_ref).expect("correct val")
+                    )),
+                )));
+                j.0
+            })
+            .collect();
+
+        let dataset_table =
+            SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
+
+        let mut selection = SqlSelectQuery::select_columns_from_table(all_columns, dataset_table)
+            .set_where_clause(flattened_cond);
+
+        selection.set_distinct_values(true);
+        // Thanks to the topological sort, this is already in the correct order.
+        for join in all_joins {
+            selection.add_join(join);
+        }
+
+        selection
     }
 
     async fn get_result<O: SaveOutput>(&self, output: &mut O) -> Result<(), EngineError> {
@@ -275,6 +303,8 @@ impl<'a> ConditionEngine<'a> {
     }
 }
 
+// The following function cannot contain "self/ConditionEngine" due to
+// the possibility of adding multithreading later down the line.
 #[allow(clippy::too_many_arguments)]
 async fn compute_module(
     db: &mut AllowedGraphDb,
@@ -439,6 +469,10 @@ fn fill_graph_primitif(
     })
 }
 
+/// Adds recursively add all needed join for the `to_add` argument.
+/// * `res`: Vector which will store the needed join.
+/// * `already_in_res`: prevents adding twice the same join.
+/// * `join_dep_map`: the Hashmap that stores all the needed joins.
 fn add_rec_needed_joins(
     to_add: &FnRef,
     res: &mut Vec<SqlJoin>,

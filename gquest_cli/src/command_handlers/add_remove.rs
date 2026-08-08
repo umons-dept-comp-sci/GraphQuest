@@ -95,10 +95,10 @@ pub async fn remove_dataset(
             AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_database().await,
             AllowedGraphDb::Postgres(graph_database) => graph_database.clear_database().await,
         }?,
-        // RemoveChoice::Invariant { name } => match &mut db {
-        //     AllowedGraphDb::Sqlite(graph_database) => graph_database.().await,
-        //     AllowedGraphDb::Postgres(graph_database) => graph_database.clear_database().await,
-        // }?,
+        RemoveChoice::Invariant { name } => match &mut db {
+            AllowedGraphDb::Sqlite(graph_database) => graph_database.remove_table(name).await,
+            AllowedGraphDb::Postgres(graph_database) => graph_database.remove_table(name).await,
+        }?,
         RemoveChoice::AllInvariant => match &mut db {
             AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_invariants().await,
             AllowedGraphDb::Postgres(graph_database) => graph_database.clear_invariants().await,

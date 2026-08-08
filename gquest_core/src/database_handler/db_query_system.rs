@@ -12,22 +12,6 @@ use crate::{
     parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
 };
 
-// pub enum ColumnType {
-//     String {
-//         max_size: Option<usize>,
-//         default_value: Option<String>,
-//     },
-//     Integer {
-//         default_value: Option<usize>,
-//     },
-//     Float {
-//         default_value: Option<usize>,
-//     },
-//     Boolean {
-//         default_value: Option<bool>,
-//     },
-// }
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlWhereClause {
     pub not_exists: Option<Box<SqlSelectQuery>>,
@@ -67,19 +51,6 @@ impl Condition<FnArg> {
     where
         DB: Database + DbQuerySystem<DB>,
     {
-        // let concat = |cond1: &Condition<FnArg>,
-        //               operator: &str,
-        //               sql_conditions: &Vec<Condition<FnArg>>|
-        //  -> String {
-        //     let mut res = cond1.to_sql::<DB>().to_string();
-
-        //     for condition in sql_conditions {
-        //         res.push_str(&format!(" {operator} {}", condition.to_sql::<DB>()));
-        //     }
-
-        //     res
-        // };
-
         match self {
             Condition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
             Condition::And(a, b) => {

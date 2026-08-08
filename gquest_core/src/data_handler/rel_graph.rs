@@ -381,8 +381,8 @@ pub struct AutoFnCallIterator<'g, 'a> {
 }
 
 impl<'g, 'a> AutoFnCallIterator<'g, 'a> {
-    pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
-        self.module_iterator.get_module_args(fn_ref)
+    pub fn get_inner_iter(&self) -> &FnCallIterator<'g, 'a> {
+        &self.module_iterator
     }
 }
 
@@ -455,6 +455,7 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
     }
 
     /// Gets the module alongside the arguments from the relation graph using a [`FnRef`].
+    /// Will panic if the given [`FnRef`] is not correct.
     pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
         let module = self
             .relation_graph
@@ -466,6 +467,14 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
             .expect("valid reference")
             .args;
         (module, fn_args)
+    }
+
+    /// Gets the function as a [String] value.
+    /// Will panic if the given [`FnRef`] is not correct.
+    pub fn get_function_name(&self, fn_ref: &FnRef) -> String {
+        self.relation_graph
+            .func_to_string(fn_ref)
+            .expect("valid reference")
     }
 }
 
