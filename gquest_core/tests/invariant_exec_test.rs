@@ -5,7 +5,8 @@ use std::{
 
 use gquest_core::data_handler::{
     data_loader::GengProcess,
-    invariant_execs::{AsyncModuleInput, AsyncModuleOutput, Module, ModuleExecutionError},
+    data_types::ValueType::{self},
+    module::{AsyncModuleInput, AsyncModuleOutput, ExecErrorReason, Module, ModuleExecError},
 };
 
 const MAX_STDIN_SIZE: usize = 40;
@@ -47,8 +48,13 @@ impl AsyncModuleOutput<()> for NoOutputFn {
 
 #[tokio::test]
 async fn execute_correct_inv() {
-    let identity = Module::new_no_dep(VALID_EXEC_IDENTITY.to_string(), ['x'.to_string()].to_vec())
-        .expect("correct inv");
+    let identity = Module::new_invariant(
+        VALID_EXEC_IDENTITY.to_string(),
+        "identity",
+        ValueType::Graph,
+        None,
+    )
+    .expect("correct inv");
 
     let geng =
         GengProcess::call_geng(None, 5, &"".to_string(), (None, None)).expect("correct call");
@@ -68,7 +74,7 @@ async fn execute_correct_inv() {
     };
 
     identity
-        .execute(input, output, MAX_STDIN_SIZE)
+        .execute(&("identity".to_string(), 0), input, output, MAX_STDIN_SIZE)
         .await
         .expect("ok");
 
@@ -77,8 +83,13 @@ async fn execute_correct_inv() {
 
 #[tokio::test]
 async fn execute_late_inv() {
-    let identity =
-        Module::new_no_dep(LATE_FLUSH_EXEC.to_string(), ['x'].to_vec()).expect("correct inv");
+    let identity = Module::new_invariant(
+        LATE_FLUSH_EXEC.to_string(),
+        "late_flush",
+        ValueType::Numeric,
+        None,
+    )
+    .expect("correct inv");
 
     let geng =
         GengProcess::call_geng(None, 5, &"".to_string(), (None, None)).expect("correct call");
@@ -97,7 +108,12 @@ async fn execute_late_inv() {
     };
 
     identity
-        .execute(input, output, MAX_STDIN_SIZE)
+        .execute(
+            &("late_flush".to_string(), 0),
+            input,
+            output,
+            MAX_STDIN_SIZE,
+        )
         .await
         .expect("ok");
 
@@ -106,38 +122,63 @@ async fn execute_late_inv() {
 
 #[tokio::test]
 async fn execute_crash_before() {
-    let identity = Module::new_no_dep(CRASH_BEFORE_EXEC.to_string(), ['x'.to_string()].to_vec())
-        .expect("correct inv");
+    let identity = Module::new_invariant(
+        CRASH_BEFORE_EXEC.to_string(),
+        "crash_before",
+        ValueType::Numeric,
+        None,
+    )
+    .expect("correct inv");
 
     let geng =
         GengProcess::call_geng(None, 5, &"".to_string(), (None, None)).expect("correct call");
     let reader = geng.get_reader().lines();
     let input = InputFn { reader };
-    let error = identity.execute(input, NoOutputFn {}, MAX_STDIN_SIZE).await;
+    let error = identity
+        .execute(
+            &("crash_before".to_string(), 0),
+            input,
+            NoOutputFn {},
+            MAX_STDIN_SIZE,
+        )
+        .await;
 
+    // let module_exec_error = ModuleExecError {fn_name: "crash_before".to_string(), path: CRASH_BEFORE_EXEC, reason: ExecErrorReason::EarlyExit(_, "")}
     assert!(matches!(
         error,
-        Err(ModuleExecutionError::EarlyExit(_, _, _))
+        Err( ModuleExecError { fn_name, path, reason: ExecErrorReason::EarlyExit(_, _) } )
+            if fn_name == "crash_before"
+            && std::fs::canonicalize(&path).expect("correct path") == std::fs::canonicalize(CRASH_BEFORE_EXEC).expect("correct path")
     ))
 }
 
 #[tokio::test]
 async fn execute_crash_during() {
-    let identity = Module::new_no_dep(CRASH_DURING_EXEC.to_string(), ['x'.to_string()].to_vec())
-        .expect("correct inv");
+    let identity = Module::new_invariant(
+        CRASH_DURING_EXEC.to_string(),
+        "crash_during".to_string(),
+        ValueType::Numeric,
+        None,
+    )
+    .expect("correct inv");
 
     let geng =
         GengProcess::call_geng(None, 4, &"".to_string(), (None, None)).expect("correct call");
     let reader = geng.get_reader().lines();
     let input = InputFn { reader };
-    let error = identity.execute(input, NoOutputFn {}, MAX_STDIN_SIZE).await;
+    let error = identity
+        .execute(
+            &("crash_during".to_string(), 0),
+            input,
+            NoOutputFn {},
+            MAX_STDIN_SIZE,
+        )
+        .await;
 
     assert!(matches!(
         error,
-        Err(ModuleExecutionError::EarlyExit(_, _, _))
+        Err( ModuleExecError { fn_name, path, reason: ExecErrorReason::EarlyExit(_, _) } )
+            if fn_name == "crash_during"
+            && std::fs::canonicalize(&path).expect("correct path") == std::fs::canonicalize(CRASH_DURING_EXEC).expect("correct path")
     ))
 }
-
-// TODO: Tests -> unexpected input and outputs
-
-// Also the test when the input function fails during exec

@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use gquest_core::{
-    data_handler::invariant_execs::Module,
+    data_handler::{data_types::ValueType, module::Module},
     utils::config_file::{ConfigFile, ConfigFileError},
 };
 use serde_json::json;
@@ -14,144 +16,77 @@ pub const OPTION_FILE: &str = "tests/modules/dep.json";
 pub fn from_value_test() {
     // Correct config file to parse
     let config_file = json!({
+        "batch_size": 6500,
         "modules": [
             {
+                "function": "A",
                 "path": VALID_EXEC_A,
-                "names": [
-                    "P_Gn"
+                "args": [
+                    {
+                        "name": "n",
+                        "class": "bool"
+                    }
                 ],
+                "output": "numeric"
             },
             {
+                "function": "B",
                 "path": VALID_EXEC_B,
-                "names": [
-                    "m",
-                    "km",
-                    "rm"
-                ],
+                "output": "string"
             },
             {
+                "function": "C",
                 "path": VALID_EXEC_C,
-                "names": [
-                    "is_Bmn"
-                ],
-                "dep": [
-                    "km",
-                    "rm"
-                ]
+                "output": "numeric",
+                "batch_size": 100
             }
         ]
     });
 
-    let (a, b, c) = get_a_b_c_exec();
+    let modules_ref = get_a_b_c_exec();
 
     let config_file = ConfigFile::read_json_value(config_file).expect("no error");
 
-    assert_eq!([a, b, c].to_vec(), config_file.get_execs_ref().clone())
+    let modules = config_file.get_module_refs();
+
+    for (name, module) in modules {
+        assert_eq!(module, modules_ref.get(name).expect("fun name present"))
+    }
 }
 
 #[test]
 pub fn from_file_test() {
     // Correct config file to parse
-    let (a, b, c) = get_a_b_c_exec();
+    let module_map = get_a_b_c_exec();
 
     let config_file = ConfigFile::read_json_file(&OPTION_FILE.to_string()).expect("no error");
 
-    assert_eq!([a, b, c].to_vec(), config_file.get_execs_ref().clone())
+    assert_eq!(&module_map, config_file.get_module_refs())
 }
 
-pub fn get_a_b_c_exec() -> (Module, Module, Module) {
-    let a = Module::new_no_dep(VALID_EXEC_A.to_string(), vec!["P_Gn".to_string()])
+pub fn get_a_b_c_exec() -> HashMap<String, Module> {
+    let a = Module::new(
+        VALID_EXEC_A.to_string(),
+        "A",
+        [("n", ValueType::Bool)].to_vec(),
+        Vec::new(),
+        ValueType::Numeric,
+        None,
+    )
+    .expect("Correct inv");
+
+    let b = Module::new_invariant(VALID_EXEC_B.to_string(), "B", ValueType::String, None)
         .expect("Correct inv");
 
-    let b = Module::new_no_dep(
-        VALID_EXEC_B.to_string(),
-        vec!["m".to_string(), "km".to_string(), "rm".to_string()],
-    )
-    .expect("Correct inv");
+    let c = Module::new_invariant(VALID_EXEC_C.to_string(), "C", ValueType::Numeric, Some(100))
+        .expect("Correct inv");
+    let mut hash_map = HashMap::new();
 
-    let c = Module::new(
-        VALID_EXEC_C.to_string(),
-        vec!["is_Bmn".to_string()],
-        vec!["km".to_string(), "rm".to_string()],
-    )
-    .expect("Correct inv");
+    hash_map.insert("A".to_string(), a);
+    hash_map.insert("B".to_string(), b);
+    hash_map.insert("C".to_string(), c);
 
-    (a, b, c)
-}
-
-#[test]
-pub fn full_config_file_test() {
-    // Correct config file to parse
-    let config_file = json!({
-        "batch_size": 3,
-        "nb_threads": 10,
-        "modules": [
-            {
-                "path": VALID_EXEC_A,
-                "names": [
-                    "P_Gn"
-                ],
-            }
-        ],
-        "aliases" : [
-            ("is_four_colorable", "chromatic_nb <= 4"),
-            ("test", "1 + 1")
-        ]
-    });
-    println!("{config_file}");
-
-    let a = get_a_b_c_exec().0;
-
-    let config_file = ConfigFile::read_json_value(config_file).expect("no error");
-
-    assert_eq!([a].to_vec(), config_file.get_execs_ref().clone());
-    assert_eq!(3, config_file.get_batch_size());
-    assert_eq!(10, config_file.get_nb_threads());
-    assert_eq!(
-        &[
-            (
-                "is_four_colorable".to_string(),
-                "chromatic_nb <= 4".to_string()
-            ),
-            ("test".to_string(), "1 + 1".to_string())
-        ]
-        .to_vec(),
-        config_file.get_aliases()
-    );
-}
-
-#[test]
-pub fn no_batch_size_test() {
-    // Correct config file to parse
-    let config_file = json!({
-        "nb_threads": 10,
-        "modules": [
-            {
-                "path": VALID_EXEC_A,
-                "names": [
-                    "P_Gn"
-                ],
-            }
-        ]
-    });
-    ConfigFile::read_json_value(config_file).expect("no error");
-}
-
-#[test]
-pub fn no_nb_threads_test() {
-    // Correct config file to parse
-    let config_file = json!({
-        "batch_size": 3,
-        "modules": [
-            {
-                "path": VALID_EXEC_A,
-                "names": [
-                    "P_Gn"
-                ],
-            }
-        ]
-    });
-    ConfigFile::read_json_value(config_file).expect("no error");
+    hash_map
 }
 
 #[test]

@@ -37,9 +37,9 @@ pub enum ModuleError {
 
 #[derive(Debug, Error)]
 pub struct ModuleExecError {
-    fn_name: String,
-    path: String,
-    reason: ExecErrorReason,
+    pub fn_name: String,
+    pub path: String,
+    pub reason: ExecErrorReason,
 }
 
 impl Display for ModuleExecError {

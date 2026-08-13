@@ -1,30 +1,27 @@
 {
+    "batch_size": 6500,
     "modules": [
         {
+            "function": "A",
             "path": "a.py",
-            "names": [
-                "P_Gn"
+            "args": [
+                {
+                    "name": "n",
+                    "class": "bool"
+                }
             ],
-            "dep": []
+            "output": "numeric"
         },
         {
+            "function": "B",
             "path": "b.py",
-            "names": [
-                "m",
-                "km",
-                "rm"
-            ],
-            "dep": []
+            "output": "string"
         },
         {
+            "function": "C",
             "path": "c.py",
-            "names": [
-                "is_Bmn"
-            ],
-            "dep": [
-                "km",
-                "rm"
-            ]
+            "output": "numeric",
+            "batch_size": 100
         }
     ]
 }
