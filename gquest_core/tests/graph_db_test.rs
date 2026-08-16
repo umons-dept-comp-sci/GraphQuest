@@ -1,5 +1,10 @@
 use gquest_core::{
-    data_handler::{data_loader::GengProcess, invariant_execs::Module},
+    data_handler::{
+        data_loader::GengProcess,
+        data_types::ValueType,
+        module::{Module, TypedArg},
+        rel_graph::FnArg,
+    },
     database_handler::{
         CANONICAL_TABLE_NAME, GraphDbRuntimeError, GraphDbStartupError, SqlSelectQuery,
         SqliteGraphDB, VERTICES_TABLE_NAME,
@@ -75,16 +80,6 @@ async fn create_db_test() {
 }
 
 #[tokio::test]
-async fn print_all_db_table_test() {
-    // remove_all_created_df().await;
-    let _test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
-        .await
-        .expect("no issues dropping database");
-
-    // test.print_all_tables().await.expect("No errors");
-}
-
-#[tokio::test]
 async fn add_to_dataset_test() {
     let mut test = SqliteGraphDB::connect_create_graph_database(MEMORY_DB_URL, None)
         .await
@@ -99,7 +94,7 @@ async fn add_to_dataset_test() {
 
     assert_eq!(dataset_content.len(), expected.len());
     for signature in dataset_content {
-        assert!(expected.contains(&signature))
+        assert!(expected.contains(&signature));
     }
 }
 
@@ -133,15 +128,20 @@ async fn is_table_added_test() {
 
     test.add_to_dataset(geng_reader, 1000, None)
         .await
-        .expect("no issues");
+        .expect("no issues adding values to the dataset");
 
     assert!(
         test.is_table_added(CANONICAL_TABLE_NAME)
             .await
-            .expect("no issues")
+            .expect("no issues checking if the canonical table was created")
     );
 
-    assert!(!test.is_table_added("Fake table").await.expect("no issues"));
+    assert!(
+        !test
+            .is_table_added("Fake table")
+            .await
+            .expect("no issues checking if a non-present table was added")
+    );
 }
 
 #[tokio::test]
@@ -183,21 +183,24 @@ async fn clear_database_test() {
     test.add_to_dataset(geng_reader, 1000, None)
         .await
         .expect("no issues");
+
     test.add_table(
         "test",
-        "test",
-        gquest_core::database_handler::ColumnType::Boolean {
-            default_value: None,
-        },
-        "test_value",
-        gquest_core::database_handler::ColumnType::Boolean {
-            default_value: None,
-        },
+        &[
+            TypedArg {
+                name: "graph".to_string(),
+                data_type: ValueType::Graph,
+            },
+            TypedArg {
+                name: "value".to_string(),
+                data_type: ValueType::Bool,
+            },
+        ],
     )
     .await
-    .expect("no problem");
+    .expect("no issues adding the table");
 
-    test.clear_database().await.expect("no isses");
+    test.clear_database(false).await.expect("no isses");
 
     assert!(
         test.get_all_table_names()
@@ -233,12 +236,23 @@ async fn compute_executable_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_invariant(EXEC_VERTICES, "ident", ValueType::Numeric, None)
+        .expect("correct module");
 
     // This should fail since no dataset were initialised at first
     assert!(matches!(
-        db_test.compute_module(&identity, None, 100, None).await,
-        Err(GraphDbRuntimeError::DatasetNotInitialisedError(_))
+        db_test
+            .compute_module(
+                &("ident".to_string(), 0),
+                &identity,
+                &[FnArg::Dataset.into()],
+                None,
+                Vec::new(),
+                2000,
+                None
+            )
+            .await,
+        Err(GraphDbRuntimeError::DatasetNotInitialisedError)
     ));
 
     // Create dataset
@@ -251,7 +265,15 @@ async fn compute_executable_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_module(&identity, None, 100, None)
+        .compute_module(
+            &("ident".to_string(), 0),
+            &identity,
+            &[FnArg::Dataset.into()],
+            None,
+            Vec::new(),
+            2000,
+            None,
+        )
         .await
         .expect("No errors");
 
@@ -276,8 +298,8 @@ async fn compute_executable_obs_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
-
+    let identity = Module::new_invariant(EXEC_VERTICES, "ident", ValueType::Numeric, None)
+        .expect("correct module");
     // Create dataset
     let (expected, geng_reader) = get_geng_values();
 
@@ -294,7 +316,15 @@ async fn compute_executable_obs_test() {
 
     // Then execute without any troubles
     db_test
-        .compute_module(&identity, None, 100, Some(&mut obs))
+        .compute_module(
+            &("ident".to_string(), 0),
+            &identity,
+            &[FnArg::Dataset.into()],
+            None,
+            Vec::new(),
+            2000,
+            Some(&mut obs),
+        )
         .await
         .expect("No errors");
 
@@ -311,7 +341,8 @@ async fn compute_executable_with_selection_test() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_invariant(EXEC_VERTICES, "ident", ValueType::Numeric, None)
+        .expect("correct module");
 
     // Create dataset
     let geng_reader = get_geng_values().1;
@@ -321,13 +352,21 @@ async fn compute_executable_with_selection_test() {
         .await
         .expect("no issues");
 
-    // This query restricts the total amount of canonical
+    // This query restricts the total amount of signatures from the dataset to use
     let query = SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME)
         .set_limit_clause(None, expected_len);
 
     // Then execute without any troubles
     db_test
-        .compute_module(&identity, Some(query), 100, None)
+        .compute_module(
+            &("ident".to_string(), 0),
+            &identity,
+            &[FnArg::Dataset.into()],
+            Some(query),
+            Vec::new(),
+            2000,
+            None,
+        )
         .await
         .expect("No errors");
 
@@ -339,14 +378,21 @@ async fn compute_executable_with_selection_test() {
     );
 
     /* Try a query with no PK column (no signature column) */
-
     // This query has NO canonical signatures
     let query = SqlSelectQuery::select_column_from_table(VERTICES_TABLE_NAME, VERTICES_TABLE_NAME)
         .set_limit_clause(None, expected_len);
 
     assert!(
         (db_test
-            .compute_module(&identity, Some(query), 100, None)
+            .compute_module(
+                &("ident".to_string(), 0),
+                &identity,
+                &[FnArg::Dataset.into()],
+                Some(query),
+                Vec::new(),
+                2000,
+                None,
+            )
             .await)
             .is_err()
     );
@@ -369,7 +415,8 @@ async fn compute_executable_no_duplicate() {
         .expect("no issues with db init");
 
     // Get invariant :
-    let identity = Module::new_no_dep(EXEC_VERTICES, vec!["ident"]).expect("correct inv");
+    let identity = Module::new_invariant(EXEC_VERTICES, "ident", ValueType::Numeric, None)
+        .expect("correct module");
 
     // Create dataset
     let (expected, geng_reader) = get_geng_values();
@@ -381,7 +428,15 @@ async fn compute_executable_no_duplicate() {
 
     // Then execute without any troubles
     db_test
-        .compute_module(&identity, Some(query), 100, Some(&mut obs))
+        .compute_module(
+            &("ident".to_string(), 0),
+            &identity,
+            &[FnArg::Dataset.into()],
+            Some(query),
+            Vec::new(),
+            2000,
+            Some(&mut obs),
+        )
         .await
         .expect("No errors");
 
@@ -391,7 +446,15 @@ async fn compute_executable_no_duplicate() {
 
     // Compute the rest, which SHOULD NOT include the five first computed values
     db_test
-        .compute_module(&identity, None, 100, Some(&mut obs))
+        .compute_module(
+            &("ident".to_string(), 0),
+            &identity,
+            &[FnArg::Dataset.into()],
+            None,
+            Vec::new(),
+            2000,
+            Some(&mut obs),
+        )
         .await
         .expect("No errors");
 
@@ -400,7 +463,7 @@ async fn compute_executable_no_duplicate() {
 
 async fn remove_all_created_df() {
     // Install sqlite, postgre and mysql drivers
-    // sqlx::any::install_default_drivers();
+    // sqlx::any::install_default_drivers(); (removed since we do not use the built-in drivers anymore)
 
     // Drop the created db
     let _ = Sqlite::drop_database(PHYSICAL_DB_URL).await;

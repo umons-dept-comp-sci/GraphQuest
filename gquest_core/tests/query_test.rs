@@ -5,36 +5,38 @@ use gquest_core::parser::{
     query_parser::QueryParser,
 };
 
-// FIXME: Fix unit test when all is done
+#[test]
+fn parse_comparison() {
+    assert!(matches!(
+        QueryParser::parse_condition("x > 1", None),
+        Ok(Condition::Operation(Comparison::Greater(
+            MathExpression::Primitif(x),
+            MathExpression::Primitif(y)
+        ))) if x == ParsedArgType::invariant("x") && y == ParsedArgType::prim_numeric(1.)
+    ));
+    assert!(matches!(
+        QueryParser::parse_condition("(1 <= b2 )", None),
+        Ok(Condition::Operation(Comparison::LessEqual(
+            MathExpression::Primitif(x),
+            MathExpression::Primitif(y),
+            None
+        ))) if x == ParsedArgType::prim_numeric(1.) && y == ParsedArgType::invariant("b2")
+    ));
+}
 
-// #[test]
-// fn parse_comparison() {
-//     assert!(matches!(
-//         QueryParser::parse_condition("x > 1", None),
-//         Ok(SqlCondition::Operation(SqlComparison::Greater(
-//             MathExpression::Primitif(ArgType::Identifier(x)),
-//             MathExpression::Primitif(ArgType::Value(y))
-//         ))) if x == "x" && y == "1.0"
-//     ));
-//     assert!(matches!(
-//         QueryParser::parse_condition("(1 <= b2 )", None),
-//         Ok(SqlCondition::Operation(SqlComparison::LessEqual(
-//             MathExpression::Primitif(ArgType::Value(x)),
-//             MathExpression::Primitif(ArgType::Identifier(y)),
-//             None
-//         ))) if x == "1.0" && y == "b2"
-//     ));
-// }
-
-// #[test]
-// fn parse_condition() {
-//     assert!(matches!(
-//         QueryParser::parse_condition("a > b and c = d", None),
-//         Ok(SqlCondition::And(b1, b2))
-//             if *b1 == SqlCondition::Operation(SqlComparison::Greater(ArgType::Identifier("a".to_string()).into(), ArgType::Identifier("b".to_string()).into())) &&
-//                 *b2 == SqlCondition::Operation(SqlComparison::Equal(ArgType::Identifier("c".to_string()).into(), ArgType::Identifier("d".to_string()).into(), None))
-//     ));
-// }
+#[test]
+fn parse_condition() {
+    let a = ParsedArgType::invariant("a");
+    let b = ParsedArgType::invariant("b");
+    let c = ParsedArgType::invariant("c");
+    let d = ParsedArgType::invariant("d");
+    assert!(matches!(
+        QueryParser::parse_condition("a > b and c = d", None),
+        Ok(Condition::And(b1, b2))
+            if *b1 == Condition::Operation(Comparison::Greater(a.into(), b.into())) &&
+                *b2 == Condition::Operation(Comparison::Equal(c.into(), d.into(), None))
+    ));
+}
 
 #[test]
 fn parse_query_if_then() {
@@ -101,23 +103,6 @@ fn parse_condition_xor() {
         if cond1 == cond
     ))
 }
-
-// #[test]
-// fn parse_condition_implication() {
-//     let a = ArgType::identifier("a");
-//     let b = ArgType::identifier("b");
-//     let one = ArgType::value("1");
-//     let a_true = SqlComparison::Equal(a.into(), one.clone().into(), None);
-//     let b_true = SqlComparison::Equal(b.into(), one.clone().into(), None);
-
-//     let cond = SqlCondition::implication(a_true, b_true);
-
-//     assert!(matches!(
-//         QueryParser::parse_condition("a ==> b", None),
-//         Ok(cond1)
-//         if cond1 == cond
-//     ))
-// }
 
 #[test]
 fn parse_condition_equivalence() {
@@ -246,40 +231,6 @@ fn parse_condition_condition_parenthesis() {
 //         QueryParser::parse_query("min(p_gn: g, d, g) -> conj1 = 1", None),
 //         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
 //     ));
-// }
-
-// #[test]
-// fn parse_query() {
-//     let sql_cond = SqlCondition::Operation(SqlComparison::Equal(
-//         ArgType::invariant("x".to_string()).into(),
-//         ArgType::Value("1.0".to_string()).into(),
-//         None,
-//     ));
-
-//     let extremal = ClassSelection::new(ClassType::Min, "p_gn", vec!["g", "d"]).expect("correct");
-//     let sql_cond_2 = SqlCondition::not(SqlComparison::Equal(
-//         ArgType::Value("1.0".to_string()).into(),
-//         ArgType::invariant("p".to_string()).into(),
-//         None,
-//     ));
-
-//     assert!(
-//         matches!(QueryParser::parse_query("x = 1", None), Ok(ParsedQuery::Condition(ParsedCondition::Condition(x))) if x == sql_cond )
-//     );
-
-//     assert!(
-//         matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1", None), Ok(ParsedQuery::Condition(ParsedCondition::ExtremalCondition(selection, Some(cond)))) if selection == extremal && cond == sql_cond)
-//     );
-
-//     assert!(
-//         matches!(QueryParser::parse_query("min(p_gn: g, d) and x = 1 -> !(1 = p)", None), Ok(ParsedQuery::IfElse(ParsedCondition::ExtremalCondition(selection, Some(add_cond)), cond))
-//             if selection == extremal && add_cond == sql_cond && cond == sql_cond_2 )
-//     );
-
-//     assert!(
-//         matches!(QueryParser::parse_query("x = 1 -> !(1 = p)", None), Ok(ParsedQuery::IfElse(ParsedCondition::Condition(cond_1), cond_2))
-//             if cond_1 == sql_cond && cond_2 == sql_cond_2 )
-//     )
 // }
 
 #[test]

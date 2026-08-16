@@ -508,9 +508,13 @@ where
         Ok(())
     }
 
-    async fn remove_tables(&mut self, table_names: &[String]) -> Result<(), GraphDbRuntimeError> {
+    async fn remove_tables(
+        &mut self,
+        table_names: &[String],
+        restrict_mode: bool,
+    ) -> Result<(), GraphDbRuntimeError> {
         for table in table_names {
-            self.remove_table(table).await?;
+            self.remove_table(table, restrict_mode).await?;
         }
 
         Ok(())
@@ -520,9 +524,10 @@ where
     pub async fn remove_table(
         &mut self,
         table_name: impl ToString,
+        restrict_mode: bool,
     ) -> Result<(), GraphDbRuntimeError> {
         let table = table_name.to_string().to_lowercase();
-        if table == CANONICAL_TABLE_NAME || table == VERTICES_TABLE_NAME {
+        if restrict_mode && (table == CANONICAL_TABLE_NAME || table == VERTICES_TABLE_NAME) {
             return Err(GraphDbRuntimeError::ForbiddenActionError {
                 action: format!("Tried to remove the table \"{table}\" which is not allowed."),
             });
@@ -536,19 +541,22 @@ where
     }
 
     /// Removes all tables from the dataset **except** the dataset (and vertices) table.
-    pub async fn clear_invariants(&mut self) -> Result<(), GraphDbRuntimeError> {
+    pub async fn clear_invariants(
+        &mut self,
+        restrict_mode: bool,
+    ) -> Result<(), GraphDbRuntimeError> {
         let mut table_names = Self::get_all_table_names(self).await?;
 
         table_names.retain(|name| name != CANONICAL_TABLE_NAME && name != VERTICES_TABLE_NAME);
 
-        self.remove_tables(&table_names).await
+        self.remove_tables(&table_names, restrict_mode).await
     }
 
-    /// Removes all tables from the dataset (and vertices) table.
-    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
+    /// Removes all tables from the database, including the dataset (and vertices) table.
+    pub async fn clear_database(&mut self, restrict_mode: bool) -> Result<(), GraphDbRuntimeError> {
         let table_names = Self::get_all_table_names(self).await?;
 
-        self.remove_tables(&table_names).await
+        self.remove_tables(&table_names, restrict_mode).await
     }
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
@@ -803,11 +811,10 @@ where
             module.execute(fn_ref, input, output, batch_size).await?;
         }
         if count != 0 {
-            let batch_len = args_to_store[0].len(); // Saving that to notify *after* saving the data
             self.push_batch(&mut args_to_store, module).await?;
 
             if let Some(obs) = &mut optional_obs {
-                obs.notify_data_pushed(batch_len as u64);
+                obs.notify_data_pushed(count as u64);
             }
         }
         Ok(())
