@@ -200,7 +200,7 @@ async fn clear_database_test() {
     .await
     .expect("no issues adding the table");
 
-    test.clear_database(false).await.expect("no isses");
+    test.clear_database().await.expect("no isses");
 
     assert!(
         test.get_all_table_names()

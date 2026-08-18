@@ -443,6 +443,10 @@ where
         query_builder: QueryBuilder<'_, DB>,
     ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send;
 
+    fn optimize(
+        pool: &Pool<DB>,
+    ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send;
+
     /// Executes a query and stores all the result in a vector
     fn execute_query_fetch_all<V>(
         pool: &Pool<DB>,

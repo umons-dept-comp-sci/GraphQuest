@@ -27,6 +27,12 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         }
     }
 
+    fn optimize(
+        pool: &Pool<Sqlite>,
+    ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send {
+        Self::execute_query_no_return(pool, sqlx::QueryBuilder::new("PRAGMA optimize;"))
+    }
+
     async fn execute_query_fetch_all<V>(
         pool: &Pool<Sqlite>,
         mut query_builder: sqlx::QueryBuilder<'_, Sqlite>,
@@ -275,44 +281,4 @@ fn translate_column(column_type: &TypedArg) -> String {
             ValueType::String | ValueType::Graph => "VARCHAR",
         }
     )
-
-    // match column_type {
-    //     ColumnType::String {
-    //         max_size,
-    //         default_value,
-    //     } => {
-    //         let mut tmp = String::from("VARCHAR");
-    //         if let Some(m) = max_size {
-    //             tmp.push_str(format!("({})", m).as_str());
-    //         }
-    //         if let Some(d) = default_value {
-    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
-    //         }
-    //         tmp
-    //     }
-    //     ColumnType::Integer { default_value } => {
-    //         let mut tmp = String::from("INTEGER");
-
-    //         if let Some(d) = default_value {
-    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
-    //         }
-    //         tmp
-    //     }
-    //     ColumnType::Float { default_value } => {
-    //         let mut tmp = String::from("REAL");
-
-    //         if let Some(d) = default_value {
-    //             tmp.push_str(format!(" DEFAULT {}", d).as_str());
-    //         }
-    //         tmp
-    //     }
-    //     ColumnType::Boolean { default_value } => {
-    //         let mut tmp = String::from("INTEGER");
-    //         // Convert true to 1 and false to 0
-    //         if let Some(d) = default_value {
-    //             tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
-    //         }
-    //         tmp
-    //     }
-    // }
 }

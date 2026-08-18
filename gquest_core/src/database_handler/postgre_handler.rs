@@ -1,10 +1,10 @@
 use sqlx::{FromRow, Pool, Postgres, postgres::PgDatabaseError};
 
 use crate::{
-    data_handler::{module::TypedArg, rel_graph::FnArg},
+    data_handler::{data_types::ValueType, module::TypedArg, rel_graph::FnArg},
     database_handler::{
-        DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, GraphDbStartupError,
-        SqlSelectQuery, SqlTable,
+        CANONICAL_TABLE_NAME, DbQuerySystem, FUNCTION_OUTPUT_COL_NAME, GraphDatabase, GraphDb,
+        GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery, SqlTable,
     },
     parser::parsed_expression::{ArithmOp, MathExpression},
 };
@@ -25,6 +25,12 @@ impl DbQuerySystem<Postgres> for Postgres {
             Ok(_) => Ok(()),
             Err(e) => Err(Self::translate_runtime_error(e)),
         }
+    }
+
+    fn optimize(
+        pool: &Pool<Postgres>,
+    ) -> impl std::future::Future<Output = Result<(), GraphDbRuntimeError>> + Send {
+        Self::execute_query_no_return(pool, sqlx::QueryBuilder::new("ANALYSE"))
     }
 
     async fn execute_query_fetch_all<V>(
@@ -245,7 +251,15 @@ WHERE schemaname != 'pg_catalog' AND
 
     fn translate_math_expr(expr: &MathExpression<FnArg>) -> String {
         match expr {
-            MathExpression::Primitif(arg_type) => todo!("Translate into postgre primitives"),
+            MathExpression::Primitif(arg_type) => match arg_type {
+                FnArg::FnCall(fn_ref) => {
+                    // At this point, the function table must already be part of the join chain.
+                    format!("{}{}.{FUNCTION_OUTPUT_COL_NAME}", fn_ref.0, fn_ref.1)
+                }
+                FnArg::Constant(constant_value) => Self::translate_constant(constant_value),
+                // At this point, the dataset table must already be part of the join chain.
+                FnArg::Dataset => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
+            },
             MathExpression::Negation(math_expression) => {
                 format!("-({})", Self::translate_math_expr(math_expression))
             }
@@ -281,48 +295,33 @@ WHERE schemaname != 'pg_catalog' AND
     }
 
     fn get_create_table_query(table_name: impl ToString, cols: &[TypedArg]) -> String {
-        todo!()
+        let mut cols_iter = cols.iter();
+        let first_col = cols_iter.next().expect("first present");
+        let mut cols_definitions = translate_column(first_col);
+        let mut cols_names = first_col.name.clone();
+
+        for col in cols_iter {
+            cols_definitions.push_str(&format!(", {}", translate_column(col)));
+            cols_names.push_str(&format!(",{}", col.name));
+        }
+
+        format!(
+            "CREATE TABLE {} ({}, PRIMARY KEY({}))",
+            table_name.to_string(),
+            cols_definitions,
+            cols_names
+        )
     }
 }
 
-// fn translate_column(column_type: ColumnType) -> String {
-//     match column_type {
-//         ColumnType::String {
-//             max_size,
-//             default_value,
-//         } => {
-//             let mut tmp = String::from("VARCHAR");
-//             if let Some(m) = max_size {
-//                 tmp.push_str(format!("({})", m).as_str());
-//             }
-//             if let Some(d) = default_value {
-//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
-//             }
-//             tmp
-//         }
-//         ColumnType::Integer { default_value } => {
-//             let mut tmp = String::from("INTEGER");
-
-//             if let Some(d) = default_value {
-//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
-//             }
-//             tmp
-//         }
-//         ColumnType::Float { default_value } => {
-//             let mut tmp = String::from("float8");
-
-//             if let Some(d) = default_value {
-//                 tmp.push_str(format!(" DEFAULT {}", d).as_str());
-//             }
-//             tmp
-//         }
-//         ColumnType::Boolean { default_value } => {
-//             let mut tmp = String::from("INTEGER");
-//             // Convert true to 1 and false to 0
-//             if let Some(d) = default_value {
-//                 tmp.push_str(format!(" DEFAULT {}", { if d { 1 } else { 0 } }).as_str());
-//             }
-//             tmp
-//         }
-//     }
-// }
+fn translate_column(column_type: &TypedArg) -> String {
+    format!(
+        "{} {} NOT NULL",
+        column_type.name,
+        match column_type.data_type {
+            ValueType::Numeric => "float8",
+            ValueType::String | ValueType::Graph => "VARCHAR",
+            ValueType::Bool => "INTEGER",
+        }
+    )
+}

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
-use log::{debug, info};
+use log::{debug, error, info};
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -144,6 +144,7 @@ impl<'a> ConditionEngine<'a> {
         cond: Condition<ParsedArgType>,
         batch_size: usize,
     ) -> Result<(), EngineError> {
+        error!("Doing {cond:?}");
         // Borrow the relation graph to use it as a mutable variable alongside the engine.
         let mut graph = self.graph.take().expect("present");
         {
@@ -155,17 +156,19 @@ impl<'a> ConditionEngine<'a> {
             let mut join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)> = IndexMap::new();
 
             let mut iter: AutoFnCallIterator<'_, '_> = graph.into_iter().into();
-            // Iterate over all function references that are stored in the graph and that are needed.
+            // Iterate over all function references that are stored in the graph and that are needed in a topological ordering.
             while let Some(function_ref) = iter.next() {
                 let fn_name = iter.get_inner_iter().get_function_name(&function_ref);
                 // Get the module and the arguments that are linked to this function call.
                 let (module, args) = iter.get_inner_iter().get_module_args(&function_ref);
+
                 debug!("The function {fn_name} has to be executed.");
                 // The list of all needed results to join for the selection query of this module.
                 let mut needed_joins = Vec::new();
-                // The set of already added function joined to the previous vec.
+                // The set of already added function joined to the previous vec (used in order to not re-execute functions for no reason).
                 let mut already_added = HashSet::new();
 
+                // Find dependencies
                 for expr in args {
                     for prim in expr.get_all_primitives_rec() {
                         // For every other function calls located in the args of this function call
@@ -180,35 +183,39 @@ impl<'a> ConditionEngine<'a> {
                         }
                     }
                 }
+                println!("Needed joins: {needed_joins:?}\n Already added: {already_added:?}");
 
                 // Save the result as a join query for later uses
                 // by saving the selected args first in a vector of comparison.
-                let mut join_conditions: Vec<Comparison<FnArg>> = Vec::new();
-                for i in 0..args.len() {
-                    let arg_name = module.args[i].name.clone();
-                    let arg_value = args[i].clone();
-                    join_conditions.push(Comparison::Equal(
-                        FnArg::Constant(ConstantValue::Identifier(format!(
-                            "{}{}.{arg_name}",
-                            function_ref.0, function_ref.1
-                        )))
-                        .into(),
-                        arg_value,
-                        None,
-                    ));
-                }
-                // then create the join for the function
-                join_dep_map.insert(
-                    function_ref.clone(),
-                    (
-                        SqlJoin::new(
-                            function_ref.0.clone(),
-                            format!("{}{}", function_ref.0, function_ref.1),
-                            join_conditions,
+                {
+                    let mut join_conditions: Vec<Comparison<FnArg>> =
+                        Vec::with_capacity(args.len());
+                    for i in 0..args.len() {
+                        let arg_name = module.args[i].name.clone();
+                        let arg_value = args[i].clone();
+                        join_conditions.push(Comparison::Equal(
+                            FnArg::Constant(ConstantValue::Identifier(format!(
+                                "{}{}.{arg_name}",
+                                function_ref.0, function_ref.1
+                            )))
+                            .into(),
+                            arg_value,
+                            None,
+                        ));
+                    }
+                    // then create/save the join for the function
+                    join_dep_map.insert(
+                        function_ref.clone(),
+                        (
+                            SqlJoin::new(
+                                function_ref.0.clone(),
+                                format!("{}{}", function_ref.0, function_ref.1),
+                                join_conditions,
+                            ),
+                            already_added, // Already added contains all dependencies of this function call.
                         ),
-                        already_added, // Already added contains all dependencies of this function call.
-                    ),
-                );
+                    );
+                }
 
                 if self.already_computed.contains(&function_ref) {
                     debug!("But it was already computed previously so we skip it");
@@ -225,7 +232,7 @@ impl<'a> ConditionEngine<'a> {
                     &function_ref,
                     module,
                     args,
-                    self.result.clone(),
+                    self.result.clone(), // Uses the previous condition result as the dataset for this one
                     needed_joins,
                     batch_size,
                     None,
@@ -482,14 +489,14 @@ fn add_rec_needed_joins(
     if already_in_res.contains(to_add) {
         return;
     }
-    let add_join_and_dep = join_dep_map.get(to_add).unwrap_or_else(|| {
+    let (join, deps) = join_dep_map.get(to_add).unwrap_or_else(|| {
         panic!("join_dep_map: {join_dep_map:?} \n{to_add:?}: present by the iterator topological sort logic")
     });
     // add all dependency for this join
-    for dep in &add_join_and_dep.1 {
+    for dep in deps {
         add_rec_needed_joins(dep, res, already_in_res, join_dep_map);
     }
     // then add it
-    res.push(add_join_and_dep.0.clone());
+    res.push(join.clone());
     already_in_res.insert(to_add.clone());
 }

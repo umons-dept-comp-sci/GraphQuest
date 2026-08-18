@@ -541,22 +541,19 @@ where
     }
 
     /// Removes all tables from the dataset **except** the dataset (and vertices) table.
-    pub async fn clear_invariants(
-        &mut self,
-        restrict_mode: bool,
-    ) -> Result<(), GraphDbRuntimeError> {
+    pub async fn clear_invariants(&mut self) -> Result<(), GraphDbRuntimeError> {
         let mut table_names = Self::get_all_table_names(self).await?;
 
         table_names.retain(|name| name != CANONICAL_TABLE_NAME && name != VERTICES_TABLE_NAME);
 
-        self.remove_tables(&table_names, restrict_mode).await
+        self.remove_tables(&table_names, true).await
     }
 
     /// Removes all tables from the database, including the dataset (and vertices) table.
-    pub async fn clear_database(&mut self, restrict_mode: bool) -> Result<(), GraphDbRuntimeError> {
+    pub async fn clear_database(&mut self) -> Result<(), GraphDbRuntimeError> {
         let table_names = Self::get_all_table_names(self).await?;
 
-        self.remove_tables(&table_names, restrict_mode).await
+        self.remove_tables(&table_names, false).await
     }
 
     /// Add all canonical signatures to the table [`CANONICAL_TABLE_NAME`] of the dabase.
@@ -733,6 +730,8 @@ where
         batch_size: usize,
         mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
+        DB::optimize(&self.pool).await?;
+        
         // Check if the dataset was at least initialised first
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
             return Err(GraphDbRuntimeError::DatasetNotInitialisedError);
@@ -743,8 +742,6 @@ where
             Some(module_batch) => module_batch.min(batch_size),
             None => batch_size,
         };
-
-        // TODO: Check if there are only constants (since this will not require the need for a join...)
 
         // Using the given join list, we can restrict the dataset.
 
