@@ -68,6 +68,11 @@
       "output": "numeric"
     },
     {
+      "function": "max",
+      "path": "max_degree.py",
+      "output": "string"
+    },
+    {
       "function": "eci",
       "path": "eci.py",
       "output": "numeric"

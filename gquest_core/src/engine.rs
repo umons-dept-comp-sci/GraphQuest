@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
-use log::{debug, error, info};
+use log::{debug, info};
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -144,12 +144,14 @@ impl<'a> ConditionEngine<'a> {
         cond: Condition<ParsedArgType>,
         batch_size: usize,
     ) -> Result<(), EngineError> {
-        error!("Doing {cond:?}");
         // Borrow the relation graph to use it as a mutable variable alongside the engine.
         let mut graph = self.graph.take().expect("present");
         {
             // Add cond to the relation graph.
             let flattened_cond = fill_graph_cond(&mut graph, cond)?;
+
+            // Check if all arguments in the condition are correct
+            graph.try_is_valid_cond(&flattened_cond)?;
 
             // This hashmap will contain the ref to SqlJoin that can
             // be used to not have to recompute functions alongside their dependencies.
@@ -183,7 +185,6 @@ impl<'a> ConditionEngine<'a> {
                         }
                     }
                 }
-                println!("Needed joins: {needed_joins:?}\n Already added: {already_added:?}");
 
                 // Save the result as a join query for later uses
                 // by saving the selected args first in a vector of comparison.

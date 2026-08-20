@@ -153,6 +153,19 @@ pub enum Comparison<P = ParsedArgType> {
     NotEqual(MathExpression<P>, MathExpression<P>, Option<f64>),
 }
 
+impl<P> Comparison<P> {
+    pub fn get_left_right_expr(&self) -> (&MathExpression<P>, &MathExpression<P>) {
+        match self {
+            Comparison::Greater(left_expr, right_expr)
+            | Comparison::GreaterEqual(left_expr, right_expr, _)
+            | Comparison::Less(left_expr, right_expr)
+            | Comparison::LessEqual(left_expr, right_expr, _)
+            | Comparison::Equal(left_expr, right_expr, _)
+            | Comparison::NotEqual(left_expr, right_expr, _) => (left_expr, right_expr),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MathExpression<P = ParsedArgType> {
     Primitif(P),
@@ -207,6 +220,25 @@ impl<P> MathExpression<P> {
             op,
             right: Box::new(right.into()),
         }
+    }
+
+    pub fn get_operator_name(&self) -> String {
+        match self {
+            MathExpression::Primitif(_p) => "Primitif",
+            MathExpression::Negation(_math_expression) => "Negation",
+            MathExpression::Floor(_math_expression) => "Floor",
+            MathExpression::Ceil(_math_expression) => "Ceil",
+            MathExpression::Abs(_math_expression) => "Abs",
+            MathExpression::Sqrt(_math_expression) => "Sqrt",
+            MathExpression::BinOperation {
+                left: _,
+                op,
+                right: _,
+            } => {
+                return op.to_string();
+            }
+        }
+        .to_string()
     }
 }
 

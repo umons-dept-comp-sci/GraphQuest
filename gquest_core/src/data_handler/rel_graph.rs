@@ -7,7 +7,7 @@ use crate::{
         data_types::{ConstantValue, ValueType},
         module::Module,
     },
-    parser::parsed_expression::MathExpression,
+    parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
 };
 
 #[derive(Debug, Error)]
@@ -20,9 +20,33 @@ pub enum RelationGraphError {
     DifferentArgumentNumber(String, usize, usize),
 
     #[error(
-        "Tried to call the function \"{0}\" with an argument of type {2} instead of {3} for \"{1}\"."
+        "Tried to call the function \"{fn_name}\" with an argument of type {given_arg} instead of {} for \"{}\".", arg.1, arg.0
     )]
-    DifferentArgumentType(String, String, ValueType, ValueType),
+    DifferentArgumentType {
+        fn_name: String,
+        arg: (String, ValueType),
+        given_arg: ValueType,
+    },
+    #[error(
+        "The operator \"{operator}\" expected an argument of type {expected_arg} but received an argument of type {given_arg}."
+    )]
+    IncompatibleArgumentType {
+        operator: String,
+        given_arg: ValueType,
+        expected_arg: String,
+    },
+    #[error(
+        "The binary operator \"{operator}\" does not allow {} type arguments.",
+        ValueType::String
+    )]
+    StringArgumentType { operator: ArithmOp },
+    #[error(
+        "The given comparison tries to compare different data types, left: {left_comp_type}, right: {right_comp_type}."
+    )]
+    ComparaisonTwoTypes {
+        left_comp_type: ValueType,
+        right_comp_type: ValueType,
+    },
 }
 
 /// The unique identifier to a function call : (`function_name`, `id`).
@@ -204,15 +228,14 @@ impl<'a> RelationGraph<'a> {
 
         for (i, arg) in args.iter().enumerate() {
             let module_arg = &module.args[i];
-            let found_type = self.get_type(arg)?;
+            let found_type = self.try_get_type(arg)?;
             let needed_type = &module_arg.data_type;
             if *needed_type != found_type {
-                return Err(RelationGraphError::DifferentArgumentType(
-                    fn_name.clone(),
-                    module_arg.name.clone(),
-                    found_type,
-                    needed_type.clone(),
-                ));
+                return Err(RelationGraphError::DifferentArgumentType {
+                    fn_name: fn_name.clone(),
+                    arg: (module_arg.name.clone(), needed_type.clone()),
+                    given_arg: found_type,
+                });
             }
         }
 
@@ -239,9 +262,9 @@ impl<'a> RelationGraph<'a> {
         }
     }
 
-    fn get_type(&self, arg: &MathExpression<FnArg>) -> Result<ValueType, RelationGraphError> {
-        if let MathExpression::Primitif(prim) = arg {
-            Ok(match prim {
+    fn try_get_type(&self, arg: &MathExpression<FnArg>) -> Result<ValueType, RelationGraphError> {
+        match arg {
+            MathExpression::Primitif(prim) => Ok(match prim {
                 FnArg::FnCall(fn_ref) => {
                     let module = self.get_module(&fn_ref.0)?;
                     module.output.clone()
@@ -255,10 +278,81 @@ impl<'a> RelationGraph<'a> {
                     ),
                 },
                 FnArg::Dataset => ValueType::Graph,
+            }),
+            MathExpression::Negation(math_expression) => {
+                let arg_type = self.try_get_type(math_expression)?;
+                if arg_type == ValueType::Numeric || arg_type == ValueType::Bool {
+                    Ok(arg_type)
+                } else {
+                    Err(RelationGraphError::IncompatibleArgumentType {
+                        operator: arg.get_operator_name(),
+                        given_arg: arg_type,
+                        expected_arg: format!("{} or {}", ValueType::Numeric, ValueType::Bool),
+                    })
+                }
+            }
+
+            MathExpression::Floor(math_expression)
+            | MathExpression::Ceil(math_expression)
+            | MathExpression::Abs(math_expression)
+            | MathExpression::Sqrt(math_expression) => {
+                let arg_type = self.try_get_type(math_expression)?;
+                if arg_type == ValueType::Numeric {
+                    Ok(ValueType::Numeric)
+                } else {
+                    Err(RelationGraphError::IncompatibleArgumentType {
+                        operator: arg.get_operator_name(),
+                        given_arg: arg_type,
+                        expected_arg: ValueType::Numeric.to_string(),
+                    })
+                }
+            }
+            MathExpression::BinOperation { left, op: _, right } => {
+                let left_arg = self.try_get_type(left)?;
+                let right_arg = self.try_get_type(right)?;
+
+                let error_arg = |arg_error: ValueType| {
+                    Err(RelationGraphError::IncompatibleArgumentType {
+                        operator: arg.get_operator_name(),
+                        given_arg: arg_error,
+                        expected_arg: ValueType::Numeric.to_string(),
+                    })
+                };
+
+                if left_arg != ValueType::Numeric {
+                    error_arg(left_arg)
+                } else if right_arg != ValueType::Numeric {
+                    error_arg(right_arg)
+                } else {
+                    Ok(ValueType::Numeric)
+                }
+            }
+        }
+    }
+
+    pub fn try_is_valid_cond(&self, cond: &Condition<FnArg>) -> Result<(), RelationGraphError> {
+        match cond {
+            Condition::Or(left_cond, right_cond) | Condition::And(left_cond, right_cond) => {
+                self.try_is_valid_cond(left_cond)?;
+                self.try_is_valid_cond(right_cond)
+            }
+            Condition::Not(condition) => self.try_is_valid_cond(condition),
+            Condition::Operation(comparison) => self.try_valid_comp(comparison),
+        }
+    }
+
+    fn try_valid_comp(&self, comp: &Comparison<FnArg>) -> Result<(), RelationGraphError> {
+        let (left_expr, right_expr) = comp.get_left_right_expr();
+        let left_type = self.try_get_type(left_expr)?;
+        let right_type = self.try_get_type(right_expr)?;
+
+        if left_type != right_type {
+            Err(RelationGraphError::ComparaisonTwoTypes {
+                left_comp_type: left_type,
+                right_comp_type: right_type,
             })
         } else {
-            // TODO: Numeric types should also be checked to be compatible or not (STRING + NUMERIC = ERROR)
-            Ok(ValueType::Numeric)
+            Ok(())
         }
     }
 
