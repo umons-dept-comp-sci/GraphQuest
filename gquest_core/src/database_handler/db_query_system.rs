@@ -52,7 +52,7 @@ impl Condition<FnArg> {
         DB: Database + DbQuerySystem<DB>,
     {
         match self {
-            Condition::Operation(sql_comparison) => sql_comparison.to_sql::<DB>(),
+            Condition::Comparison(sql_comparison) => sql_comparison.to_sql::<DB>(),
             Condition::And(a, b) => {
                 format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
             }

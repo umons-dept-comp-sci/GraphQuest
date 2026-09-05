@@ -73,6 +73,11 @@
       "output": "string"
     },
     {
+      "function": "comp",
+      "path": "complement.py",
+      "output": "graph"
+    },
+    {
       "function": "eci",
       "path": "eci.py",
       "output": "numeric"

@@ -9,14 +9,14 @@ use gquest_core::parser::{
 fn parse_comparison() {
     assert!(matches!(
         QueryParser::parse_condition("x > 1", None),
-        Ok(Condition::Operation(Comparison::Greater(
+        Ok(Condition::Comparison(Comparison::Greater(
             MathExpression::Primitif(x),
             MathExpression::Primitif(y)
         ))) if x == ParsedArgType::invariant("x") && y == ParsedArgType::prim_numeric(1.)
     ));
     assert!(matches!(
         QueryParser::parse_condition("(1 <= b2 )", None),
-        Ok(Condition::Operation(Comparison::LessEqual(
+        Ok(Condition::Comparison(Comparison::LessEqual(
             MathExpression::Primitif(x),
             MathExpression::Primitif(y),
             None
@@ -33,8 +33,8 @@ fn parse_condition() {
     assert!(matches!(
         QueryParser::parse_condition("a > b and c = d", None),
         Ok(Condition::And(b1, b2))
-            if *b1 == Condition::Operation(Comparison::Greater(a.into(), b.into())) &&
-                *b2 == Condition::Operation(Comparison::Equal(c.into(), d.into(), None))
+            if *b1 == Condition::Comparison(Comparison::Greater(a.into(), b.into())) &&
+                *b2 == Condition::Comparison(Comparison::Equal(c.into(), d.into(), None))
     ));
 }
 
@@ -54,7 +54,7 @@ fn parse_query_if_then() {
     assert!(matches!(
         QueryParser::parse_query("a -> b", None),
         Ok(QueryStatement::IfThen(left, right))
-            if left == Condition::Operation(a) && *right == QueryStatement::condition(b)));
+            if left == Condition::Comparison(a) && *right == QueryStatement::condition(b)));
 }
 
 #[test]
@@ -126,15 +126,15 @@ fn parse_condition_not() {
     assert!(matches!(
         QueryParser::parse_condition("not(a > b) or c = d", None),
         Ok(Condition::Or(b1, b2))
-            if *b1 == Condition::Not(Box::new(Condition::Operation(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into())))) &&
-                *b2 == Condition::Operation(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))
+            if *b1 == Condition::Not(Box::new(Condition::Comparison(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into())))) &&
+                *b2 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("!inv or a", None),
         Ok(Condition::Or(b1, b2))
-            if *b1 == Condition::Operation(Comparison::Equal(ParsedArgType::invariant("inv").into(), ParsedArgType::prim_numeric(0.).into(), None)) &&
-                *b2 == Condition::Operation(Comparison::Equal(ParsedArgType::invariant("a").into(), ParsedArgType::prim_numeric(1.).into(), None))
+            if *b1 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("inv").into(), ParsedArgType::prim_numeric(0.).into(), None)) &&
+                *b2 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("a").into(), ParsedArgType::prim_numeric(1.).into(), None))
     ));
 }
 
@@ -143,9 +143,9 @@ fn parse_condition_condition_chain() {
     assert!(matches!(
         QueryParser::parse_condition("a > b or c = d and 0 != 5", None),
         Ok(Condition::Or(b1, b2))
-            if *b1 == Condition::Operation(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into())) &&
-                *b2 == Condition::And(Box::new(Condition::Operation(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))),
-                    Box::new(Condition::Operation(Comparison::NotEqual(ParsedArgType::prim_numeric(0.).into(), ParsedArgType::prim_numeric(5.).into(), None))))
+            if *b1 == Condition::Comparison(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into())) &&
+                *b2 == Condition::And(Box::new(Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))),
+                    Box::new(Condition::Comparison(Comparison::NotEqual(ParsedArgType::prim_numeric(0.).into(), ParsedArgType::prim_numeric(5.).into(), None))))
     ));
 }
 
@@ -154,9 +154,9 @@ fn parse_condition_condition_parenthesis() {
     assert!(matches!(
         QueryParser::parse_condition("(a > b or c = d) and 0 != 5", None),
         Ok(Condition::And(b1, b2))
-            if *b2 == Condition::Operation(Comparison::NotEqual(ParsedArgType::prim_numeric(0.).into(), ParsedArgType::prim_numeric(5.).into(), None)) &&
-                *b1 == Condition::Or(Box::new(Condition::Operation(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into()))),
-            Box::new(Condition::Operation(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))))
+            if *b2 == Condition::Comparison(Comparison::NotEqual(ParsedArgType::prim_numeric(0.).into(), ParsedArgType::prim_numeric(5.).into(), None)) &&
+                *b1 == Condition::Or(Box::new(Condition::Comparison(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into()))),
+            Box::new(Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))))
     ));
 }
 
@@ -315,14 +315,14 @@ fn parse_negation_expression() {
 fn parse_expression_comparison() {
     assert!(matches!(
         QueryParser::parse_condition("n + 1 > 0", None),
-        Ok(Condition::Operation(Comparison::Greater(a, b)))
+        Ok(Condition::Comparison(Comparison::Greater(a, b)))
         if a == bin_operation(ParsedArgType::invariant("n"), ArithmOp::Add, ParsedArgType::prim_numeric(1.))
         && b == ParsedArgType::prim_numeric(0.).into()
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("floor(n) = 0 % (2 * 1)", None),
-        Ok(Condition::Operation(Comparison::Equal(a, b, None)))
+        Ok(Condition::Comparison(Comparison::Equal(a, b, None)))
         if
         a == floor(ParsedArgType::invariant("n"))
         &&
@@ -331,7 +331,7 @@ fn parse_expression_comparison() {
 
     assert!(matches!(
         QueryParser::parse_condition("a = n ** 2", None),
-        Ok(Condition::Operation(Comparison::Equal(a, b, None)))
+        Ok(Condition::Comparison(Comparison::Equal(a, b, None)))
         if
         a == ParsedArgType::invariant("a").into()
         &&
@@ -343,21 +343,21 @@ fn parse_expression_comparison() {
 fn parse_function() {
     assert!(matches!(
         QueryParser::parse_condition("fn(G, 12) > 0", None),
-        Ok(Condition::Operation(Comparison::Greater(a, b)))
+        Ok(Condition::Comparison(Comparison::Greater(a, b)))
         if a == ParsedArgType::function("fn", ParsedArgType::Dataset, vec![ParsedArgType::prim_numeric(12.0)]).into()
         && b == ParsedArgType::prim_numeric(0.0).into()
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("fn(G) > 0", None),
-        Ok(Condition::Operation(Comparison::Greater(a, b)))
+        Ok(Condition::Comparison(Comparison::Greater(a, b)))
         if a == ParsedArgType::function("fn", ParsedArgType::Dataset, Vec::<ParsedArgType>::new()).into()
         && b == ParsedArgType::prim_numeric(0.0).into()
     ));
 
     assert!(matches!(
         QueryParser::parse_condition("fn > 0", None),
-        Ok(Condition::Operation(Comparison::Greater(a, b)))
+        Ok(Condition::Comparison(Comparison::Greater(a, b)))
         if a == ParsedArgType::function("fn", ParsedArgType::Dataset, Vec::<ParsedArgType>::new()).into()
         && b == ParsedArgType::prim_numeric(0.0).into()
     ));

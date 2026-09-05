@@ -337,7 +337,7 @@ impl<'a> RelationGraph<'a> {
                 self.try_is_valid_cond(right_cond)
             }
             Condition::Not(condition) => self.try_is_valid_cond(condition),
-            Condition::Operation(comparison) => self.try_valid_comp(comparison),
+            Condition::Comparison(comparison) => self.try_valid_comp(comparison),
         }
     }
 

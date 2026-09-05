@@ -13,7 +13,7 @@ use crate::{
     },
     database_handler::{
         AllowedGraphDb, CANONICAL_TABLE_NAME, FUNCTION_OUTPUT_COL_NAME, GraphDbRuntimeError,
-        GraphDbStartupError, PK_NAME, SqlJoin, SqlSelectQuery, SqlTableSelection,
+        PK_NAME, SqlJoin, SqlSelectQuery, SqlTableSelection,
     },
     parser::parsed_expression::{
         Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
@@ -23,15 +23,13 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("Encountered an error from the database during initialisation : \"{0}\"")]
-    GraphDbStartupError(#[from] GraphDbStartupError),
     #[error("Encountered an error from the database during an execution : \"{0}\"")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
     #[error("Encountered an error from a module : \"{0}\"")]
     ModuleError(#[from] ModuleError),
     #[error("One of the invariant thread did not end correctly: \"{0}\"")]
     JoinError(#[from] JoinError),
-    #[error("Ran into an error while building the relation graph: \"{0}\"")]
+    #[error("Ran into an error while building the relation graph:\n{0}")]
     RelationGraphError(#[from] RelationGraphError),
 }
 
@@ -81,12 +79,14 @@ impl GquestEngine {
         loop {
             match query {
                 QueryStatement::Condition(condition) => {
+                    info!("Executing the condition: {condition}");
                     cond_engine
                         .add_new_cond(condition, self.config.get_batch_size())
                         .await?;
                     break;
                 }
                 QueryStatement::IfThen(condition, query_statement) => {
+                    info!("Executing the condition: {condition}");
                     cond_engine
                         .add_new_cond(condition, self.config.get_batch_size())
                         .await?;
@@ -364,7 +364,7 @@ fn fill_graph_cond(
     cond: Condition<ParsedArgType>,
 ) -> Result<Condition<FnArg>, RelationGraphError> {
     Ok(match cond {
-        Condition::Operation(comparison) => fill_graph_comp(rel_graph, comparison)?.into(),
+        Condition::Comparison(comparison) => fill_graph_comp(rel_graph, comparison)?.into(),
         Condition::Not(condition) => Condition::not(fill_graph_cond(rel_graph, *condition)?),
         Condition::Or(left_cond, right_cond) => Condition::or(
             fill_graph_cond(rel_graph, *left_cond)?,

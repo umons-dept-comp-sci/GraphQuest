@@ -15,7 +15,7 @@ use crate::parser::parsed_expression::{
 
 #[derive(Debug, Error)]
 pub enum ParsingError {
-    #[error("Something went wrong when trying to parse the given input : \"{input}\"")]
+    #[error("Ran into an error while paring the given input:\n\"{input}\"")]
     ParseError {
         /// The input that caused the error
         input: String,
@@ -281,7 +281,7 @@ impl QueryParser {
             let prim_2 =
                 Self::parse_expr_rule(inner_rules.next().expect("prim2 present").into_inner());
 
-            Condition::Operation(create_comparison(prim_1, operator, prim_2, epsilon))
+            Condition::Comparison(create_comparison(prim_1, operator, prim_2, epsilon))
         }
     }
 

@@ -46,17 +46,44 @@ impl QueryStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Condition<P = ParsedArgType> {
     /// A simple comparison
-    Operation(Comparison<P>),
+    Comparison(Comparison<P>),
     /// `x` or `y`
     Or(Box<Condition<P>>, Box<Condition<P>>),
     /// `x` and `y`
     And(Box<Condition<P>>, Box<Condition<P>>),
-    // /// `x_0` and `x_1` and ... and `x_{n-1}`.
-    // AndVec(Box<Condition<P>>, Vec<Condition<P>>),
-    // /// `x_0` or `x_1` or ... or `x_{n-1}`.
-    // OrVec(Box<Condition<P>>, Vec<Condition<P>>),
     /// not `x`
     Not(Box<Condition<P>>),
+}
+
+impl<P: Display> Display for Condition<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parenthesis_fn = |val: &Condition<P>| -> String {
+            if val.is_condition() {
+                val.to_string()
+            } else {
+                format!("({val})")
+            }
+        };
+
+        write!(
+            f,
+            "{}",
+            match self {
+                Condition::Comparison(comparison) => comparison.to_string(),
+                Condition::Or(left_cond, right_cond) => format!(
+                    "{} or {}",
+                    parenthesis_fn(left_cond),
+                    parenthesis_fn(right_cond)
+                ),
+                Condition::And(left_cond, right_cond) => format!(
+                    "{} and {}",
+                    parenthesis_fn(left_cond),
+                    parenthesis_fn(right_cond)
+                ),
+                Condition::Not(cond) => format!("not {}", parenthesis_fn(cond)),
+            }
+        )
+    }
 }
 
 impl<P> Condition<P>
@@ -105,34 +132,11 @@ where
             Condition::implication(cond_2, cond_1),
         )
     }
-
-    // /// Simplifies the creation of the [`Condition::AndVec`] enum.
-    // ///
-    // /// If `conds` is empty, then `cond_1` will simply be returned.
-    // pub fn and_vec(cond_1: impl Into<Condition<P>>, conds: Vec<impl Into<Condition<P>>>) -> Self {
-    //     if conds.is_empty() {
-    //         cond_1.into()
-    //     } else {
-    //         Self::AndVec(
-    //             Box::new(cond_1.into()),
-    //             conds.into_iter().map(|c| c.into()).collect(),
-    //         )
-    //     }
-    // }
-
-    // /// Simplifies the creation of the [`Condition::OrVec`] enum.
-    // ///
-    // /// If `conds` is empty, then `cond_1` will simply be returned.
-    // pub fn or_vec(cond_1: impl Into<Condition>, conds: Vec<impl Into<Condition>>) -> Self {
-    //     if conds.is_empty() {
-    //         cond_1.into()
-    //     } else {
-    //         Self::OrVec(
-    //             Box::new(cond_1.into()),
-    //             conds.into_iter().map(|c| c.into()).collect(),
-    //         )
-    //     }
-    // }
+}
+impl<P> Condition<P> {
+    pub fn is_condition(&self) -> bool {
+        matches!(self, Self::Comparison(_))
+    }
 }
 
 /// Represents a comparison that can be used in an Sql where clause.
@@ -153,7 +157,26 @@ pub enum Comparison<P = ParsedArgType> {
     NotEqual(MathExpression<P>, MathExpression<P>, Option<f64>),
 }
 
+impl<P: Display> Display for Comparison<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (l, r) = self.get_left_right_expr();
+        write!(
+            f,
+            "{l} {} {r}",
+            match self {
+                Comparison::Greater(_, _) => ">",
+                Comparison::GreaterEqual(_, _, _) => ">=",
+                Comparison::Less(_, _) => "<",
+                Comparison::LessEqual(_, _, _) => ">=",
+                Comparison::Equal(_, _, _) => "=",
+                Comparison::NotEqual(_, _, _) => "!=",
+            }
+        )
+    }
+}
+
 impl<P> Comparison<P> {
+    /// Gets the left and right [`MathExpression`]s of the given comparison
     pub fn get_left_right_expr(&self) -> (&MathExpression<P>, &MathExpression<P>) {
         match self {
             Comparison::Greater(left_expr, right_expr)
@@ -183,6 +206,37 @@ pub enum MathExpression<P = ParsedArgType> {
     },
 }
 
+impl<P: Display> Display for MathExpression<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parenthesis_fn = |val: &MathExpression<P>| -> String {
+            if val.is_primitif() {
+                val.to_string()
+            } else {
+                format!("({val})")
+            }
+        };
+
+        write!(
+            f,
+            "{}",
+            match self {
+                MathExpression::Primitif(p) => p.to_string(),
+                MathExpression::Negation(math_expression) =>
+                    format!("-{}", parenthesis_fn(math_expression)),
+                MathExpression::Floor(math_expression) =>
+                    format!("floor({})", parenthesis_fn(math_expression)),
+                MathExpression::Ceil(math_expression) =>
+                    format!("ceil({})", parenthesis_fn(math_expression)),
+                MathExpression::Abs(math_expression) => format!("|{math_expression}|"),
+                MathExpression::Sqrt(math_expression) =>
+                    format!("sqrt({})", parenthesis_fn(math_expression)),
+                MathExpression::BinOperation { left, op, right } =>
+                    format!("{} {op} {}", parenthesis_fn(left), parenthesis_fn(right)),
+            }
+        )
+    }
+}
+
 impl<P> From<P> for MathExpression<P> {
     fn from(value: P) -> Self {
         MathExpression::Primitif(value)
@@ -210,6 +264,10 @@ impl<P> MathExpression<P> {
         Self::Primitif(arg.into())
     }
 
+    pub fn is_primitif(&self) -> bool {
+        matches!(self, Self::Primitif(_))
+    }
+
     pub fn bin_operation(
         left: impl Into<MathExpression<P>>,
         op: ArithmOp,
@@ -234,9 +292,14 @@ impl<P> MathExpression<P> {
                 left: _,
                 op,
                 right: _,
-            } => {
-                return op.to_string();
-            }
+            } => match op {
+                ArithmOp::Add => "Addition",
+                ArithmOp::Subtract => "Substraction",
+                ArithmOp::Power => "Exponentation",
+                ArithmOp::Multiply => "Multiplication",
+                ArithmOp::Divide => "Division",
+                ArithmOp::Modulo => "Modulus",
+            },
         }
         .to_string()
     }
@@ -370,10 +433,25 @@ impl Display for ParsedArgType {
                 ParsedArgType::PrimString(v) => v.to_string(),
                 ParsedArgType::PrimNumeric(v) => v.to_string(),
                 ParsedArgType::Dataset => "G".to_string(),
-                ParsedArgType::Function(function) => format!(
-                    "{}({:?},{:?})",
-                    function.name, function.first_arg, function.other_args
-                ),
+                ParsedArgType::Function(function) => {
+                    format!(
+                        "{}({}{})",
+                        function.name,
+                        function.first_arg,
+                        if function.other_args.is_empty() {
+                            "".to_string()
+                        } else {
+                            let mut args_iter = function.other_args.iter();
+                            let mut args_str = args_iter.next().expect("not empty").to_string();
+
+                            for other in args_iter {
+                                args_str.push_str(&format!(",{other}"));
+                            }
+
+                            args_str
+                        }
+                    )
+                }
             }
         )
     }
@@ -381,6 +459,6 @@ impl Display for ParsedArgType {
 
 impl<P> From<Comparison<P>> for Condition<P> {
     fn from(val: Comparison<P>) -> Self {
-        Condition::Operation(val)
+        Condition::Comparison(val)
     }
 }
