@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-"""Compute the eccentricity of a graph"""
+"""Checks if two graphs are isomorphic"""
 import sys
 import networkx as nx
 

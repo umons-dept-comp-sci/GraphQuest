@@ -6,5 +6,6 @@ import networkx as nx
 if __name__ == "__main__":
     for sig in map(str.strip, sys.stdin):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
-        # print(nx.to_graph6_bytes(nx.cycle_graph(G.order())))
+        if G.order() != G.size():
+            print(sig, int(False), flush=True)
         print(sig, int(nx.is_isomorphic(nx.cycle_graph(G.order()), G)), flush=True)

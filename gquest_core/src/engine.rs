@@ -47,6 +47,7 @@ impl GquestEngine {
         Self { db, config }
     }
 
+    /// Closes the connection to the given [`AllowedGraphDb`].
     pub async fn close(self) {
         self.db.close_connection().await
     }
@@ -68,6 +69,7 @@ impl GquestEngine {
         Ok(())
     }
 
+    /// Executes the given query and writes the outputs.
     pub async fn exec_query<O: SaveOutput>(
         &mut self,
         mut query: QueryStatement,
@@ -102,6 +104,7 @@ impl GquestEngine {
         cond_engine.get_result(output).await
     }
 
+    /// Finds the graphs that fits the given conditions.
     pub async fn exec_condition<O: SaveOutput>(
         &mut self,
         cond: Condition<ParsedArgType>,
@@ -119,7 +122,7 @@ impl GquestEngine {
     }
 }
 
-pub struct ConditionEngine<'a> {
+struct ConditionEngine<'a> {
     db: &'a mut AllowedGraphDb,
     // modules: Option<&'a HashMap<String, Module>>,
     graph: Option<RelationGraph<'a>>,

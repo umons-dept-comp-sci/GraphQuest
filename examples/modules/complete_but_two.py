@@ -2,7 +2,6 @@
 import sys
 import networkx as nx
 
-
 mem = {}
 
 if __name__ == "__main__":

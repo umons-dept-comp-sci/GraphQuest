@@ -2,26 +2,6 @@
 """Compute the eccentricity of a graph"""
 import sys
 import networkx as nx
-from math import comb, floor, sqrt
-
-
-def create_E_nm(n, m, d):
-    res: nx.Graph = nx.path_graph(d + 1) # path P_{d+1}
-    to_link = m - n + 1 - comb(n-d, 2)
-    
-    # Add the clique
-    for i in range(d+1, n):
-        # (node added implicitly by add_edge method)
-        for j in range(d, i):
-            res.add_edge(i, j)
-        res.add_edge(i, d)
-        res.add_edge(i, d-1)
-
-        # Add edge to the clique node to v_{d-2} if any
-        if to_link > 0:
-            res.add_edge(i, d-2)
-            to_link -= 1
-    return res
 
 
 def eci(G: nx.Graph):
@@ -34,11 +14,7 @@ def eci(G: nx.Graph):
 mem = {}
 
 if __name__ == "__main__":
-    for sig in map(str.strip, sys.stdin):
+    for (sig,) in map(str.split, map(str.strip, sys.stdin)):
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
-        n, m = G.order(), G.size()
-        if (n,m) not in mem:
-            d_nm = floor((2* n + 1 - sqrt(17 + 8 * (m - n))) /2 )
-            mem[(n,m)] = create_E_nm(n, m, d_nm)
-
-        print(sig, eci(G), eci(mem[(n,m)]), int(nx.is_isomorphic(G, mem[(n,m)])), flush=True)
+        
+        print(sig, eci(G), flush=True)

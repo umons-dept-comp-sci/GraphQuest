@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-"""Computes the size m, the greatest triangle number k_m less than m and the remainder m - comb(k_m, 2)."""
+"""Computes the maximum degree between all the vertices of G."""
 import sys
 import networkx as nx
 

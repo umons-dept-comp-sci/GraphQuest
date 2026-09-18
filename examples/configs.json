@@ -3,7 +3,7 @@
   "modules": [
     {
       "function": "D",
-      "path": "d_nm.py",
+      "path": "modules/d_nm.py",
       "args": [
         {
           "name": "n",
@@ -18,7 +18,7 @@
     },
     {
       "function": "e_nm",
-      "path": "e_nm.py",
+      "path": "modules/e_nm.py",
       "args": [
         {
           "name": "n",
@@ -33,17 +33,16 @@
           "class": "numeric"
         }
       ],
-      "add_args": ["D(n,m)"],
       "output": "graph"
     },
     {
       "function": "m",
-      "path": "edges.py",
+      "path": "modules/edges.py",
       "output": "numeric"
     },
     {
       "function": "n",
-      "path": "order.py",
+      "path": "modules/order.py",
       "args": [
         {
           "name": "sig",
@@ -54,37 +53,52 @@
     },
     {
       "function": "is_planar",
-      "path": "is_planar.py",
+      "path": "modules/is_planar.py",
+      "output": "numeric"
+    },
+    {
+      "function": "chromatic_nb",
+      "path": "modules/chromatic_nb",
       "output": "numeric"
     },
     {
       "function": "is_connected",
-      "path": "is_connected.py",
+      "path": "modules/is_connected.py",
+      "output": "numeric"
+    },
+    {
+      "function": "is_complete",
+      "path": "modules/is_complete.py",
+      "output": "numeric"
+    },
+    {
+      "function": "is_cycle",
+      "path": "modules/is_cycle.py",
       "output": "numeric"
     },
     {
       "function": "max_degree",
-      "path": "max_degree.py",
+      "path": "modules/max_degree.py",
       "output": "numeric"
     },
     {
       "function": "max",
-      "path": "max_degree.py",
+      "path": "modules/max_degree.py",
       "output": "string"
     },
     {
       "function": "comp",
-      "path": "complement.py",
+      "path": "modules/complement.py",
       "output": "graph"
     },
     {
       "function": "eci",
-      "path": "eci.py",
+      "path": "modules/eci.py",
       "output": "numeric"
     },
     {
       "function": "iso",
-      "path": "iso.py",
+      "path": "modules/iso.py",
       "args": [
         {
           "name": "g1",
