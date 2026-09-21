@@ -232,6 +232,9 @@ impl QueryParser {
                     // parse inner condition or identifier
                     let inner_rule = inner_rule.into_inner().next().expect("at least one");
                     match inner_rule.as_rule() {
+                        Rule::comparison => {
+                            Condition::not(Self::parse_comparison_rule(inner_rule, epsilon))
+                        }
                         // !inv is a shortcut for inv = 0 (reduces query sizes)
                         Rule::identifier => Comparison::Equal(
                             ParsedArgType::invariant(inner_rule.as_str()).into(),
@@ -245,9 +248,6 @@ impl QueryParser {
                             None,
                         )
                         .into(),
-                        Rule::condition => {
-                            Condition::not(Self::parse_condition_rule(inner_rule, epsilon))
-                        }
                         _ => {
                             unreachable!()
                         }

@@ -38,7 +38,7 @@ comparison = {
 
 // !inv or !(inv = 1)
 // Special case of inv to not force parenthesis: !(x) == !x
-not_comparison = { not_op ~ (function | identifier | "(" ~ condition ~ ")") }
+not_comparison = { not_op ~ (comparison | function | identifier ) }
 
 comp_operator = {
     equal

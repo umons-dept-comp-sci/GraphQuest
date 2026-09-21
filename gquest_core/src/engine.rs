@@ -175,18 +175,18 @@ impl<'a> ConditionEngine<'a> {
 
                 // Find dependencies
                 for expr in args {
-                    for prim in expr.get_all_primitives_rec() {
+                    expr.map_primitives(&mut |prim| {
                         // For every other function calls located in the args of this function call
                         // add them (and their own function calls) to the list of needed joins
                         if let FnArg::FnCall(dependency) = prim {
                             add_rec_needed_joins(
-                                &dependency,
+                                dependency,
                                 &mut needed_joins,
                                 &mut already_added,
                                 &join_dep_map,
                             );
                         }
-                    }
+                    });
                 }
 
                 // Save the result as a join query for later uses
@@ -457,7 +457,7 @@ fn fill_graph_primitif(
             //  Recursively adds all possible functions to the graphs that are in the arguments of this function.
             // as well as turning parsed argument into FnArg, thus flattening the functions arguments.
             // ex: P(G, chroma(n) + 12) -> P(G, chroma0 + 12) with chroma0 = chroma(n0) with n0 = n(G)
-            let mut args = vec![fill_graph_expr(rel_graph, *parsed_function.first_arg)?];
+            let mut args = Vec::from([fill_graph_expr(rel_graph, *parsed_function.first_arg)?]);
 
             for arg in parsed_function.other_args {
                 args.push(fill_graph_expr(rel_graph, arg)?);
