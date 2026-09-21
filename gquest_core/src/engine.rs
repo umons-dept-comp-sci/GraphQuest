@@ -33,7 +33,7 @@ pub enum EngineError {
     RelationGraphError(#[from] RelationGraphError),
 }
 
-/// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`GraphDatabase`]).
+/// A struct used to facilitate more complicated operations involving both a configuration file ([`ConfigFile`]) and an open graph database ([`AllowedGraphDb`]).
 pub struct GquestEngine {
     pub db: AllowedGraphDb,
     config: ConfigFile,
@@ -123,8 +123,8 @@ impl GquestEngine {
 }
 
 struct ConditionEngine<'a> {
+    /// The graph database used to store function results.
     db: &'a mut AllowedGraphDb,
-    // modules: Option<&'a HashMap<String, Module>>,
     graph: Option<RelationGraph<'a>>,
     /// The query that can provide the expected result.
     result: SqlSelectQuery,
@@ -150,8 +150,8 @@ impl<'a> ConditionEngine<'a> {
         // Borrow the relation graph to use it as a mutable variable alongside the engine.
         let mut graph = self.graph.take().expect("present");
         {
-            // Add cond to the relation graph.
-            let flattened_cond = fill_graph_cond(&mut graph, cond)?;
+            // Add cond to the relation graph and flatten it
+            let flattened_cond = flatten_cond(&mut graph, cond)?;
 
             // Check if all arguments in the condition are correct
             graph.try_is_valid_cond(&flattened_cond)?;
@@ -163,9 +163,9 @@ impl<'a> ConditionEngine<'a> {
             let mut iter: AutoFnCallIterator<'_, '_> = graph.into_iter().into();
             // Iterate over all function references that are stored in the graph and that are needed in a topological ordering.
             while let Some(function_ref) = iter.next() {
-                let fn_name = iter.get_inner_iter().get_function_name(&function_ref);
+                let fn_name = iter.get_manual_iter().get_function_name(&function_ref);
                 // Get the module and the arguments that are linked to this function call.
-                let (module, args) = iter.get_inner_iter().get_module_args(&function_ref);
+                let (module, args) = iter.get_manual_iter().get_module_args(&function_ref);
 
                 debug!("The function {fn_name} has to be executed.");
                 // The list of all needed results to join for the selection query of this module.
@@ -248,8 +248,9 @@ impl<'a> ConditionEngine<'a> {
             // Update the result query :
             self.result = self.build_result(&graph, flattened_cond, join_dep_map);
         }
-        // Give ownership back of the graph to the engine.
+        // Sets all function call as unused as to not have to use them again unless mentionned
         graph.set_all_unused();
+        // Give ownership back of the graph to the engine.
         self.graph = Some(graph);
 
         Ok(())
@@ -362,84 +363,84 @@ async fn compute_module(
 
 // ___________________________ UTILS ___________________________
 
-fn fill_graph_cond(
+fn flatten_cond(
     rel_graph: &mut RelationGraph,
     cond: Condition<ParsedArgType>,
 ) -> Result<Condition<FnArg>, RelationGraphError> {
     Ok(match cond {
-        Condition::Comparison(comparison) => fill_graph_comp(rel_graph, comparison)?.into(),
-        Condition::Not(condition) => Condition::not(fill_graph_cond(rel_graph, *condition)?),
+        Condition::Comparison(comparison) => flatten_comp(rel_graph, comparison)?.into(),
+        Condition::Not(condition) => Condition::not(flatten_cond(rel_graph, *condition)?),
         Condition::Or(left_cond, right_cond) => Condition::or(
-            fill_graph_cond(rel_graph, *left_cond)?,
-            fill_graph_cond(rel_graph, *right_cond)?,
+            flatten_cond(rel_graph, *left_cond)?,
+            flatten_cond(rel_graph, *right_cond)?,
         ),
         Condition::And(left_cond, right_cond) => Condition::and(
-            fill_graph_cond(rel_graph, *left_cond)?,
-            fill_graph_cond(rel_graph, *right_cond)?,
+            flatten_cond(rel_graph, *left_cond)?,
+            flatten_cond(rel_graph, *right_cond)?,
         ),
     })
 }
 
-fn fill_graph_comp(
+fn flatten_comp(
     rel_graph: &mut RelationGraph,
     comp: Comparison<ParsedArgType>,
 ) -> Result<Comparison<FnArg>, RelationGraphError> {
     Ok(match comp {
         Comparison::Greater(left_expr, right_expr) => Comparison::Greater(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
         ),
         Comparison::GreaterEqual(left_expr, right_expr, e) => Comparison::GreaterEqual(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
             e,
         ),
         Comparison::Less(left_expr, right_expr) => Comparison::Less(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
         ),
         Comparison::LessEqual(left_expr, right_expr, e) => Comparison::LessEqual(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
             e,
         ),
         Comparison::Equal(left_expr, right_expr, e) => Comparison::Equal(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
             e,
         ),
         Comparison::NotEqual(left_expr, right_expr, e) => Comparison::NotEqual(
-            fill_graph_expr(rel_graph, left_expr)?,
-            fill_graph_expr(rel_graph, right_expr)?,
+            flatten_expr(rel_graph, left_expr)?,
+            flatten_expr(rel_graph, right_expr)?,
             e,
         ),
     })
 }
 
-fn fill_graph_expr(
+fn flatten_expr(
     rel_graph: &mut RelationGraph,
     expr: MathExpression<ParsedArgType>,
 ) -> Result<MathExpression<FnArg>, RelationGraphError> {
     Ok(match expr {
         MathExpression::Primitif(p) => fill_graph_primitif(rel_graph, p)?.into(),
         MathExpression::Negation(math_expression) => {
-            MathExpression::negation(fill_graph_expr(rel_graph, *math_expression)?)
+            MathExpression::negation(flatten_expr(rel_graph, *math_expression)?)
         }
         MathExpression::Floor(math_expression) => {
-            MathExpression::floor(fill_graph_expr(rel_graph, *math_expression)?)
+            MathExpression::floor(flatten_expr(rel_graph, *math_expression)?)
         }
         MathExpression::Ceil(math_expression) => {
-            MathExpression::ceil(fill_graph_expr(rel_graph, *math_expression)?)
+            MathExpression::ceil(flatten_expr(rel_graph, *math_expression)?)
         }
         MathExpression::Abs(math_expression) => {
-            MathExpression::abs(fill_graph_expr(rel_graph, *math_expression)?)
+            MathExpression::abs(flatten_expr(rel_graph, *math_expression)?)
         }
         MathExpression::Sqrt(math_expression) => {
-            MathExpression::sqrt(fill_graph_expr(rel_graph, *math_expression)?)
+            MathExpression::sqrt(flatten_expr(rel_graph, *math_expression)?)
         }
         MathExpression::BinOperation { left, op, right } => {
-            let new_left = fill_graph_expr(rel_graph, *left)?;
-            let new_right = fill_graph_expr(rel_graph, *right)?;
+            let new_left = flatten_expr(rel_graph, *left)?;
+            let new_right = flatten_expr(rel_graph, *right)?;
             MathExpression::bin_operation(new_left, op, new_right)
         }
     })
@@ -457,10 +458,10 @@ fn fill_graph_primitif(
             //  Recursively adds all possible functions to the graphs that are in the arguments of this function.
             // as well as turning parsed argument into FnArg, thus flattening the functions arguments.
             // ex: P(G, chroma(n) + 12) -> P(G, chroma0 + 12) with chroma0 = chroma(n0) with n0 = n(G)
-            let mut args = Vec::from([fill_graph_expr(rel_graph, *parsed_function.first_arg)?]);
+            let mut args = Vec::from([flatten_expr(rel_graph, *parsed_function.first_arg)?]);
 
             for arg in parsed_function.other_args {
-                args.push(fill_graph_expr(rel_graph, arg)?);
+                args.push(flatten_expr(rel_graph, arg)?);
             }
 
             // Add this function to the graph
@@ -480,7 +481,7 @@ fn fill_graph_primitif(
     })
 }
 
-/// Adds recursively add all needed join for the `to_add` argument.
+/// Adds recursively all needed join for the `to_add` argument.
 /// * `res`: Vector which will store the needed join.
 /// * `already_in_res`: prevents adding twice the same join.
 /// * `join_dep_map`: the Hashmap that stores all the needed joins.
@@ -494,7 +495,7 @@ fn add_rec_needed_joins(
         return;
     }
     let (join, deps) = join_dep_map.get(to_add).unwrap_or_else(|| {
-        panic!("join_dep_map: {join_dep_map:?} \n{to_add:?}: present by the iterator topological sort logic")
+        panic!("join_dep_map: {join_dep_map:?} \n{to_add:?}: was supped to be present by the iterator topological sort logic")
     });
     // add all dependency for this join
     for dep in deps {

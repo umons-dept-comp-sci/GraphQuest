@@ -52,6 +52,8 @@ pub enum RelationGraphError {
 /// The unique identifier to a function call : (`function_name`, `id`).
 pub type FnRef = (String, usize);
 
+/// A relation graph is used to keep track of the different relations between function calls.
+/// Here function calls are nodes, and if a function call depends on another then it adds an edge. 
 #[derive(Debug)]
 pub struct RelationGraph<'a> {
     modules: &'a HashMap<String, Module>,
@@ -61,34 +63,40 @@ pub struct RelationGraph<'a> {
 
 #[derive(Debug, Clone)]
 struct Relation {
+    /// The id of this relation
     id: FnRef,
-    /// The set of function relying on *this* function call (not the other way arround).
+    /// The set of function **relying** on *this* function call (not the other way arround).
     dep: HashSet<usize>,
-    /// The dependency left to compute for this function call.
+    /// The number of dependency left to compute for this function call.
     dep_left: usize,
-    is_used: bool,
+    is_currently_used: bool,
 }
 
+/// Represents a call to a function.
+/// For example suppose we have the function call `d(n,3)` then the fn_name is `d`, the args a call to the function `n` and the constant `3`.
 #[derive(Debug, Clone, PartialEq)]
 struct FnCall {
     fn_name: String,
+    /// Is used to easily get a pretty string when displaying this function call.
     string_value: String,
     args: Vec<MathExpression<FnArg>>,
     graph_id: usize,
     is_used: bool,
 }
 
+/// Argument of a function with a given value.
 #[derive(Debug, PartialEq, Clone)]
 pub enum FnArg {
     /// The result of the call to another function. Sometimes referred to as a "flattened" function.
     FnCall(FnRef),
     /// A constant value.
     Constant(ConstantValue),
-    /// The ref to the dataset.
+    /// A graph from the dataset `G`.
     Dataset,
 }
 
 impl<'a> RelationGraph<'a> {
+    /// Creates a new empty [`RelationGraph`] and copies the list of modules.
     pub fn new(modules: &'a HashMap<String, Module>) -> Self {
         let mut fn_calls_map = HashMap::new();
         modules.keys().for_each(|k| {
@@ -102,7 +110,8 @@ impl<'a> RelationGraph<'a> {
         }
     }
 
-    /// Adds a dependency between two nodes of the graph, `f1` depends on `f2`.
+    /// Tries to adds a dependency between two nodes of the graph.
+    /// * After the call to this function, `f1` will depend on `f2`.
     pub fn try_add_dep(&mut self, f1: &FnRef, f2: &FnRef) -> Result<(), RelationGraphError> {
         let c1 = self.get_call(f1)?.graph_id;
         let c2 = self.get_call(f2)?.graph_id;
@@ -128,7 +137,8 @@ impl<'a> RelationGraph<'a> {
     }
 
     /// Remove the given function ref from the other dependencies.
-    /// Returns the list of the graph function with no dependencies thanks to the removal of this one.
+    /// Returns the list of the graph functions with no dependencies thanks to the removal of this one
+    /// (meaning the list of functions that can now be executed).
     pub fn try_remove_fn_from_deps(
         &mut self,
         fn_ref: &FnRef,
@@ -145,7 +155,7 @@ impl<'a> RelationGraph<'a> {
         for dep in fn_deps {
             let fn_dep_on = self.relations.get_mut(dep).expect("correct value");
             fn_dep_on.dep_left -= 1;
-            if fn_dep_on.dep_left == 0 && fn_dep_on.is_used {
+            if fn_dep_on.dep_left == 0 && fn_dep_on.is_currently_used {
                 newly_free.push(dep);
             }
         }
@@ -171,7 +181,7 @@ impl<'a> RelationGraph<'a> {
             let graph_id = self.get_call(&fn_ref)?.graph_id;
             let relation = self.relations.get_mut(graph_id).expect("correct graph id");
 
-            relation.is_used = true;
+            relation.is_currently_used = true;
             Ok(fn_ref)
         }
         // if it wasn't, perform some additional compatibility verifications
@@ -179,7 +189,7 @@ impl<'a> RelationGraph<'a> {
             // Check its validity
             self.try_valid_call(&fn_name, args)?;
 
-            // Get the new graph id
+            // Get the new node/graph id
             let graph_id = self.relations.len();
             // Create string value in case it needs to be displayed later
             let string_value = self.create_call_string(&fn_name, args)?;
@@ -200,7 +210,7 @@ impl<'a> RelationGraph<'a> {
                 id: fn_ref.clone(),
                 dep: HashSet::new(),
                 dep_left: 0,
-                is_used: true,
+                is_currently_used: true,
             });
 
             Ok(fn_ref)
@@ -208,7 +218,7 @@ impl<'a> RelationGraph<'a> {
     }
 
     /// Checks if the given call:
-    /// * matches a module's function
+    /// * matches a module's function name
     /// * it's number of arguments
     /// * and their types.  
     fn try_valid_call(
@@ -368,7 +378,7 @@ impl<'a> RelationGraph<'a> {
 
     pub fn set_all_unused(&mut self) {
         for relations in &mut self.relations {
-            relations.is_used = false;
+            relations.is_currently_used = false;
         }
     }
 
@@ -455,7 +465,7 @@ impl<'g, 'a> IntoIterator for &'g mut RelationGraph<'a> {
     fn into_iter(self) -> Self::IntoIter {
         let mut can_now_exec = Vec::new();
         for (i, rel) in self.relations.iter().enumerate() {
-            if rel.dep_left == 0 && rel.is_used {
+            if rel.dep_left == 0 && rel.is_currently_used {
                 can_now_exec.push(i);
             }
         }
@@ -475,7 +485,7 @@ pub struct AutoFnCallIterator<'g, 'a> {
 }
 
 impl<'g, 'a> AutoFnCallIterator<'g, 'a> {
-    pub fn get_inner_iter(&self) -> &FnCallIterator<'g, 'a> {
+    pub fn get_manual_iter(&self) -> &FnCallIterator<'g, 'a> {
         &self.module_iterator
     }
 }
