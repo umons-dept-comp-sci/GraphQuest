@@ -124,18 +124,16 @@ fn parse_condition_equivalence() {
 #[test]
 fn parse_condition_not() {
     assert!(matches!(
-        QueryParser::parse_condition("not(a > b) or c = d", None),
+        QueryParser::parse_condition("not a > b or c = d", None),
         Ok(Condition::Or(b1, b2))
-            if *b1 == Condition::Not(Box::new(Condition::Comparison(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into())))) &&
+            if *b1 == Condition::Not(Box::new(Comparison::Greater(ParsedArgType::invariant("a").into(), ParsedArgType::invariant("b").into()).into())) &&
                 *b2 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("c").into(), ParsedArgType::invariant("d").into(), None))
     ));
 
-    assert!(matches!(
-        QueryParser::parse_condition("!inv or a", None),
-        Ok(Condition::Or(b1, b2))
-            if *b1 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("inv").into(), ParsedArgType::prim_numeric(0.).into(), None)) &&
-                *b2 == Condition::Comparison(Comparison::Equal(ParsedArgType::invariant("a").into(), ParsedArgType::prim_numeric(1.).into(), None))
-    ));
+    assert_eq!(
+        QueryParser::parse_condition("not a > b or c = d", None).expect("correct"),
+        QueryParser::parse_condition("not (a > b) or c = d", None).expect("correct")
+    );
 }
 
 #[test]

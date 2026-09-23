@@ -2,30 +2,27 @@
 WHITESPACE = _{ " " | "\t" }
 
 // Combines all queries into one for ease of parse
-query = { (if_query | condition) ~ EOI }
+query = { (if_query | extremal_or_cond) ~ EOI }
 
 // Rules simply used for unit tests to force an input to end with EOI
 // extremal_condition_eoi = _{ extremal_condition ~ EOI }
 if_query_eoi = _{ if_query ~ EOI }
 
-// example : d > 3 -> conj1 = 1
+if_query = { extremal_or_cond ~ if_then_arrow ~ if_query_right }
 
-if_query = { condition ~ if_then_arrow ~ if_query_right }
+if_query_right = _{ if_query | extremal_or_cond }
 
-if_query_right = _{ if_query | condition }
+extremal_or_cond = _{ extremal | condition }
 
 // Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m)
 extremal      = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)*)? ~ ")" }
 extremal_func = { max_func | min_func }
 
-// 3 tokens -> extremal + condition
-// 2 tokens -> /
-// 1 token  -> either an extremal selection or a condition.
-// extremal_condition = { (extremal ~ (and_op ~ condition)? | condition) }
 condition = {
     comparison ~ binary_op ~ condition
   | comparison
 }
+
 binary_op = { and_op | or_op | xor_op | implication_op | equivalence_op }
 
 comparison = {
@@ -38,7 +35,7 @@ comparison = {
 
 // !inv or !(inv = 1)
 // Special case of inv to not force parenthesis: !(x) == !x
-not_comparison = { not_op ~ (comparison | function | identifier ) }
+not_comparison = { not_op ~ (comparison | function | identifier) }
 
 comp_operator = {
     equal
@@ -70,7 +67,7 @@ floor_divide =  { "//" }
 divide       =  { "/" }
 modulo       =  { "%" }
 
-expr = { atom ~ (bin_op ~ atom)* }
+expr     = { atom ~ (bin_op ~ atom)* }
 expr_EOI = { expr ~ EOI }
 
 // _________ OTHERS _________
