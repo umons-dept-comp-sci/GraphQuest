@@ -15,7 +15,8 @@ if_query_right = _{ if_query | extremal_or_cond }
 extremal_or_cond = _{ extremal | condition }
 
 // Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m)
-extremal      = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)*)? ~ ")" }
+// extremal      = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)*)? ~ ")" }
+extremal      = { extremal_func ~ "(" ~ expr ~ (";" ~ expr ~ ("," ~ expr)*)? ~ ")" }
 extremal_func = { max_func | min_func }
 
 condition = {
@@ -35,7 +36,7 @@ comparison = {
 
 // !inv or !(inv = 1)
 // Special case of inv to not force parenthesis: !(x) == !x
-not_comparison = { not_op ~ (comparison | function | identifier) }
+not_comparison = { not_op ~ comparison }
 
 comp_operator = {
     equal
