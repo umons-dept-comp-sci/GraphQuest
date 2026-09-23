@@ -9,8 +9,12 @@ use pest::{
 use pest_derive::Parser;
 use thiserror::Error;
 
-use crate::parser::parsed_expression::{
-    ArithmOp, Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
+use crate::parser::{
+    ExtremalCondition,
+    extremal_expression::{ClassType, ExtremalSelection},
+    parsed_expression::{
+        ArithmOp, Comparison, Condition, MathExpression, ParsedArgType, QueryStatement,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -157,6 +161,20 @@ impl QueryParser {
         Ok(Self::parse_condition_rule(input, epsilon))
     }
 
+    /// Parses an extremal selection using a string value into an equivalent [`ExtremalSelection`].
+    /// For example : `max(eci; m,n)`.
+    pub fn parse_extremal(input: impl ToString) -> Result<ExtremalSelection, ParsingError> {
+        let input = input.to_string();
+        let input = match QueryParser::parse(Rule::extremal, &input) {
+            Ok(mut input) => input.next().expect("one present"),
+            Err(e) => {
+                return Err(get_parsing_error(e));
+            }
+        };
+
+        Ok(Self::parse_extremal_rule(input))
+    }
+
     /// Parses an expression using a string value into an equivalent [`MathExpression<ParsedArgType>`].
     /// For example : `(a + b**2) / 4`.
     pub fn parse_expression(input: impl ToString) -> Result<MathExpression, ParsingError> {
@@ -178,18 +196,22 @@ impl QueryParser {
     fn parse_if_query_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> QueryStatement {
         let mut inner_rules = rule.into_inner();
 
-        // Always starts with a condition:
-        let left_cond = Self::parse_condition_rule(
-            inner_rules
-                .next()
-                .expect("left condition of if-then statement present"),
-            epsilon,
-        );
+        // Always starts with a condition/extremal selection:
+        let left_rule = inner_rules
+            .next()
+            .expect("left element of if-then statement present");
 
-        // Can be either a condition of another if-then statement:
+        let left_cond: ExtremalCondition = match left_rule.as_rule() {
+            Rule::condition => Self::parse_condition_rule(left_rule, epsilon).into(),
+            Rule::extremal => Self::parse_extremal_rule(left_rule).into(),
+            _ => unreachable!(),
+        };
+
+        // Can be either a condition/extremal selection or another if-then statement:
         let right_statement_rule = inner_rules.next().expect("present");
         let right_statement = match right_statement_rule.as_rule() {
             Rule::condition => Self::parse_condition_rule(right_statement_rule, epsilon).into(),
+            Rule::extremal => Self::parse_extremal_rule(right_statement_rule).into(),
             Rule::if_query => Self::parse_if_query_rule(right_statement_rule, epsilon),
             _ => unreachable!(),
         };
@@ -219,6 +241,33 @@ impl QueryParser {
                 Self::parse_condition_rule(inner_rules.next().expect("condition present"), epsilon);
             create_condition(comparison, binary_op, condition)
         }
+    }
+
+    fn parse_extremal_rule(rule: Pair<'_, Rule>) -> ExtremalSelection {
+        let mut inner_rules = rule.into_inner();
+
+        // Get extremal function (min or max)
+        let class_type = match inner_rules.next().expect("min or max value").as_rule() {
+            Rule::max_func => ClassType::Max,
+            Rule::min_func => ClassType::Min,
+            _ => unreachable!("should be max or min"),
+        };
+
+        // Get aggregate expression
+        let aggregate_expr = Self::parse_expr_rule(
+            inner_rules
+                .next()
+                .expect("aggr function present")
+                .into_inner(),
+        );
+
+        // if any grouping expression were provided, add them
+        let mut grouping_expr = Vec::new();
+        for group_expr in inner_rules {
+            grouping_expr.push(Self::parse_expr_rule(group_expr.into_inner()));
+        }
+
+        ExtremalSelection::new(class_type, aggregate_expr, grouping_expr)
     }
 
     fn parse_comparison_rule(rule: Pair<'_, Rule>, epsilon: Option<f64>) -> Condition {

@@ -80,18 +80,18 @@ impl GquestEngine {
         info!("Starting query's modules executions");
         loop {
             match query {
-                QueryStatement::Condition(condition) => {
-                    info!("Executing the condition: {condition}");
-                    cond_engine
-                        .add_new_cond(condition, self.config.get_batch_size())
-                        .await?;
+                QueryStatement::ExtremalCondition(condition) => {
+                    info!("Executing: {condition}");
+                    // cond_engine
+                    //     .add_new_cond(condition, self.config.get_batch_size())
+                    //     .await?;
                     break;
                 }
                 QueryStatement::IfThen(condition, query_statement) => {
-                    info!("Executing the condition: {condition}");
-                    cond_engine
-                        .add_new_cond(condition, self.config.get_batch_size())
-                        .await?;
+                    info!("Executing: {condition}");
+                    // cond_engine
+                    //     .add_new_cond(condition, self.config.get_batch_size())
+                    //     .await?;
 
                     query = *query_statement;
                     info!("Moving on to the next If-Then clause");

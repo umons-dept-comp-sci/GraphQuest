@@ -16,8 +16,8 @@ extremal_or_cond = _{ extremal | condition }
 
 // Extremal Condition : max(p_qn) or max(p_qn: n) or even max(p_qn: n, m)
 // extremal      = { extremal_func ~ "(" ~ identifier ~ (":" ~ identifier ~ ("," ~ identifier)*)? ~ ")" }
-extremal      = { extremal_func ~ "(" ~ expr ~ (";" ~ expr ~ ("," ~ expr)*)? ~ ")" }
-extremal_func = { max_func | min_func }
+extremal      =  { extremal_func ~ "(" ~ expr ~ (";" ~ expr ~ ("," ~ expr)*)? ~ ")" }
+extremal_func = _{ max_func | min_func }
 
 condition = {
     comparison ~ binary_op ~ condition
