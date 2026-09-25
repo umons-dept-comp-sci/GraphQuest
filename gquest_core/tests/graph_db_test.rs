@@ -379,8 +379,9 @@ async fn compute_executable_with_selection_test() {
 
     /* Try a query with no PK column (no signature column) */
     // This query has NO canonical signatures
-    let query = SqlSelectQuery::select_column_from_table(VERTICES_TABLE_NAME, VERTICES_TABLE_NAME)
-        .set_limit_clause(None, expected_len);
+    let query =
+        SqlSelectQuery::select_column_from_table(VERTICES_TABLE_NAME, None, VERTICES_TABLE_NAME)
+            .set_limit_clause(None, expected_len);
 
     assert!(
         (db_test

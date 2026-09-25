@@ -4,7 +4,7 @@ use crate::{
     data_handler::{data_types::ValueType, module::TypedArg, rel_graph::FnArg},
     database_handler::{
         CANONICAL_TABLE_NAME, DbQuerySystem, FUNCTION_OUTPUT_COL_NAME, GraphDatabase, GraphDb,
-        GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery, SqlTable,
+        GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery,
     },
     parser::parsed_expression::{ArithmOp, MathExpression},
 };

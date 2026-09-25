@@ -168,10 +168,10 @@ fn parse_extremal_query() {
     println!("{tmp}")
 }
 
-
 #[test]
 fn parse_extremal_if_then_query() {
-    let tmp = QueryParser::parse_query("x > 1 -> min(x) -> max(p;n,m) -> y and z", None).expect("correct");
+    let tmp = QueryParser::parse_query("x > 1 -> min(x) -> max(p;n,m) -> y and z", None)
+        .expect("correct");
     // TODO: Add unit test
     println!("{tmp:?}")
 }

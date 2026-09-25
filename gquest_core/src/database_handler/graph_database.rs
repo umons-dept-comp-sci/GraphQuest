@@ -731,7 +731,7 @@ where
         mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
         DB::optimize(&self.pool).await?;
-        
+
         // Check if the dataset was at least initialised first
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
             return Err(GraphDbRuntimeError::DatasetNotInitialisedError);

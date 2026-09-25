@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use log::{debug, info};
-use sqlx::Sqlite;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -18,7 +17,7 @@ use crate::{
     },
     parser::{
         ExtremalCondition,
-        extremal_expression::ExtremalSelection,
+        extremal_expression::{ClassType, ExtremalSelection},
         parsed_expression::{
             Comparison,
             Condition::{self},
@@ -325,77 +324,15 @@ impl<'a> ConditionEngine<'a> {
     ) -> SqlSelectQuery {
         let nb_group_expr = flattened_extremal.grouping_expr.len();
         let flattened_extremal_cp = flattened_extremal.clone();
-        // Fetch all columns needed for this query always starting with the signatures from the current dataset.
-        let all = {
-            let mut all_columns = Vec::from([(
-                MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
-                    "{CANONICAL_TABLE_NAME}.{PK_NAME}"
-                )))),
-                None,
-            )]);
+        // Fetch all columns needed for this query.
+        let all = get_all_extr_query(
+            flattened_extremal.aggregate_expr,
+            flattened_extremal.grouping_expr,
+            self.result.clone(),
+            join_dep_map,
+        );
 
-            // add the aggregate expression to the columns
-            all_columns.push((
-                flattened_extremal.aggregate_expr,
-                Some(String::from("expr0")),
-            ));
-
-            // add the grouping expressions to the columns
-            flattened_extremal
-                .grouping_expr
-                .into_iter()
-                .enumerate()
-                .for_each(|(i, expr)| {
-                    all_columns.push((expr, Some(format!("expr{}", i + 1))));
-                });
-
-            //  Collect all needed joins (and add columns)
-            let all_joins: Vec<SqlJoin> = join_dep_map
-                .into_iter()
-                .map(|(_, (join, _))| join)
-                .collect();
-
-            let dataset_table =
-                SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
-
-            let mut all =
-                SqlSelectQuery::select_columns_with_rename_from_table(all_columns, dataset_table);
-
-            // Thanks to the topological sort, this is already in the correct order.
-            for join in all_joins {
-                all.add_join(join);
-            }
-            all
-        };
-
-        let extr = {
-            let mut all_columns = Vec::from([(
-                MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
-                    "{}(expr0)",
-                    flattened_extremal.class_type
-                )))),
-                Some("expr0".to_string()),
-            )]);
-
-            let mut groups = Vec::new();
-            for i in 0..nb_group_expr {
-                let expr_name = format!("expr{}", i + 1);
-                // add the aggregate expression to the columns
-                all_columns.push((
-                    MathExpression::primitif(FnArg::Constant(ConstantValue::Identifier(
-                        expr_name.clone(),
-                    ))),
-                    None,
-                ));
-                groups.push(expr_name);
-            }
-
-            SqlSelectQuery::select_columns_with_rename_from_table(
-                all_columns,
-                SqlTableSelection::new(all.clone()),
-            )
-            .set_group_by(groups)
-        };
+        let extr = get_extr_query(all.clone(), flattened_extremal.class_type, nb_group_expr);
 
         let res = {
             let mut all_columns = Vec::from([
@@ -737,4 +674,80 @@ fn add_rec_needed_joins(
     // then add it
     res.push(join.clone());
     already_in_res.insert(to_add.clone());
+}
+
+fn get_all_extr_query(
+    aggregate_expr: MathExpression<FnArg>,
+    grouping_expr: Vec<MathExpression<FnArg>>,
+    prev_result: SqlSelectQuery,
+    join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
+) -> SqlSelectQuery {
+    let mut all_columns = Vec::from([
+        (
+            MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
+                "{CANONICAL_TABLE_NAME}.{PK_NAME}"
+            )))),
+            None,
+        ),
+        (
+            // add the aggregate expression to the columns
+            aggregate_expr,
+            Some(String::from("expr0")),
+        ),
+    ]);
+
+    // add the grouping expressions to the columns
+
+    grouping_expr.into_iter().enumerate().for_each(|(i, expr)| {
+        all_columns.push((expr, Some(format!("expr{}", i + 1))));
+    });
+
+    //  Collect all needed joins (and add columns)
+    let all_joins: Vec<SqlJoin> = join_dep_map
+        .into_iter()
+        .map(|(_, (join, _))| join)
+        .collect();
+
+    let dataset_table = SqlTableSelection::new_rename(prev_result, CANONICAL_TABLE_NAME);
+
+    let mut all = SqlSelectQuery::select_columns_with_rename_from_table(all_columns, dataset_table);
+
+    // Thanks to the topological sort, this is already in the correct order.
+    for join in all_joins {
+        all.add_join(join);
+    }
+    all
+}
+
+fn get_extr_query(
+    all_expr_selection: SqlSelectQuery,
+    class_type: ClassType,
+    nb_group_expr: usize,
+) -> SqlSelectQuery {
+    let mut all_columns = Vec::from([(
+        MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
+            "{}(expr0)",
+            class_type
+        )))),
+        Some("expr0".to_string()),
+    )]);
+
+    let mut groups = Vec::new();
+    for i in 0..nb_group_expr {
+        let expr_name = format!("expr{}", i + 1);
+        // add the aggregate expression to the columns
+        all_columns.push((
+            MathExpression::primitif(FnArg::Constant(ConstantValue::Identifier(
+                expr_name.clone(),
+            ))),
+            None,
+        ));
+        groups.push(expr_name);
+    }
+
+    SqlSelectQuery::select_columns_with_rename_from_table(
+        all_columns,
+        SqlTableSelection::new(all_expr_selection),
+    )
+    .set_group_by(groups)
 }
