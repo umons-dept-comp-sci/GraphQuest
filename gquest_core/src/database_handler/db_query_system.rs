@@ -190,22 +190,24 @@ impl Comparison<FnArg> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlJoin {
-    table_name: String,
-    alias_name: String,
+    table: SqlTableSelection,
     on_cond: Vec<Comparison<FnArg>>,
 }
 
 impl SqlJoin {
-    pub fn new(
+    pub fn new_from_name(
         table_name: impl Into<String>,
         alias_name: impl Into<String>,
         on_cond: Vec<Comparison<FnArg>>,
     ) -> Self {
         Self {
-            table_name: table_name.into(),
-            alias_name: alias_name.into(),
+            table: SqlTableSelection::new_rename(table_name.into(), alias_name.into()),
             on_cond,
         }
+    }
+
+    pub fn new_from_table(table: SqlTableSelection, on_cond: Vec<Comparison<FnArg>>) -> Self {
+        Self { table, on_cond }
     }
 
     pub fn to_sql<DB>(&self) -> String
@@ -214,15 +216,18 @@ impl SqlJoin {
     {
         let mut on_clause = String::new();
         if !self.on_cond.is_empty() {
-            on_clause.push_str(&self.on_cond.first().expect("present").to_sql::<DB>());
+            on_clause.push_str(
+                format!(
+                    " ON {}",
+                    &self.on_cond.first().expect("present").to_sql::<DB>()
+                )
+                .as_str(),
+            );
             for on in self.on_cond.iter().skip(1) {
                 on_clause.push_str(&format!(" AND {}", on.to_sql::<DB>()));
             }
         }
-        format!(
-            "JOIN {} {} ON {}",
-            self.table_name, self.alias_name, on_clause
-        )
+        format!("JOIN {} {}", self.table.to_sql::<DB>(), on_clause)
     }
 }
 
@@ -254,6 +259,28 @@ impl SqlTableSelection {
             // join_clause: None,
             rename_as: Some(new_name.to_string()),
         }
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let mut res = String::from('(');
+
+        match &self.selected_table {
+            SqlTable::SqlQuery(sql_select_query) => {
+                res.push_str(&format!("({})", sql_select_query.to_sql::<DB>()));
+            }
+            SqlTable::TableName(name) => res.push_str(name),
+        }
+
+        res.push(')');
+
+        if let Some(alias) = &self.rename_as {
+            res.push_str(&format!(" as {alias}"));
+        }
+
+        res
     }
 }
 impl From<String> for SqlTableSelection {
@@ -296,8 +323,8 @@ impl From<&str> for SqlTable {
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
-    /// Contains all the column to choose
-    pub select: Vec<MathExpression<FnArg>>,
+    /// Contains all the column to choose as well the optional rename statement
+    pub select: Vec<(MathExpression<FnArg>, Option<String>)>,
     pub distinct: bool,
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
@@ -316,20 +343,39 @@ impl SqlSelectQuery {
     /// Simply selects every row from the given table.
     /// In SQLite: `SELECT * FROM table`
     pub fn select_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
-        Self::select_column_from_table("*", table)
+        Self::select_column_from_table("*", None, table)
     }
     pub fn select_column_from_table(
         column_name: impl ToString,
+        rename_to: Option<String>,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
-        Self::select_columns_from_table(
-            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()],
+        Self::select_columns_with_rename_from_table(
+            vec![(
+                FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into(),
+                rename_to,
+            )],
             table,
         )
     }
 
     pub fn select_columns_from_table(
         columns: Vec<MathExpression<FnArg>>,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
+        Self {
+            select: columns.into_iter().map(|expr| (expr, None)).collect(),
+            distinct: false,
+            from: vec![table.into()],
+            joins: Vec::new(),
+            where_clause: None,
+            group_by: vec![],
+            limit: None,
+        }
+    }
+
+    pub fn select_columns_with_rename_from_table(
+        columns: Vec<(MathExpression<FnArg>, Option<String>)>,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
         Self {
@@ -346,7 +392,7 @@ impl SqlSelectQuery {
     /// Gets the number of rows stored inside the given table.
     /// In SQLite: `SELECT count(*) FROM table`
     pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
-        Self::select_column_from_table("COUNT(*)", table)
+        Self::select_column_from_table("COUNT(*)", None, table)
     }
 
     /// Returns the *same* query but with the given **where** clause, overwritting the previous one if it existed.
@@ -359,12 +405,14 @@ impl SqlSelectQuery {
         self.distinct = value;
     }
 
-    pub fn set_col_selection(&mut self, column_name: impl ToString) {
-        self.select =
-            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()];
+    pub fn set_col_selection(&mut self, column_name: impl ToString, rename_to: Option<String>) {
+        self.select = vec![(
+            FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into(),
+            rename_to,
+        )];
     }
 
-    pub fn set_cols_selection(&mut self, columns: Vec<MathExpression<FnArg>>) {
+    pub fn set_cols_selection(&mut self, columns: Vec<(MathExpression<FnArg>, Option<String>)>) {
         self.select = columns;
     }
 
@@ -505,6 +553,19 @@ where
     fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError;
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
+
+    fn translate_to_column_name(expr_rename: &(MathExpression<FnArg>, Option<String>)) -> String {
+        let (expr, new_name) = expr_rename;
+
+        format!(
+            "{}{}",
+            Self::translate_math_expr(expr),
+            match new_name {
+                Some(name) => format!(" as \"{name}\""),
+                None => String::new(),
+            }
+        )
+    }
 
     fn translate_constant(constant: &ConstantValue) -> String {
         match constant {

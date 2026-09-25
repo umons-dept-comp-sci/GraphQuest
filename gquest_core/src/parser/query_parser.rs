@@ -137,6 +137,7 @@ impl QueryParser {
                 Ok(match inner_rule.as_rule() {
                     Rule::if_query => Self::parse_if_query_rule(inner_rule, epsilon),
                     Rule::condition => Self::parse_condition_rule(inner_rule, epsilon).into(),
+                    Rule::extremal => Self::parse_extremal_rule(inner_rule).into(),
                     _ => unreachable!(),
                 })
             }

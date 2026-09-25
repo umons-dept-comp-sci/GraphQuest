@@ -116,33 +116,16 @@ WHERE schemaname != 'pg_catalog' AND
         for column_i in 0..query.select.len() - 1 {
             res.push_str(&format!(
                 "{}, ",
-                Self::translate_math_expr(&query.select[column_i])
+                Self::translate_to_column_name(&query.select[column_i])
             ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            Self::translate_math_expr(query.select.last().expect("at least one val"))
+            Self::translate_to_column_name(query.select.last().expect("at least one val"))
         ));
         // From clause
         for (i, table) in query.from.iter().enumerate() {
-            match &table.selected_table {
-                SqlTable::SqlQuery(sql_select_query) => {
-                    res.push('(');
-                    res.push_str(&Self::to_sql(sql_select_query));
-                    res.push(')');
-                }
-                SqlTable::TableName(name) => res.push_str(name),
-            }
-            // // Inner Join query
-            // if let Some((tables_to_join, using)) = &table.join_clause {
-            //     for table_name in tables_to_join {
-            //         res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
-            //     }
-            // }
-
-            if let Some(alias) = &table.rename_as {
-                res.push_str(&format!(" as {alias}"));
-            }
+            res.push_str(&table.to_sql::<Self>());
 
             if i != query.from.len() - 1 {
                 res.push_str(", ");

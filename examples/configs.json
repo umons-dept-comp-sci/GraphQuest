@@ -2,7 +2,7 @@
   "batch_size": 6500,
   "modules": [
     {
-      "function": "D",
+      "function": "d",
       "path": "modules/d_nm.py",
       "args": [
         {
@@ -26,10 +26,6 @@
         },
         {
           "name": "m",
-          "class": "numeric"
-        },
-        {
-          "name": "d_nm",
           "class": "numeric"
         }
       ],
