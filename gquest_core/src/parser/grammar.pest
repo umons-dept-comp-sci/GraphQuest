@@ -3,6 +3,8 @@ WHITESPACE = _{ " " | "\t" }
 
 // Combines all queries into one for ease of parse
 query = { (if_query | extremal_or_cond) ~ EOI }
+// Is used to parse a vector of additional expressions
+expr_list = { expr ~ (";" ~ expr)* ~ EOI }
 
 // Rules simply used for unit tests to force an input to end with EOI
 // extremal_condition_eoi = _{ extremal_condition ~ EOI }

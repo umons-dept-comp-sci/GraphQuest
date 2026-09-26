@@ -68,6 +68,7 @@ pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<
 pub async fn query_database(
     path: DatabasePath,
     query_args: QueryArgs,
+    add_args: Option<String>,
     config_arg: ConfigFileArg,
     is_counter: bool,
 ) -> Result<(), CliError> {
@@ -84,7 +85,15 @@ pub async fn query_database(
     let mut wp = GquestEngine::new(db.clone(), config);
 
     // Store the result, then close the database even if we encountered an error
-    let res = execute_query(&mut wp, output, query_args.query, epsilon, is_counter).await;
+    let res = execute_query(
+        &mut wp,
+        output,
+        query_args.query,
+        add_args.unwrap_or_default(),
+        epsilon,
+        is_counter,
+    )
+    .await;
     info!("Closing database");
     db.close_connection().await;
     res
@@ -94,11 +103,14 @@ async fn execute_query(
     engine: &mut GquestEngine,
     output: OutputChoice,
     query: String,
+    add_args: String,
     epsilon: Option<f64>,
     counter: bool,
 ) -> Result<(), CliError> {
     // try to parse query:
     let mut query = QueryParser::parse_query(query.clone(), epsilon)?;
+    let add_expressions = QueryParser::parse_expression_list(add_args)?;
+    println!("{add_expressions:?}");
     if counter {
         query.to_counter();
     }
@@ -107,10 +119,12 @@ async fn execute_query(
         OutputChoice::File { path, separator } => {
             // open csv file
             let mut csv = CsvFile::new_no_headers(&path, Some(separator))?;
-            engine.exec_query(query, &mut csv).await?;
+            engine.exec_query(query, add_expressions, &mut csv).await?;
         }
         OutputChoice::Stdout => {
-            engine.exec_query(query, &mut StdoutOutput).await?;
+            engine
+                .exec_query(query, add_expressions, &mut StdoutOutput)
+                .await?;
         }
         OutputChoice::Table {
             no_id,
@@ -123,7 +137,9 @@ async fn execute_query(
                 QueryTableOptions::Full
             };
             let mut table = QueryTable::new_no_header(!no_id, options);
-            engine.exec_query(query, &mut table).await?;
+            engine
+                .exec_query(query, add_expressions, &mut table)
+                .await?;
             info!("Finished executing query");
             println!(
                 "{}",

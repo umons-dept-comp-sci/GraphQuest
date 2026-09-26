@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use log::{debug, info};
+use sqlx::Sqlite;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -79,6 +80,7 @@ impl GquestEngine {
     pub async fn exec_query<O: SaveOutput>(
         &mut self,
         mut query: QueryStatement,
+        add_expr: Vec<MathExpression<ParsedArgType>>,
         output: &mut O,
     ) -> Result<(), EngineError> {
         let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
@@ -106,6 +108,14 @@ impl GquestEngine {
         }
 
         info!("Finished query's modules execution");
+        if !add_expr.is_empty() {
+            info!("Starting additional expressions execution");
+            cond_engine
+                .add_additional_expressions(add_expr, self.config.get_batch_size())
+                .await?;
+
+            info!("Finished additional expressions execution");
+        }
 
         cond_engine.get_result(output).await
     }
@@ -146,6 +156,32 @@ impl<'a> ConditionEngine<'a> {
             result: SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME),
             already_computed: HashSet::new(),
         }
+    }
+
+    async fn add_additional_expressions(
+        &mut self,
+        expressions: Vec<MathExpression<ParsedArgType>>,
+        batch_size: usize,
+    ) -> Result<(), EngineError> {
+        let mut flattened_expressions = Vec::with_capacity(expressions.len());
+
+        // Borrow the relation graph to use it as a mutable variable alongside the engine.
+        let mut graph = self.graph.take().expect("present");
+        {
+            // Add all expressions
+            for expr in expressions {
+                flattened_expressions.push(flatten_expr(&mut graph, expr)?);
+            }
+            // Compute them
+            let join_dep_map = self.execute_graph_functions(&mut graph, batch_size).await?;
+
+
+        }
+        // Sets all function call as unused as to not have to use them again unless mentionned
+        graph.set_all_unused();
+        // Give ownership back of the graph to the engine.
+        self.graph = Some(graph);
+        Ok(())
     }
 
     async fn add_new_extr_cond(

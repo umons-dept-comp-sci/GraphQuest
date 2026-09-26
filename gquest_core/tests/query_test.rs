@@ -162,6 +162,13 @@ fn parse_condition_condition_parenthesis() {
 }
 
 #[test]
+fn parse_expression_list() {
+    let tmp = QueryParser::parse_extremal("max(eci(comp(G)); m(comp), n*2**2)").expect("correct");
+    // TODO: Add unit test
+    println!("{tmp}")
+}
+
+#[test]
 fn parse_extremal_query() {
     let tmp = QueryParser::parse_extremal("max(eci(comp(G)); m(comp), n*2**2)").expect("correct");
     // TODO: Add unit test

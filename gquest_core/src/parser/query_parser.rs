@@ -145,6 +145,36 @@ impl QueryParser {
         }
     }
 
+    pub fn parse_expression_list(
+        input: impl ToString,
+    ) -> Result<Vec<MathExpression<ParsedArgType>>, ParsingError> {
+        let input_str = input.to_string();
+        if input_str.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let input = Self::parse(Rule::expr_list, &input_str);
+        match input {
+            Ok(mut rules) => {
+                let inner_rules = rules
+                    .next()
+                    .expect("first rule should be the expr_list rule");
+
+                let mut expression_vec = Vec::new();
+
+                for rule in inner_rules.into_inner() {
+                    match rule.as_rule() {
+                        Rule::expr => expression_vec.push(Self::parse_expr_rule(rule.into_inner())),
+                        Rule::EOI => break,
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(expression_vec)
+            }
+            Err(e) => Err(get_parsing_error(e)),
+        }
+    }
+
     /// Parses a condition using a string value into an equivalent [`Condition`].
     /// For example : `(a = 2 or not(x < y))`.
     pub fn parse_condition(
