@@ -51,15 +51,24 @@ impl Condition<FnArg> {
     where
         DB: Database + DbQuerySystem<DB>,
     {
+        let parenthesis_fn = |val: &Condition<FnArg>| -> String {
+            let val_sql = val.to_sql::<DB>();
+            if val.is_condition() {
+                val_sql
+            } else {
+                format!("({val_sql})")
+            }
+        };
+
         match self {
             Condition::Comparison(sql_comparison) => sql_comparison.to_sql::<DB>(),
             Condition::And(a, b) => {
-                format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+                format!("{} AND {}", parenthesis_fn(a), parenthesis_fn(b))
             }
             Condition::Or(a, b) => {
-                format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+                format!("{} OR {}", parenthesis_fn(a), parenthesis_fn(b))
             }
-            Condition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
+            Condition::Not(a) => format!("NOT {}", parenthesis_fn(a)),
         }
     }
 }
@@ -105,11 +114,11 @@ impl Comparison<FnArg> {
             Comparison::GreaterEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a > b or |a - b| < epsilon
-                    format!(
-                        "({}) OR ({})",
-                        Comparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
-                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    Condition::or(
+                        Comparison::Greater(a.clone(), b.clone()),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)),
                     )
+                    .to_sql::<DB>()
                 }
                 None => {
                     format!(
@@ -127,11 +136,11 @@ impl Comparison<FnArg> {
             Comparison::LessEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a < b or |a - b| < epsilon
-                    format!(
-                        "({}) OR ({})",
-                        Comparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
-                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    Condition::or(
+                        Comparison::Less(a.clone(), b.clone()),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)),
                     )
+                    .to_sql::<DB>()
                 }
                 None => {
                     format!(
@@ -218,7 +227,7 @@ impl SqlJoin {
         if !self.on_cond.is_empty() {
             on_clause.push_str(
                 format!(
-                    " ON {}",
+                    "ON {}",
                     &self.on_cond.first().expect("present").to_sql::<DB>()
                 )
                 .as_str(),
@@ -265,7 +274,8 @@ impl SqlTableSelection {
     where
         DB: Database + DbQuerySystem<DB>,
     {
-        let mut res = String::from('(');
+        // let mut res = String::from('(');
+        let mut res = String::new();
 
         match &self.selected_table {
             SqlTable::SqlQuery(sql_select_query) => {
@@ -274,7 +284,7 @@ impl SqlTableSelection {
             SqlTable::TableName(name) => res.push_str(name),
         }
 
-        res.push(')');
+        // res.push(')');
 
         if let Some(alias) = &self.rename_as {
             res.push_str(&format!(" as {alias}"));
@@ -579,6 +589,15 @@ where
     }
 
     fn translate_math_expr(expr: &MathExpression<FnArg>) -> String {
+        let parenthesis_fn = |val: &MathExpression<FnArg>| -> String {
+            let val_sql = Self::translate_math_expr(val);
+            if val.is_primitif() {
+                val_sql
+            } else {
+                format!("({val_sql})")
+            }
+        };
+
         match expr {
             MathExpression::Primitif(arg_type) => match arg_type {
                 FnArg::FnCall(fn_ref) => {
@@ -590,7 +609,7 @@ where
                 FnArg::Dataset => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
             },
             MathExpression::Negation(math_expression) => {
-                format!("-({})", Self::translate_math_expr(math_expression))
+                format!("-{}", parenthesis_fn(math_expression))
             }
             MathExpression::Floor(math_expression) => {
                 format!("floor({})", Self::translate_math_expr(math_expression))
@@ -605,16 +624,16 @@ where
                 format!("sqrt({})", Self::translate_math_expr(math_expression))
             }
             MathExpression::BinOperation { left, op, right } => {
-                let left = Self::translate_math_expr(left);
-                let right = Self::translate_math_expr(right);
+                let left = parenthesis_fn(left);
+                let right = parenthesis_fn(right);
 
                 match op {
-                    ArithmOp::Add => format!("({}) + ({})", left, right),
-                    ArithmOp::Subtract => format!("({}) - ({})", left, right),
-                    ArithmOp::Multiply => format!("({}) * ({})", left, right),
-                    ArithmOp::Divide => format!("({}) / ({})", left, right),
-                    ArithmOp::Power => format!("pow(({}), ({}))", left, right),
-                    ArithmOp::Modulo => format!("mod(({}), ({}))", left, right),
+                    ArithmOp::Add => format!("{} + {}", left, right),
+                    ArithmOp::Subtract => format!("{} - {}", left, right),
+                    ArithmOp::Multiply => format!("{} * {}", left, right),
+                    ArithmOp::Divide => format!("{} / {}", left, right),
+                    ArithmOp::Power => format!("pow({}, {})", left, right),
+                    ArithmOp::Modulo => format!("mod({}, {})", left, right),
                 }
             }
         }
