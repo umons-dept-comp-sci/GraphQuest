@@ -749,9 +749,9 @@ where
             Some(dataset) => {
                 // Rename it to dataset for it to act as the classic table.
                 let dataset_table = SqlTableSelection::new_rename(dataset, CANONICAL_TABLE_NAME);
-                SqlSelectQuery::select_columns_from_table(args.to_vec(), dataset_table)
+                SqlSelectQuery::select_columns_expr_from_table(args.to_vec(), dataset_table)
             }
-            None => SqlSelectQuery::select_columns_from_table(args.to_vec(), CANONICAL_TABLE_NAME),
+            None => SqlSelectQuery::select_columns_expr_from_table(args.to_vec(), CANONICAL_TABLE_NAME),
         };
 
         // We do not want to re send a row multiple times (useful for functions that do not depend on a graph signature like d(n,m) for example)

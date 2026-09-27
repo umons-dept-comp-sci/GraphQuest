@@ -329,12 +329,101 @@ impl From<&str> for SqlTable {
     }
 }
 
+/// A selected column in an SQL Select query
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    /// The value of the selected column
+    pub value: ColumnValue,
+    /// The new label to rename the selected column to, if any.
+    pub rename_as: Option<String>,
+}
+
+impl Column {
+    pub fn translate_to_column_name<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let col_value = match &self.value {
+            ColumnValue::MathExpr(expr) => DB::translate_math_expr(expr),
+            ColumnValue::WindowFn(fn_name, aggregate_expr, grouping_expr) => {
+                let mut res = format!(
+                    "{fn_name}({}) OVER (",
+                    DB::translate_math_expr(aggregate_expr)
+                );
+
+                if !grouping_expr.is_empty() {
+                    let mut grouping_expr_iter = grouping_expr.iter();
+                    res.push_str(&format!(
+                        "PARTITION BY {}",
+                        DB::translate_math_expr(grouping_expr_iter.next().expect("value"))
+                    ));
+                    for expr in grouping_expr_iter {
+                        res.push_str(&format!(", {}", DB::translate_math_expr(expr)));
+                    }
+                }
+                res.push(')');
+
+                res
+            }
+        };
+        format!(
+            "{}{}",
+            col_value,
+            match &self.rename_as {
+                Some(name) => format!(" as \"{name}\""),
+                None => String::new(),
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnValue {
+    /// Contains the data necessary for an SQL window function, i.e. a tuple:
+    /// `(Name of the function, the expression inside the window function, and the aggregate expressions)`.
+    WindowFn(String, MathExpression<FnArg>, Vec<MathExpression<FnArg>>),
+    /// A simple math expression.
+    MathExpr(MathExpression<FnArg>),
+}
+
+impl From<MathExpression<FnArg>> for Column {
+    fn from(value: MathExpression<FnArg>) -> Self {
+        Column {
+            value: ColumnValue::MathExpr(value),
+            rename_as: None,
+        }
+    }
+}
+impl From<(MathExpression<FnArg>, Option<String>)> for Column {
+    fn from(value: (MathExpression<FnArg>, Option<String>)) -> Self {
+        Column {
+            value: ColumnValue::MathExpr(value.0),
+            rename_as: value.1,
+        }
+    }
+}
+
+impl From<String> for Column {
+    fn from(value: String) -> Self {
+        Self {
+            value: value.into(),
+            rename_as: None,
+        }
+    }
+}
+
+impl From<String> for ColumnValue {
+    fn from(value: String) -> Self {
+        ColumnValue::MathExpr(FnArg::Constant(ConstantValue::Identifier(value)).into())
+    }
+}
+
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
-    /// Contains all the column to choose as well the optional rename statement
-    pub select: Vec<(MathExpression<FnArg>, Option<String>)>,
+    /// Contains all the column to choose
+    pub select: Vec<Column>,
     pub distinct: bool,
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
@@ -369,12 +458,22 @@ impl SqlSelectQuery {
         )
     }
 
-    pub fn select_columns_from_table(
+    pub fn select_columns_expr_from_table(
         columns: Vec<MathExpression<FnArg>>,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
+        Self::select_columns_from_table(
+            columns.into_iter().map(|expr| expr.into()).collect(),
+            table,
+        )
+    }
+
+    pub fn select_columns_from_table(
+        columns: Vec<Column>,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
         Self {
-            select: columns.into_iter().map(|expr| (expr, None)).collect(),
+            select: columns,
             distinct: false,
             from: vec![table.into()],
             joins: Vec::new(),
@@ -389,7 +488,7 @@ impl SqlSelectQuery {
         table: impl Into<SqlTableSelection>,
     ) -> Self {
         Self {
-            select: columns,
+            select: columns.into_iter().map(|expr| expr.into()).collect(),
             distinct: false,
             from: vec![table.into()],
             joins: Vec::new(),
@@ -415,15 +514,16 @@ impl SqlSelectQuery {
         self.distinct = value;
     }
 
-    pub fn set_col_selection(&mut self, column_name: impl ToString, rename_to: Option<String>) {
-        self.select = vec![(
-            FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into(),
-            rename_to,
-        )];
+    pub fn set_col_selection(&mut self, column: Column) {
+        self.select = Vec::from([column]);
     }
 
-    pub fn set_cols_selection(&mut self, columns: Vec<(MathExpression<FnArg>, Option<String>)>) {
+    pub fn set_cols_selection(&mut self, columns: Vec<Column>) {
         self.select = columns;
+    }
+
+    pub fn add_column(&mut self, column: Column) {
+        self.select.push(column);
     }
 
     /// Encapsulates the previous conditions with an [`Condition::And`] composed of the previous condition and the given one.
@@ -563,19 +663,6 @@ where
     fn translate_runtime_error(error: sqlx::Error) -> GraphDbRuntimeError;
 
     fn translate_startup_error(error: sqlx::Error) -> GraphDbStartupError;
-
-    fn translate_to_column_name(expr_rename: &(MathExpression<FnArg>, Option<String>)) -> String {
-        let (expr, new_name) = expr_rename;
-
-        format!(
-            "{}{}",
-            Self::translate_math_expr(expr),
-            match new_name {
-                Some(name) => format!(" as \"{name}\""),
-                None => String::new(),
-            }
-        )
-    }
 
     fn translate_constant(constant: &ConstantValue) -> String {
         match constant {

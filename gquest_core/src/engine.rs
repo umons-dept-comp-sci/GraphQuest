@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use log::{debug, info};
-use sqlx::Sqlite;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -13,12 +12,12 @@ use crate::{
         rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
     },
     database_handler::{
-        AllowedGraphDb, CANONICAL_TABLE_NAME, FUNCTION_OUTPUT_COL_NAME, GraphDbRuntimeError,
-        PK_NAME, SqlJoin, SqlSelectQuery, SqlTableSelection,
+        AllowedGraphDb, CANONICAL_TABLE_NAME, Column, ColumnValue, FUNCTION_OUTPUT_COL_NAME,
+        GraphDbRuntimeError, PK_NAME, SqlJoin, SqlSelectQuery, SqlTableSelection,
     },
     parser::{
         ExtremalCondition,
-        extremal_expression::{ClassType, ExtremalSelection},
+        extremal_expression::ExtremalSelection,
         parsed_expression::{
             Comparison,
             Condition::{self},
@@ -153,7 +152,7 @@ impl<'a> ConditionEngine<'a> {
         Self {
             db,
             graph: Some(RelationGraph::new(modules)),
-            result: SqlSelectQuery::select_all_from_table(CANONICAL_TABLE_NAME),
+            result: SqlSelectQuery::select_column_from_table(PK_NAME, None, CANONICAL_TABLE_NAME),
             already_computed: HashSet::new(),
         }
     }
@@ -174,8 +173,6 @@ impl<'a> ConditionEngine<'a> {
             }
             // Compute them
             let join_dep_map = self.execute_graph_functions(&mut graph, batch_size).await?;
-
-
         }
         // Sets all function call as unused as to not have to use them again unless mentionned
         graph.set_all_unused();
@@ -358,85 +355,106 @@ impl<'a> ConditionEngine<'a> {
         flattened_extremal: ExtremalSelection<FnArg>,
         join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
     ) -> SqlSelectQuery {
-        let nb_group_expr = flattened_extremal.grouping_expr.len();
         let flattened_extremal_cp = flattened_extremal.clone();
-        // Fetch all columns needed for this query.
-        let all = get_all_extr_query(
-            flattened_extremal.aggregate_expr,
-            flattened_extremal.grouping_expr,
-            self.result.clone(),
-            join_dep_map,
-        );
 
-        let extr = get_extr_query(all.clone(), flattened_extremal.class_type, nb_group_expr);
-
-        let res = {
-            let mut all_columns = Vec::from([
-                (
-                    MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(
-                        PK_NAME.to_string(),
-                    ))),
-                    None,
-                ),
-                (
-                    MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(
-                        "all_expr.expr0".to_string(),
-                    ))),
-                    Some(
-                        graph
-                            .expression_to_string(&flattened_extremal_cp.aggregate_expr)
-                            .expect("everything present in the graph"),
-                    ),
-                ),
-            ]);
-            // Create the "inner join" conditions:
-            let mut conditions: Vec<Comparison<FnArg>> = [Comparison::Equal(
-                FnArg::Constant(ConstantValue::Identifier("all_expr.expr0".to_string())).into(),
-                FnArg::Constant(ConstantValue::Identifier("extr.expr0".to_string())).into(),
+        let mut all_expr_columns = Vec::from([
+            (
+                MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
+                    "{CANONICAL_TABLE_NAME}.{PK_NAME}"
+                )))),
                 None,
-            )]
-            .to_vec();
+            )
+                .into(),
+            (Column {
+                rename_as: Some("expr0".to_string()),
+                value: ColumnValue::MathExpr(flattened_extremal_cp.aggregate_expr),
+            }),
+        ]);
 
-            flattened_extremal_cp
-                .grouping_expr
-                .into_iter()
-                .enumerate()
-                .for_each(|(i, expr)| {
-                    let all_expr_id = format!("all_expr.expr{}", i + 1);
-                    let extr_id = format!("extr.expr{}", i + 1);
-                    conditions.push(Comparison::Equal(
-                        FnArg::Constant(ConstantValue::Identifier(all_expr_id.to_string())).into(),
-                        FnArg::Constant(ConstantValue::Identifier(extr_id)).into(),
-                        None,
-                    ));
-
-                    all_columns.push((
-                        MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(
-                            all_expr_id,
-                        ))),
-                        Some(
-                            graph
-                                .expression_to_string(&expr)
-                                .expect("everything present in the graph"),
-                        ),
-                    ));
+        flattened_extremal_cp
+            .grouping_expr
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, expr)| {
+                all_expr_columns.push(Column {
+                    rename_as: Some(format!("expr{}", i + 1)),
+                    value: ColumnValue::MathExpr(expr),
                 });
+            });
 
-            let mut res = SqlSelectQuery::select_columns_with_rename_from_table(
-                all_columns,
-                SqlTableSelection::new_rename(all, "all_expr"),
-            );
+        //  Collect all needed joins
+        let all_joins: Vec<SqlJoin> = join_dep_map
+            .into_iter()
+            .map(|(_, (join, _))| join)
+            .collect();
 
-            res.add_join(SqlJoin::new_from_table(
-                SqlTableSelection::new_rename(extr, "extr"),
-                conditions,
-            ));
+        //  cargo run -p gquest_cli q "n-1 <= m and m <= n * (n-1)/2 and is_connected -> d(n,m) >= 3 -> max(eci(e_nm(m,n));m,n) -> not iso(G, e_nm(n,m))" examples/configs.json -vv
 
-            res
-        };
+        // cargo run -p gquest_cli q "n = 6 -> is_connected -> max(chromatic_nb; max_degree) -> not(is_complete or is_cycle)" examples/configs.json
+
+        let dataset_table =
+            SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
+
+        let mut inner_selection =
+            SqlSelectQuery::select_columns_from_table(all_expr_columns, dataset_table);
+
+        inner_selection.joins = all_joins;
+        let flattened_extremal_cp = flattened_extremal.clone();
+        // add window function (max or min)
+        inner_selection.add_column(Column {
+            value: ColumnValue::WindowFn(
+                flattened_extremal_cp.class_type.to_string(),
+                flattened_extremal_cp.aggregate_expr,
+                flattened_extremal_cp.grouping_expr,
+            ),
+            rename_as: Some(String::from("extremal")),
+        });
+
+        // Outer query -> gives back all expressions their string values and reject all lines
+        // where the aggregated expression is different from the window function's value.
+
+        let mut all_function_columns = Vec::from([
+            Column {
+                rename_as: None,
+                value: ColumnValue::MathExpr(MathExpression::Primitif(FnArg::Constant(
+                    ConstantValue::Identifier(PK_NAME.to_string()),
+                ))),
+            },
+            Column {
+                rename_as: Some(
+                    graph
+                        .expression_to_string(&flattened_extremal.aggregate_expr)
+                        .expect("everything present in the graph"),
+                ),
+                value: "expr0".to_string().into(),
+            },
+        ]);
+
+        for (i, expr) in flattened_extremal.grouping_expr.into_iter().enumerate() {
+            all_function_columns.push(Column {
+                rename_as: Some(
+                    graph
+                        .expression_to_string(&expr)
+                        .expect("everything present in the graph"),
+                ),
+                value: format!("expr{}", i + 1).to_string().into(),
+            });
+        }
 
         SqlSelectQuery::select_all_from_table(SqlTableSelection::new_rename(
-            res,
+            SqlSelectQuery::select_columns_from_table(
+                all_function_columns,
+                SqlTableSelection::new_rename(inner_selection, CANONICAL_TABLE_NAME),
+            )
+            .set_where_clause(Condition::Comparison(Comparison::<FnArg>::Equal(
+                MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(
+                    "expr0".to_string(),
+                ))),
+                MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(
+                    "extremal".to_string(),
+                ))),
+                None,
+            ))),
             CANONICAL_TABLE_NAME,
         ))
     }
@@ -516,7 +534,7 @@ async fn compute_module(
     batch_size: usize,
     optional_obs: Option<&mut dyn Observer>,
 ) -> Result<(), GraphDbRuntimeError> {
-    dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"), None);
+    dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}").into());
 
     match db {
         AllowedGraphDb::Sqlite(sqlite_db) => {
@@ -710,80 +728,4 @@ fn add_rec_needed_joins(
     // then add it
     res.push(join.clone());
     already_in_res.insert(to_add.clone());
-}
-
-fn get_all_extr_query(
-    aggregate_expr: MathExpression<FnArg>,
-    grouping_expr: Vec<MathExpression<FnArg>>,
-    prev_result: SqlSelectQuery,
-    join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
-) -> SqlSelectQuery {
-    let mut all_columns = Vec::from([
-        (
-            MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
-                "{CANONICAL_TABLE_NAME}.{PK_NAME}"
-            )))),
-            None,
-        ),
-        (
-            // add the aggregate expression to the columns
-            aggregate_expr,
-            Some(String::from("expr0")),
-        ),
-    ]);
-
-    // add the grouping expressions to the columns
-
-    grouping_expr.into_iter().enumerate().for_each(|(i, expr)| {
-        all_columns.push((expr, Some(format!("expr{}", i + 1))));
-    });
-
-    //  Collect all needed joins (and add columns)
-    let all_joins: Vec<SqlJoin> = join_dep_map
-        .into_iter()
-        .map(|(_, (join, _))| join)
-        .collect();
-
-    let dataset_table = SqlTableSelection::new_rename(prev_result, CANONICAL_TABLE_NAME);
-
-    let mut all = SqlSelectQuery::select_columns_with_rename_from_table(all_columns, dataset_table);
-
-    // Thanks to the topological sort, this is already in the correct order.
-    for join in all_joins {
-        all.add_join(join);
-    }
-    all
-}
-
-fn get_extr_query(
-    all_expr_selection: SqlSelectQuery,
-    class_type: ClassType,
-    nb_group_expr: usize,
-) -> SqlSelectQuery {
-    let mut all_columns = Vec::from([(
-        MathExpression::Primitif(FnArg::Constant(ConstantValue::Identifier(format!(
-            "{}(expr0)",
-            class_type
-        )))),
-        Some("expr0".to_string()),
-    )]);
-
-    let mut groups = Vec::new();
-    for i in 0..nb_group_expr {
-        let expr_name = format!("expr{}", i + 1);
-        // add the aggregate expression to the columns
-        all_columns.push((
-            MathExpression::primitif(FnArg::Constant(ConstantValue::Identifier(
-                expr_name.clone(),
-            ))),
-            None,
-        ));
-        groups.push(expr_name);
-    }
-
-    SqlSelectQuery::select_columns_with_rename_from_table(
-        all_columns,
-        SqlTableSelection::new(all_expr_selection),
-    )
-    .set_group_by(groups)
 }

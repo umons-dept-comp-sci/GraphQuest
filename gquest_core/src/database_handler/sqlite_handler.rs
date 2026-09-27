@@ -125,12 +125,16 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         for column_i in 0..query.select.len() - 1 {
             res.push_str(&format!(
                 "{}, ",
-                Self::translate_to_column_name(&query.select[column_i])
+                &query.select[column_i].translate_to_column_name::<Self>()
             ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            Self::translate_to_column_name(query.select.last().expect("at least one val"))
+            query
+                .select
+                .last()
+                .expect("at least one val")
+                .translate_to_column_name::<Self>()
         ));
 
         // From clause

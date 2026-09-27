@@ -8,4 +8,5 @@ if __name__ == "__main__":
         G = nx.from_graph6_bytes(sig.encode("utf-8"))
         if G.order() != G.size():
             print(sig, int(False), flush=True)
-        print(sig, int(nx.is_isomorphic(nx.cycle_graph(G.order()), G)), flush=True)
+        else:
+            print(sig, int(nx.is_isomorphic(nx.cycle_graph(G.order()), G)), flush=True)
