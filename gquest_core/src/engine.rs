@@ -65,9 +65,11 @@ impl GquestEngine {
         output: &mut O,
     ) -> Result<(), EngineError> {
         match db {
+            #[cfg(any(feature = "sqlite-unbundled", feature = "sqlite"))]
             AllowedGraphDb::Sqlite(sqlite_db) => {
                 sqlite_db.fetch_all_rows_raw_sql(query.into(), output).await
             }
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(pg_db) => {
                 pg_db.fetch_all_rows_raw_sql(query.into(), output).await
             }
@@ -544,9 +546,11 @@ impl<'a> ConditionEngine<'a> {
     async fn get_result<O: SaveOutput>(&self, output: &mut O) -> Result<(), EngineError> {
         info!("Start fetching the result");
         match &self.db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(sqlite_db) => {
                 sqlite_db.fetch_all_row_query(&self.result, output).await
             }
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(pg_db) => {
                 pg_db.fetch_all_row_query(&self.result, output).await
             }
@@ -572,6 +576,7 @@ async fn compute_module(
     dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}").into());
 
     match db {
+        #[cfg(any(feature = "sqlite-unbundled", feature = "sqlite"))]
         AllowedGraphDb::Sqlite(sqlite_db) => {
             sqlite_db
                 .compute_module(
@@ -585,6 +590,7 @@ async fn compute_module(
                 )
                 .await?;
         }
+        #[cfg(feature = "postgres")]
         AllowedGraphDb::Postgres(pg_db) => {
             pg_db
                 .compute_module(

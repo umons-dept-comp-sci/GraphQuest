@@ -1,7 +1,16 @@
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 
-const DEFAULT_URL: &str = "sqlite://gquest.db";
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sqlite")] {
+        const DEFAULT_URL: &str = "sqlite://gquest.db";
+    } else if #[cfg(feature = "postgres")] {
+        const DEFAULT_URL: &str = "postgresql://localhost/gquest";
+    } else {
+        const DEFAULT_URL: &str = "sqlite://gquest.db"; // Fallback default
+    }
+}
+
 const DEFAULT_CONFIGS: &str = "configs.json";
 
 #[derive(Parser)]

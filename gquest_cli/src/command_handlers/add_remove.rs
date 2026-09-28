@@ -88,21 +88,29 @@ pub async fn remove_dataset(
 
     match remove_choice {
         RemoveChoice::Dataset => match &mut db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(graph_database) => graph_database.remove_dataset().await,
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(graph_database) => graph_database.remove_dataset().await,
         }?,
         RemoveChoice::All => match &mut db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_database().await,
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(graph_database) => graph_database.clear_database().await,
         }?,
         RemoveChoice::Invariant { name } => match &mut db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(graph_database) => graph_database.remove_table(name, true).await,
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(graph_database) => {
                 graph_database.remove_table(name, true).await
             }
         }?,
         RemoveChoice::AllInvariant => match &mut db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(graph_database) => graph_database.clear_invariants().await,
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(graph_database) => graph_database.clear_invariants().await,
         }?,
     }

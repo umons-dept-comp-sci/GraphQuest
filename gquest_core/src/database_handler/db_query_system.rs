@@ -228,7 +228,7 @@ impl SqlJoin {
             on_clause.push_str(
                 format!(
                     "ON {}",
-                    &self.on_cond.first().expect("present").to_sql::<DB>()
+                    self.on_cond.first().expect("present").to_sql::<DB>()
                 )
                 .as_str(),
             );

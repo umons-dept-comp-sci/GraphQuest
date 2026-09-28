@@ -185,9 +185,11 @@ pub async fn summary(path: DatabasePath, output: Option<OutputChoice>) -> Result
                 QueryTableOptions::Full
             };
             match &mut db {
+                #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
                 AllowedGraphDb::Sqlite(sqlite_db) => {
                     sqlite_db.print_all_tables(!no_id, table_opt, latex).await
                 }
+                #[cfg(feature = "postgres")]
                 AllowedGraphDb::Postgres(pgsql_db) => {
                     pgsql_db.print_all_tables(!no_id, table_opt, latex).await
                 }
