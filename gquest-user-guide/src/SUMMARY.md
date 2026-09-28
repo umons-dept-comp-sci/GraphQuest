@@ -8,6 +8,9 @@
 
 # Reference guide
 
+- [Modules](modules.md)
+- [Configuration files](configs.md)
+- [Query syntax](query_syntax.md)
 - [Command-line tool](cli/README.md)
     - [Manipulating the dataset](cli/dataset.md)
     - [Querying the dataset](cli/query.md)
