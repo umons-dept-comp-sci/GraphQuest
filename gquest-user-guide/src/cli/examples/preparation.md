@@ -1,0 +1,112 @@
+# Preparation
+
+## Dataset
+
+```bash
+gquest add geng 1:8
+```
+
+
+## Modules
+
+## Configuration file
+
+```json
+{
+  "batch_size": 6500,
+  "modules": [
+    {
+      "function": "d",
+      "path": "modules/d_nm.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        }
+      ],
+      "output": "numeric"
+    },
+    {
+      "function": "e_nm",
+      "path": "modules/e_nm.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        }
+      ],
+      "output": "graph"
+    },
+    {
+      "function": "m",
+      "path": "modules/edges.py",
+      "output": "numeric"
+    },
+    {
+      "function": "n",
+      "path": "modules/order.py",
+      "args": [
+        {
+          "name": "sig",
+          "class": "graph"
+        }
+      ],
+      "output": "numeric"
+    },
+    {
+      "function": "chromatic_nb",
+      "path": "modules/chromatic_nb",
+      "output": "numeric"
+    },
+    {
+      "function": "is_connected",
+      "path": "modules/is_connected.py",
+      "output": "numeric"
+    },
+    {
+      "function": "is_complete",
+      "path": "modules/is_complete.py",
+      "output": "numeric"
+    },
+    {
+      "function": "is_cycle",
+      "path": "modules/is_cycle.py",
+      "output": "numeric"
+    },
+    {
+      "function": "max_degree",
+      "path": "modules/max_degree.py",
+      "output": "numeric"
+    },
+    {
+      "function": "eci",
+      "path": "modules/eci.py",
+      "output": "numeric"
+    },
+    {
+      "function": "iso",
+      "path": "modules/iso.py",
+      "args": [
+        {
+          "name": "g1",
+          "class": "graph"
+        },
+        {
+          "name": "g2",
+          "class": "graph"
+        }
+      ],
+      "batch_size": 5000,
+      "output": "numeric"
+    }
+  ]
+}
+```
