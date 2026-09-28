@@ -173,6 +173,10 @@ impl<'a> ConditionEngine<'a> {
             }
             // Compute them
             let join_dep_map = self.execute_graph_functions(&mut graph, batch_size).await?;
+
+            // Update res query:
+            self.result =
+                self.build_expression_list_result(&graph, flattened_expressions, join_dep_map);
         }
         // Sets all function call as unused as to not have to use them again unless mentionned
         graph.set_all_unused();
@@ -388,10 +392,6 @@ impl<'a> ConditionEngine<'a> {
             .map(|(_, (join, _))| join)
             .collect();
 
-        //  cargo run -p gquest_cli q "n-1 <= m and m <= n * (n-1)/2 and is_connected -> d(n,m) >= 3 -> max(eci(e_nm(m,n));m,n) -> not iso(G, e_nm(n,m))" examples/configs.json -vv
-
-        // cargo run -p gquest_cli q "n = 6 -> is_connected -> max(chromatic_nb; max_degree) -> not(is_complete or is_cycle)" examples/configs.json
-
         let dataset_table =
             SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME);
 
@@ -504,6 +504,41 @@ impl<'a> ConditionEngine<'a> {
         }
 
         selection
+    }
+
+    /// Builds the result query after updating the graph with a list of additional expressions.
+    fn build_expression_list_result(
+        &self,
+        graph: &RelationGraph,
+        flattened_expressions: Vec<MathExpression<FnArg>>,
+        join_dep_map: IndexMap<FnRef, (SqlJoin, HashSet<FnRef>)>,
+    ) -> SqlSelectQuery {
+        let mut res = SqlSelectQuery::select_column_from_table(
+            format!("{CANONICAL_TABLE_NAME}.*"),
+            None,
+            SqlTableSelection::new_rename(self.result.clone(), CANONICAL_TABLE_NAME),
+        );
+
+        flattened_expressions.into_iter().for_each(|expr| {
+            res.add_column(Column {
+                rename_as: Some(
+                    graph
+                        .expression_to_string(&expr)
+                        .expect("everything present in the graph"),
+                ),
+                value: ColumnValue::MathExpr(expr),
+            });
+        });
+
+        //  Collect all needed joins
+        res.joins.append(
+            &mut join_dep_map
+                .into_iter()
+                .map(|(_, (join, _))| join)
+                .collect(),
+        );
+
+        res
     }
 
     async fn get_result<O: SaveOutput>(&self, output: &mut O) -> Result<(), EngineError> {
