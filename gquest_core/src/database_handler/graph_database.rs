@@ -731,7 +731,7 @@ where
         mut optional_obs: Option<&mut dyn Observer>,
     ) -> Result<(), GraphDbRuntimeError> {
         DB::optimize(&self.pool).await?;
-        
+
         // Check if the dataset was at least initialised first
         if !&self.is_table_added(CANONICAL_TABLE_NAME).await? {
             return Err(GraphDbRuntimeError::DatasetNotInitialisedError);
@@ -749,12 +749,14 @@ where
             Some(dataset) => {
                 // Rename it to dataset for it to act as the classic table.
                 let dataset_table = SqlTableSelection::new_rename(dataset, CANONICAL_TABLE_NAME);
-                SqlSelectQuery::select_columns_from_table(args.to_vec(), dataset_table)
+                SqlSelectQuery::select_columns_expr_from_table(args.to_vec(), dataset_table)
             }
-            None => SqlSelectQuery::select_columns_from_table(args.to_vec(), CANONICAL_TABLE_NAME),
+            None => {
+                SqlSelectQuery::select_columns_expr_from_table(args.to_vec(), CANONICAL_TABLE_NAME)
+            }
         };
 
-        // We do not want to re send a row multiple times (useful for functions that do not depend on a graph signature like d(n,m) for example)
+        // We do not want to re send a row multiple times (useful for functions that do not depend on a graph signature, or another unique value, like d(n,m) for example)
         input_selection.set_distinct_values(true);
 
         for join in join_list {
@@ -776,6 +778,9 @@ where
                 }
                 input_selection.where_clause =
                     Some(SqlWhereClause::not_exists(not_exist_selection));
+            } else {
+                // Push data to related function table
+                self.add_module_table(module).await?
             }
         }
 
@@ -822,10 +827,10 @@ where
         results: &mut Vec<Vec<ConstantValue>>,
         module: &Module,
     ) -> Result<(), GraphDbRuntimeError> {
-        // Push data to related function table
-        if !self.is_table_added(&module.fn_name).await? {
-            self.add_module_table(module).await?
-        }
+        // // Push data to related function table
+        // if !self.is_table_added(&module.fn_name).await? {
+        //     self.add_module_table(module).await?
+        // }
         self.add_to_function_table(&module.fn_name, module.args.len() + 1, results)
             .await?;
         results.clear();

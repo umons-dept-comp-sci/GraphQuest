@@ -54,7 +54,7 @@ fn parse_query_if_then() {
     assert!(matches!(
         QueryParser::parse_query("a -> b", None),
         Ok(QueryStatement::IfThen(left, right))
-            if left == Condition::Comparison(a) && *right == QueryStatement::condition(b)));
+            if left == Condition::Comparison(a).into() && *right == QueryStatement::extremal_condition(b.to_condition())));
 }
 
 #[test]
@@ -75,8 +75,11 @@ fn parse_query_if_then_chained() {
         None,
     )
     .into();
-    let expected =
-        QueryStatement::if_then(a.clone(), QueryStatement::if_then(b.clone(), c.clone()));
+
+    let expected = QueryStatement::if_then(
+        a.clone().to_condition(),
+        QueryStatement::if_then(b.clone().to_condition(), c.clone()),
+    );
 
     assert!(matches!(
         QueryParser::parse_query("a -> b -> c", None),
@@ -158,78 +161,27 @@ fn parse_condition_condition_parenthesis() {
     ));
 }
 
-// #[test]
-// fn parse_extremal_query() {
-//     assert!(matches!(
-//         QueryParser::parse_extremal_condition("min(p_gn: m,n) and d_nm >= 3", None),
-//         Ok(
-//             ParsedCondition::ExtremalCondition(selection, additional_condition)
-//         )
-//         if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && additional_condition == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
-//         ArgType::identifier("d_nm").into(),
-//         ArgType::value("3.0").into(), None),
-//     ))));
+#[test]
+fn parse_expression_list() {
+    let tmp = QueryParser::parse_extremal("max(eci(comp(G)); m(comp), n*2**2)").expect("correct");
+    // TODO: Add unit test
+    println!("{tmp}")
+}
 
-//     assert!(matches!(
-//     QueryParser::parse_extremal_condition("min(p_gn)", None),
-//     Ok(
-//         ParsedCondition::ExtremalCondition(selection, None)
-//     )
-//     if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct")
-//     ));
+#[test]
+fn parse_extremal_query() {
+    let tmp = QueryParser::parse_extremal("max(eci(comp(G)); m(comp), n*2**2)").expect("correct");
+    // TODO: Add unit test
+    println!("{tmp}")
+}
 
-//     assert!(matches!(
-//         QueryParser::parse_extremal_condition("min(p_gn) and d >", None),
-//         Err(ParsingError::ParseError {
-//             col_pos: _,
-//             input: _,
-//             missing_token: _
-//         })
-//     ));
-
-//     assert!(matches!(
-//         QueryParser::parse_extremal_condition("min(p_gn: p_gn) and d > 4",None),
-//         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
-//     ));
-
-//     assert!(matches!(
-//         QueryParser::parse_extremal_condition("min(p_gn: g, d, g) and d > 4",None),
-//         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
-//     ));
-// }
-
-// #[test]
-// fn parse_if_else_query_extremal() {
-//     assert!(matches!(
-//             QueryParser::parse_query("min(p_gn: m,n) and d_nm >= 3 -> conj1",None),
-//             Ok(
-//                 ParsedQuery::IfElse(ParsedCondition::ExtremalCondition(selection, add_cond), cond)
-//             )
-//             if selection == ClassSelection::new(ClassType::Min, "p_gn", vec!["m", "n"]).expect("correct") && add_cond == Some(SqlCondition::Operation(SqlComparison::GreaterEqual(
-//             ArgType::identifier("d_nm").into(),
-//             ArgType::value("3.0").into(), None),
-//         )) && cond == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1").into(), None
-//     ))));
-
-//     assert!(matches!(
-//         QueryParser::parse_query("min(p_gn) -> conj1 = 1", None),
-//         Ok(
-//                 ParsedQuery::IfElse(ParsedCondition::ExtremalCondition(selection, None), cond)
-//             )
-//         if selection == ClassSelection::new(ClassType::Min, "p_gn", Vec::<String>::new()).expect("correct")
-//         && cond == SqlCondition::Operation(SqlComparison::Equal(ArgType::identifier("conj1").into(), ArgType::value("1.0").into(), None))
-//     ));
-
-//     assert!(matches!(
-//         QueryParser::parse_query("min(p_gn: p_gn) -> conj1", None),
-//         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::CombineWithItself(val))) if val == "p_gn"
-//     ));
-
-//     assert!(matches!(
-//         QueryParser::parse_query("min(p_gn: g, d, g) -> conj1 = 1", None),
-//         Err(ParsingError::ClassSelectionError(_, ClassSelectionError::DuplicateInv(val))) if val == "g"
-//     ));
-// }
+#[test]
+fn parse_extremal_if_then_query() {
+    let tmp = QueryParser::parse_query("x > 1 -> min(x) -> max(p;n,m) -> y and z", None)
+        .expect("correct");
+    // TODO: Add unit test
+    println!("{tmp:?}")
+}
 
 #[test]
 fn parse_bin_expression() {

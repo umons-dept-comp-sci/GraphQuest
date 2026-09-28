@@ -1,39 +1,44 @@
 use std::fmt::Display;
 
-use crate::EqF64;
+use crate::{EqF64, parser::ExtremalCondition};
 
 #[derive(Debug, PartialEq)]
 pub enum QueryStatement {
-    Condition(Condition),
-    IfThen(Condition, Box<QueryStatement>),
+    ExtremalCondition(ExtremalCondition),
+    IfThen(ExtremalCondition, Box<QueryStatement>),
 }
 
-impl From<Condition> for QueryStatement {
-    fn from(val: Condition) -> Self {
-        QueryStatement::Condition(val)
+impl<S: Into<ExtremalCondition>> From<S> for QueryStatement {
+    fn from(value: S) -> Self {
+        QueryStatement::ExtremalCondition(value.into())
     }
 }
 
 impl QueryStatement {
-    pub fn condition(condition: impl Into<Condition>) -> Self {
-        Self::Condition(condition.into())
+    pub fn extremal_condition(extr_cond: impl Into<ExtremalCondition>) -> Self {
+        Self::ExtremalCondition(extr_cond.into())
     }
 
     pub fn if_then(
-        condition: impl Into<Condition>,
+        extr_cond: impl Into<ExtremalCondition>,
         query_statement: impl Into<QueryStatement>,
     ) -> Self {
-        Self::IfThen(condition.into(), Box::new(query_statement.into()))
+        Self::IfThen(extr_cond.into(), Box::new(query_statement.into()))
     }
 
     pub fn to_counter(&mut self) {
         let mut statement = self;
         loop {
             match statement {
-                QueryStatement::Condition(condition) => {
-                    *condition = Condition::not(condition.clone());
-                    break;
-                }
+                QueryStatement::ExtremalCondition(extr_cond) => match extr_cond {
+                    ExtremalCondition::ExtremalSelection(_) => {
+                        todo!("Counter of extremal selection is not yet implemented") // TODO: Implement this later on
+                    }
+                    ExtremalCondition::Condition(condition) => {
+                        *extr_cond = Condition::not(condition.clone()).into();
+                        break;
+                    }
+                },
                 QueryStatement::IfThen(_, query_statement) => {
                     statement = query_statement;
                 }
@@ -186,6 +191,10 @@ impl<P> Comparison<P> {
             | Comparison::Equal(left_expr, right_expr, _)
             | Comparison::NotEqual(left_expr, right_expr, _) => (left_expr, right_expr),
         }
+    }
+
+    pub fn to_condition(self) -> Condition<P> {
+        Condition::Comparison(self)
     }
 }
 

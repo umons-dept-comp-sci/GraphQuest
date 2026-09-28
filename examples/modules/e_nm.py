@@ -2,6 +2,7 @@
 """Compute the eccentricity of a graph"""
 import sys
 import networkx as nx
+from d_nm import d_nm
 from math import comb
 
 
@@ -27,12 +28,12 @@ def create_E_nm(n, m, d):
 mem = {}
 
 if __name__ == "__main__":
-    for n, m, d_nm in map(str.split, map(str.strip, sys.stdin)):
+    for n, m in map(str.split, map(str.strip, sys.stdin)):
         n = int(n)
         m = int(m)
-        d_nm = int(d_nm)
+        d = d_nm(n,m)
         
-        if (n,m,d_nm) not in mem:
-            mem[(n,m, d_nm)] = create_E_nm(n, m, d_nm)
+        if (n,m) not in mem:
+            mem[(n,m)] = create_E_nm(n, m, d)
         
-        print(n, m, d_nm, nx.to_graph6_bytes(mem[(n,m, d_nm)], header=False)[:-1].decode(), flush=True)
+        print(n, m, nx.to_graph6_bytes(mem[(n,m)], header=False)[:-1].decode(), flush=True)

@@ -62,9 +62,7 @@ pub enum Modes {
     )]
     Query {
         #[command(flatten)]
-        args: QueryArgs,
-        #[command(flatten)]
-        config: ConfigFileArg,
+        contents: QueryCounterContents,
     },
     /// Tries to find counter examples in the dataset.
     #[command(
@@ -74,9 +72,7 @@ pub enum Modes {
     )]
     Counter {
         #[command(flatten)]
-        args: QueryArgs,
-        #[command(flatten)]
-        config: ConfigFileArg,
+        contents: QueryCounterContents,
     },
     /// Shows the tables present in the database
     #[command(alias = "sm")]
@@ -84,6 +80,17 @@ pub enum Modes {
         #[command(subcommand, name = "OUTPUT")]
         output: Option<OutputChoice>,
     },
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct QueryCounterContents {
+    #[command(flatten)]
+    pub args: QueryArgs,
+    /// Additional expressions to append to the query result
+    #[clap(default_value = None, short, long)]
+    pub add_expr: Option<String>,
+    #[command(flatten)]
+    pub config: ConfigFileArg,
 }
 
 #[derive(Args, Debug, Clone)]

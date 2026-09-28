@@ -51,15 +51,24 @@ impl Condition<FnArg> {
     where
         DB: Database + DbQuerySystem<DB>,
     {
+        let parenthesis_fn = |val: &Condition<FnArg>| -> String {
+            let val_sql = val.to_sql::<DB>();
+            if val.is_condition() {
+                val_sql
+            } else {
+                format!("({val_sql})")
+            }
+        };
+
         match self {
             Condition::Comparison(sql_comparison) => sql_comparison.to_sql::<DB>(),
             Condition::And(a, b) => {
-                format!("({}) AND ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+                format!("{} AND {}", parenthesis_fn(a), parenthesis_fn(b))
             }
             Condition::Or(a, b) => {
-                format!("({}) OR ({})", a.to_sql::<DB>(), b.to_sql::<DB>())
+                format!("{} OR {}", parenthesis_fn(a), parenthesis_fn(b))
             }
-            Condition::Not(a) => format!("NOT ({})", a.to_sql::<DB>()),
+            Condition::Not(a) => format!("NOT {}", parenthesis_fn(a)),
         }
     }
 }
@@ -105,11 +114,11 @@ impl Comparison<FnArg> {
             Comparison::GreaterEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a > b or |a - b| < epsilon
-                    format!(
-                        "({}) OR ({})",
-                        Comparison::Greater(a.clone(), b.clone()).to_sql::<DB>(),
-                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    Condition::or(
+                        Comparison::Greater(a.clone(), b.clone()),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)),
                     )
+                    .to_sql::<DB>()
                 }
                 None => {
                     format!(
@@ -127,11 +136,11 @@ impl Comparison<FnArg> {
             Comparison::LessEqual(a, b, epsilon) => match epsilon {
                 Some(eps) => {
                     // a < b or |a - b| < epsilon
-                    format!(
-                        "({}) OR ({})",
-                        Comparison::Less(a.clone(), b.clone()).to_sql::<DB>(),
-                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)).to_sql::<DB>()
+                    Condition::or(
+                        Comparison::Less(a.clone(), b.clone()),
+                        Comparison::Equal(a.clone(), b.clone(), Some(*eps)),
                     )
+                    .to_sql::<DB>()
                 }
                 None => {
                     format!(
@@ -190,22 +199,24 @@ impl Comparison<FnArg> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlJoin {
-    table_name: String,
-    alias_name: String,
+    table: SqlTableSelection,
     on_cond: Vec<Comparison<FnArg>>,
 }
 
 impl SqlJoin {
-    pub fn new(
+    pub fn new_from_name(
         table_name: impl Into<String>,
         alias_name: impl Into<String>,
         on_cond: Vec<Comparison<FnArg>>,
     ) -> Self {
         Self {
-            table_name: table_name.into(),
-            alias_name: alias_name.into(),
+            table: SqlTableSelection::new_rename(table_name.into(), alias_name.into()),
             on_cond,
         }
+    }
+
+    pub fn new_from_table(table: SqlTableSelection, on_cond: Vec<Comparison<FnArg>>) -> Self {
+        Self { table, on_cond }
     }
 
     pub fn to_sql<DB>(&self) -> String
@@ -214,15 +225,18 @@ impl SqlJoin {
     {
         let mut on_clause = String::new();
         if !self.on_cond.is_empty() {
-            on_clause.push_str(&self.on_cond.first().expect("present").to_sql::<DB>());
+            on_clause.push_str(
+                format!(
+                    "ON {}",
+                    &self.on_cond.first().expect("present").to_sql::<DB>()
+                )
+                .as_str(),
+            );
             for on in self.on_cond.iter().skip(1) {
                 on_clause.push_str(&format!(" AND {}", on.to_sql::<DB>()));
             }
         }
-        format!(
-            "JOIN {} {} ON {}",
-            self.table_name, self.alias_name, on_clause
-        )
+        format!("JOIN {} {}", self.table.to_sql::<DB>(), on_clause)
     }
 }
 
@@ -254,6 +268,29 @@ impl SqlTableSelection {
             // join_clause: None,
             rename_as: Some(new_name.to_string()),
         }
+    }
+
+    pub fn to_sql<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        // let mut res = String::from('(');
+        let mut res = String::new();
+
+        match &self.selected_table {
+            SqlTable::SqlQuery(sql_select_query) => {
+                res.push_str(&format!("({})", sql_select_query.to_sql::<DB>()));
+            }
+            SqlTable::TableName(name) => res.push_str(name),
+        }
+
+        // res.push(')');
+
+        if let Some(alias) = &self.rename_as {
+            res.push_str(&format!(" as {alias}"));
+        }
+
+        res
     }
 }
 impl From<String> for SqlTableSelection {
@@ -292,12 +329,101 @@ impl From<&str> for SqlTable {
     }
 }
 
+/// A selected column in an SQL Select query
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    /// The value of the selected column
+    pub value: ColumnValue,
+    /// The new label to rename the selected column to, if any.
+    pub rename_as: Option<String>,
+}
+
+impl Column {
+    pub fn translate_to_column_name<DB>(&self) -> String
+    where
+        DB: Database + DbQuerySystem<DB>,
+    {
+        let col_value = match &self.value {
+            ColumnValue::MathExpr(expr) => DB::translate_math_expr(expr),
+            ColumnValue::WindowFn(fn_name, aggregate_expr, grouping_expr) => {
+                let mut res = format!(
+                    "{fn_name}({}) OVER (",
+                    DB::translate_math_expr(aggregate_expr)
+                );
+
+                if !grouping_expr.is_empty() {
+                    let mut grouping_expr_iter = grouping_expr.iter();
+                    res.push_str(&format!(
+                        "PARTITION BY {}",
+                        DB::translate_math_expr(grouping_expr_iter.next().expect("value"))
+                    ));
+                    for expr in grouping_expr_iter {
+                        res.push_str(&format!(", {}", DB::translate_math_expr(expr)));
+                    }
+                }
+                res.push(')');
+
+                res
+            }
+        };
+        format!(
+            "{}{}",
+            col_value,
+            match &self.rename_as {
+                Some(name) => format!(" as \"{name}\""),
+                None => String::new(),
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnValue {
+    /// Contains the data necessary for an SQL window function, i.e. a tuple:
+    /// `(Name of the function, the expression inside the window function, and the aggregate expressions)`.
+    WindowFn(String, MathExpression<FnArg>, Vec<MathExpression<FnArg>>),
+    /// A simple math expression.
+    MathExpr(MathExpression<FnArg>),
+}
+
+impl From<MathExpression<FnArg>> for Column {
+    fn from(value: MathExpression<FnArg>) -> Self {
+        Column {
+            value: ColumnValue::MathExpr(value),
+            rename_as: None,
+        }
+    }
+}
+impl From<(MathExpression<FnArg>, Option<String>)> for Column {
+    fn from(value: (MathExpression<FnArg>, Option<String>)) -> Self {
+        Column {
+            value: ColumnValue::MathExpr(value.0),
+            rename_as: value.1,
+        }
+    }
+}
+
+impl From<String> for Column {
+    fn from(value: String) -> Self {
+        Self {
+            value: value.into(),
+            rename_as: None,
+        }
+    }
+}
+
+impl From<String> for ColumnValue {
+    fn from(value: String) -> Self {
+        ColumnValue::MathExpr(FnArg::Constant(ConstantValue::Identifier(value)).into())
+    }
+}
+
 /// Represents an SqlQuery that is general for any database system as it will be built for each one differently.
 /// See [`DbQuerySystem::to_sql`] (or even [`SqlSelectQuery::to_sql`]) to understand how to translate it into a valid sql query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlSelectQuery {
     /// Contains all the column to choose
-    pub select: Vec<MathExpression<FnArg>>,
+    pub select: Vec<Column>,
     pub distinct: bool,
     /// Contains all the table to choose
     pub from: Vec<SqlTableSelection>,
@@ -316,20 +442,34 @@ impl SqlSelectQuery {
     /// Simply selects every row from the given table.
     /// In SQLite: `SELECT * FROM table`
     pub fn select_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
-        Self::select_column_from_table("*", table)
+        Self::select_column_from_table("*", None, table)
     }
     pub fn select_column_from_table(
         column_name: impl ToString,
+        rename_to: Option<String>,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
+        Self::select_columns_with_rename_from_table(
+            vec![(
+                FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into(),
+                rename_to,
+            )],
+            table,
+        )
+    }
+
+    pub fn select_columns_expr_from_table(
+        columns: Vec<MathExpression<FnArg>>,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
         Self::select_columns_from_table(
-            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()],
+            columns.into_iter().map(|expr| expr.into()).collect(),
             table,
         )
     }
 
     pub fn select_columns_from_table(
-        columns: Vec<MathExpression<FnArg>>,
+        columns: Vec<Column>,
         table: impl Into<SqlTableSelection>,
     ) -> Self {
         Self {
@@ -343,10 +483,25 @@ impl SqlSelectQuery {
         }
     }
 
+    pub fn select_columns_with_rename_from_table(
+        columns: Vec<(MathExpression<FnArg>, Option<String>)>,
+        table: impl Into<SqlTableSelection>,
+    ) -> Self {
+        Self {
+            select: columns.into_iter().map(|expr| expr.into()).collect(),
+            distinct: false,
+            from: vec![table.into()],
+            joins: Vec::new(),
+            where_clause: None,
+            group_by: vec![],
+            limit: None,
+        }
+    }
+
     /// Gets the number of rows stored inside the given table.
     /// In SQLite: `SELECT count(*) FROM table`
     pub fn select_count_all_from_table(table: impl Into<SqlTableSelection>) -> Self {
-        Self::select_column_from_table("COUNT(*)", table)
+        Self::select_column_from_table("COUNT(*)", None, table)
     }
 
     /// Returns the *same* query but with the given **where** clause, overwritting the previous one if it existed.
@@ -359,13 +514,16 @@ impl SqlSelectQuery {
         self.distinct = value;
     }
 
-    pub fn set_col_selection(&mut self, column_name: impl ToString) {
-        self.select =
-            vec![FnArg::Constant(ConstantValue::Identifier(column_name.to_string())).into()];
+    pub fn set_col_selection(&mut self, column: Column) {
+        self.select = Vec::from([column]);
     }
 
-    pub fn set_cols_selection(&mut self, columns: Vec<MathExpression<FnArg>>) {
+    pub fn set_cols_selection(&mut self, columns: Vec<Column>) {
         self.select = columns;
+    }
+
+    pub fn add_column(&mut self, column: Column) {
+        self.select.push(column);
     }
 
     /// Encapsulates the previous conditions with an [`Condition::And`] composed of the previous condition and the given one.
@@ -518,6 +676,15 @@ where
     }
 
     fn translate_math_expr(expr: &MathExpression<FnArg>) -> String {
+        let parenthesis_fn = |val: &MathExpression<FnArg>| -> String {
+            let val_sql = Self::translate_math_expr(val);
+            if val.is_primitif() {
+                val_sql
+            } else {
+                format!("({val_sql})")
+            }
+        };
+
         match expr {
             MathExpression::Primitif(arg_type) => match arg_type {
                 FnArg::FnCall(fn_ref) => {
@@ -529,7 +696,7 @@ where
                 FnArg::Dataset => format!("{CANONICAL_TABLE_NAME}.{PK_NAME}"),
             },
             MathExpression::Negation(math_expression) => {
-                format!("-({})", Self::translate_math_expr(math_expression))
+                format!("-{}", parenthesis_fn(math_expression))
             }
             MathExpression::Floor(math_expression) => {
                 format!("floor({})", Self::translate_math_expr(math_expression))
@@ -544,16 +711,16 @@ where
                 format!("sqrt({})", Self::translate_math_expr(math_expression))
             }
             MathExpression::BinOperation { left, op, right } => {
-                let left = Self::translate_math_expr(left);
-                let right = Self::translate_math_expr(right);
+                let left = parenthesis_fn(left);
+                let right = parenthesis_fn(right);
 
                 match op {
-                    ArithmOp::Add => format!("({}) + ({})", left, right),
-                    ArithmOp::Subtract => format!("({}) - ({})", left, right),
-                    ArithmOp::Multiply => format!("({}) * ({})", left, right),
-                    ArithmOp::Divide => format!("({}) / ({})", left, right),
-                    ArithmOp::Power => format!("pow(({}), ({}))", left, right),
-                    ArithmOp::Modulo => format!("mod(({}), ({}))", left, right),
+                    ArithmOp::Add => format!("{} + {}", left, right),
+                    ArithmOp::Subtract => format!("{} - {}", left, right),
+                    ArithmOp::Multiply => format!("{} * {}", left, right),
+                    ArithmOp::Divide => format!("{} / {}", left, right),
+                    ArithmOp::Power => format!("pow({}, {})", left, right),
+                    ArithmOp::Modulo => format!("mod({}, {})", left, right),
                 }
             }
         }

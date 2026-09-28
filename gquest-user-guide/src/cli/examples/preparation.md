@@ -1,3 +1,17 @@
+# Preparation
+
+## Dataset
+
+```bash
+gquest add geng 1:8
+```
+
+
+## Modules
+
+## Configuration file
+
+```json
 {
   "batch_size": 6500,
   "modules": [
@@ -48,11 +62,6 @@
       "output": "numeric"
     },
     {
-      "function": "is_planar",
-      "path": "modules/is_planar.py",
-      "output": "numeric"
-    },
-    {
       "function": "chromatic_nb",
       "path": "modules/chromatic_nb",
       "output": "numeric"
@@ -78,16 +87,6 @@
       "output": "numeric"
     },
     {
-      "function": "max",
-      "path": "modules/max_degree.py",
-      "output": "string"
-    },
-    {
-      "function": "comp",
-      "path": "modules/complement.py",
-      "output": "graph"
-    },
-    {
       "function": "eci",
       "path": "modules/eci.py",
       "output": "numeric"
@@ -110,3 +109,4 @@
     }
   ]
 }
+```

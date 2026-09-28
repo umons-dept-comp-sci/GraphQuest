@@ -7,7 +7,10 @@ use crate::{
         data_types::{ConstantValue, ValueType},
         module::Module,
     },
-    parser::parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
+    parser::{
+        extremal_expression::ExtremalSelection,
+        parsed_expression::{ArithmOp, Comparison, Condition, MathExpression},
+    },
 };
 
 #[derive(Debug, Error)]
@@ -53,7 +56,7 @@ pub enum RelationGraphError {
 pub type FnRef = (String, usize);
 
 /// A relation graph is used to keep track of the different relations between function calls.
-/// Here function calls are nodes, and if a function call depends on another then it adds an edge. 
+/// Here function calls are nodes, and if a function call depends on another then it adds an edge.
 #[derive(Debug)]
 pub struct RelationGraph<'a> {
     modules: &'a HashMap<String, Module>,
@@ -340,6 +343,22 @@ impl<'a> RelationGraph<'a> {
         }
     }
 
+    pub fn try_is_valid_extremal_selection(
+        &self,
+        extremal_selection: &ExtremalSelection<FnArg>,
+    ) -> Result<(), RelationGraphError> {
+        let aggregate_type = self.try_get_type(&extremal_selection.aggregate_expr)?;
+        if aggregate_type != ValueType::Numeric && aggregate_type != ValueType::Bool {
+            Err(RelationGraphError::IncompatibleArgumentType {
+                operator: extremal_selection.class_type.to_string(),
+                given_arg: aggregate_type,
+                expected_arg: ValueType::Numeric.to_string(),
+            })
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn try_is_valid_cond(&self, cond: &Condition<FnArg>) -> Result<(), RelationGraphError> {
         match cond {
             Condition::Or(left_cond, right_cond) | Condition::And(left_cond, right_cond) => {
@@ -409,7 +428,7 @@ impl<'a> RelationGraph<'a> {
         Ok(self.get_call(fn_ref)?.string_value.to_string())
     }
 
-    fn expression_to_string(
+    pub fn expression_to_string(
         &self,
         expr: &MathExpression<FnArg>,
     ) -> Result<String, RelationGraphError> {

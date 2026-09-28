@@ -5,7 +5,7 @@ use tokio_stream::Stream;
 use crate::{
     data_handler::{data_types::ValueType, module::TypedArg},
     database_handler::{
-        DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery, SqlTable,
+        DbQuerySystem, GraphDatabase, GraphDb, GraphDbRuntimeError, SqlSelectQuery,
     },
 };
 
@@ -125,35 +125,21 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         for column_i in 0..query.select.len() - 1 {
             res.push_str(&format!(
                 "{}, ",
-                Self::translate_math_expr(&query.select[column_i])
+                &query.select[column_i].translate_to_column_name::<Self>()
             ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            Self::translate_math_expr(query.select.last().expect("at least one val"))
+            query
+                .select
+                .last()
+                .expect("at least one val")
+                .translate_to_column_name::<Self>()
         ));
 
         // From clause
         for (i, table) in query.from.iter().enumerate() {
-            res.push('(');
-            match &table.selected_table {
-                SqlTable::SqlQuery(sql_select_query) => {
-                    res.push_str(&format!("({})", &Self::to_sql(sql_select_query)));
-                }
-                SqlTable::TableName(name) => res.push_str(name),
-            }
-            // // Join query
-            // if let Some((tables_to_join, using)) = &table.join_clause {
-            //     for table_name in tables_to_join {
-            //         res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
-            //     }
-            // }
-
-            res.push(')');
-
-            if let Some(alias) = &table.rename_as {
-                res.push_str(&format!(" as {alias}"));
-            }
+            res.push_str(&table.to_sql::<Self>());
 
             if i != query.from.len() - 1 {
                 res.push_str(", ");

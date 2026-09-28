@@ -4,7 +4,7 @@ use crate::{
     data_handler::{data_types::ValueType, module::TypedArg, rel_graph::FnArg},
     database_handler::{
         CANONICAL_TABLE_NAME, DbQuerySystem, FUNCTION_OUTPUT_COL_NAME, GraphDatabase, GraphDb,
-        GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery, SqlTable,
+        GraphDbRuntimeError, GraphDbStartupError, PK_NAME, SqlSelectQuery,
     },
     parser::parsed_expression::{ArithmOp, MathExpression},
 };
@@ -116,33 +116,20 @@ WHERE schemaname != 'pg_catalog' AND
         for column_i in 0..query.select.len() - 1 {
             res.push_str(&format!(
                 "{}, ",
-                Self::translate_math_expr(&query.select[column_i])
+                &query.select[column_i].translate_to_column_name::<Self>()
             ));
         }
         res.push_str(&format!(
             "{} FROM ",
-            Self::translate_math_expr(query.select.last().expect("at least one val"))
+            query
+                .select
+                .last()
+                .expect("at least one val")
+                .translate_to_column_name::<Self>()
         ));
         // From clause
         for (i, table) in query.from.iter().enumerate() {
-            match &table.selected_table {
-                SqlTable::SqlQuery(sql_select_query) => {
-                    res.push('(');
-                    res.push_str(&Self::to_sql(sql_select_query));
-                    res.push(')');
-                }
-                SqlTable::TableName(name) => res.push_str(name),
-            }
-            // // Inner Join query
-            // if let Some((tables_to_join, using)) = &table.join_clause {
-            //     for table_name in tables_to_join {
-            //         res.push_str(&format!(" INNER JOIN {table_name} USING ({using})",));
-            //     }
-            // }
-
-            if let Some(alias) = &table.rename_as {
-                res.push_str(&format!(" as {alias}"));
-            }
+            res.push_str(&table.to_sql::<Self>());
 
             if i != query.from.len() - 1 {
                 res.push_str(", ");

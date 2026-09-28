@@ -1,0 +1,8 @@
+[book]
+title = "GraphQuest User guide"
+authors = ["Pizzel"]
+language = "en"
+
+[output.html]
+additional-css = ["custom_style.css"]
+mathjax-support = true

@@ -32,8 +32,26 @@ async fn main() {
             input_method,
             batch_size,
         } => add_dataset(path, input_method, batch_size).await,
-        Modes::Query { args, config } => query_database(path, args, config, false).await,
-        Modes::Counter { args, config } => query_database(path, args, config, true).await,
+        Modes::Query { contents } => {
+            query_database(
+                path,
+                contents.args,
+                contents.add_expr,
+                contents.config,
+                false,
+            )
+            .await
+        }
+        Modes::Counter { contents } => {
+            query_database(
+                path,
+                contents.args,
+                contents.add_expr,
+                contents.config,
+                true,
+            )
+            .await
+        }
         Modes::Sql { args } => query_raw_sql(path, args).await,
         Modes::Remove { choice } => remove_dataset(path, choice).await,
         Modes::Summary { output } => summary(path, output).await,
