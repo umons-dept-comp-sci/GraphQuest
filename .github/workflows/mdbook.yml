@@ -2,7 +2,7 @@ name: Deploy mdBook
 
 on:
   push:
-    branches: [feat_release_prep]
+    branches: [refactor_queries]
   workflow_dispatch:
 
 permissions:
