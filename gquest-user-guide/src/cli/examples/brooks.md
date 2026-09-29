@@ -2,6 +2,7 @@
 
 For this example, we will *rediscover* Brooks' theorem using the gquest tool.
 
+## Definitions:
 
 **Brook's theorem**\
 Let \\(G=(V,E)\\) be a connected graph with \\(\Delta\\) being its maximum degree. If \\(G\\) is neither complete nor an odd cycle, then:

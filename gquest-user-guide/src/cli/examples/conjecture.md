@@ -1,6 +1,8 @@
 # Refuting a conjecture
 
 
+## Definitions:
+
 Let \\(n\\) and \\(m\\) be two positive integers, with \\(n-1 \\geq m \\geq \\binom{n}{2}\\), then we define \\(d_{n,m}\\) as the result of:
 \\[
     \left\lfloor{\frac{2n+1-\sqrt{17+8(m-n)}}{2}}\right\rfloor.

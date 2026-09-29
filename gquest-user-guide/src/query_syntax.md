@@ -25,41 +25,46 @@ The dataset argument, denoted by `G`, is
 
 ### Functions
 
-A function takes one or more argument and returns a value. Each function is linking to a [module](modules.md) and is defined in a given [configuration file](configs.md).
+A function takes one or more argument and returns a value. Each function is linked to a [module](modules.md) and is defined in a given [configuration file](configs.md).
 
 For example:
-```
-m(G),
-d(n,m)
-d(2,4)
-iso(G, comp(G))
-```
+* `m(G)`,
+* `d(n(G),m(G))` (altough we will see in the next [section](#invariant) that this can be simplified),
+* `d(2,4)`,
+* `iso(G, comp(G))`.
 
 ### Invariant
+Invariants refer to functions that take a graph as their only argument.
+
 A function that takes only one argument of type Graph can be written without explicitly passing the dataset argument `G`.
 
-Invariants refer to functions that take a graph as their only argument. For example:
+For example:
 * `m(G)` is equivalent to `m`, and
 * `chromatic_nb(G)` is equivalent to `chromatic_nb`.
 
 This shorthand allows graph invariants to be used directly in expressions and conditions without explicitly specifying `G`.
 
 
+For example, instead of having to write `d(n(G),m(G))`, we can simply write `d(n,m)`. 
 
 ## Expressions
 
-| **Operations:** | **Syntax:**       |
-| --------------- | ----------------- |
-| Addition        | x + y             |
-| Multiplication  | x * y             |
-| Subtraction     | x - y             |
-| Power           | x ** y `\|` x ^ y |
-| Modulo          | x % y             |
-| Division        | x / y             |
-| Floor division  | x // y            |
+| **Operations:** | **Syntax:**        |
+| --------------- | ------------------ |
+| Addition        | x + y              |
+| Multiplication  | x * y              |
+| Subtraction     | x - y              |
+| Power           | x ** y `and` x ^ y |
+| Modulo          | x % y              |
+| Division        | x / y              |
+| Floor division  | x // y             |
 
 
 
+
+### Unary functions
+
+GraphQuest has also a few built-in unary functions, which are functions that take a number and outputs another number.
 
 | **Unary functions:** | **Syntax:** |
 | -------------------- | ----------- |
@@ -96,5 +101,14 @@ This shorthand allows graph invariants to be used directly in expressions and co
 
 
 ## Extremal selections
+
+GraphQuest can select graphs according to an extremal value.
+
+
+For example:
+* `max(chromatic_nb)`:
+* `max(chromatic_nb;n,m)`:
+* `max(chromatic_nb(comp(G));n % m)`
+
 
 ## If-Then statements

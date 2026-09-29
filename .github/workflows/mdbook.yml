@@ -1,0 +1,50 @@
+name: Deploy mdBook
+
+on:
+  push:
+    branches: [feat_release_prep]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: cargo install mdbook
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build book
+        working-directory: gquest-user-guide
+        run: mdbook build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./gquest-user-guide/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
