@@ -106,6 +106,91 @@ impl QueryTable {
         }
     }
 
+    /// Turns the current table into a valid markdown table.
+    pub fn to_markdown(&self) -> String {
+        if !self.header_added {
+            // Return Empty table
+            return String::from(
+                r"| Empty table |
+|-------------|
+|      /      |",
+            );
+        }
+
+        let nb_cols = self
+            .table_data
+            .first_lines
+            .first()
+            .expect("header present")
+            .len();
+
+        let mut md = String::from("");
+        let mut final_table: Vec<Vec<String>> = Vec::new();
+
+        let mut max_size = [0].repeat(nb_cols);
+
+        final_table.push(
+            self.table_data
+                .first_lines
+                .first()
+                .expect("present")
+                .iter()
+                .enumerate()
+                .map(|(i, headers)| {
+                    max_size[i] = max_size[i].max(headers.len() + 4);
+                    format!("**{headers}**")
+                })
+                .collect(),
+        );
+
+        // Find maximum string len inside table to format it
+        for (id, line) in self.table_data.first_lines.iter().skip(1).enumerate() {
+            final_table.push(Vec::new());
+            line.iter().enumerate().for_each(|(i, x)| {
+                let sanitized = sanitize_markdown(x);
+                max_size[i] = max_size[i].max(sanitized.len());
+                final_table[id + 1].push(sanitized.to_string());
+            });
+        }
+
+        if self.table_data.has_overflown {
+            let dots = String::from("...");
+            final_table.push((0..nb_cols).map(|_| dots.clone()).collect());
+
+            max_size.iter_mut().for_each(|max| {
+                *max = (*max).max(dots.len());
+            });
+        }
+
+        for line in &self.table_data.last_lines {
+            final_table.push(Vec::new());
+            line.iter().enumerate().for_each(|(i, x)| {
+                let sanitized = sanitize_markdown(x);
+                max_size[i] = max_size[i].max(sanitized.len());
+                final_table
+                    .last_mut()
+                    .expect("one line added")
+                    .push(sanitized.to_string());
+            });
+        }
+
+        let mut final_table_it = final_table.into_iter();
+
+        md.push_str(&to_markdown_row(
+            &final_table_it.next().expect("present"),
+            &max_size,
+        ));
+
+        let header_line: Vec<String> = (0..nb_cols).map(|i| "-".repeat(max_size[i])).collect();
+
+        md.push_str(&to_markdown_row(&header_line, &max_size));
+        for line in final_table_it {
+            md.push_str(&to_markdown_row(&line, &max_size));
+        }
+
+        md
+    }
+
     /// Turns the current table into a valid latex table
     /// (also sanitizes the data to prevent any problems).
     pub fn to_latex(&self) -> String {
@@ -137,13 +222,13 @@ impl QueryTable {
 
         // Find maximum string len inside table to format it
         let max_size = {
-            let mut max = 0;
+            let mut max = [0].repeat(nb_cols);
             for (id, line) in self.table_data.first_lines.iter().enumerate() {
                 sanitized_table.push(Vec::new());
 
-                line.iter().for_each(|x| {
+                line.iter().enumerate().for_each(|(i, x)| {
                     let sanitized_val = sanitize_latex(x, id == 0);
-                    max = max.max(sanitized_val.len());
+                    max[i] = max[i].max(sanitized_val.len());
                     sanitized_table[id].push(sanitized_val);
                 });
             }
@@ -151,14 +236,16 @@ impl QueryTable {
             if self.table_data.has_overflown {
                 let dots = String::from("$\\cdots$");
                 sanitized_table.push((0..nb_cols).map(|_| dots.clone()).collect());
-                max = max.max(dots.len());
+                max.iter_mut().for_each(|max| {
+                    *max = (*max).max(dots.len());
+                });
             }
 
             for line in &self.table_data.last_lines {
                 sanitized_table.push(Vec::new());
-                line.iter().for_each(|x| {
+                line.iter().enumerate().for_each(|(i, x)| {
                     let sanitized_val = sanitize_latex(x, false);
-                    max = max.max(sanitized_val.len());
+                    max[i] = max[i].max(sanitized_val.len());
                     sanitized_table
                         .last_mut()
                         .expect("one line added")
@@ -169,7 +256,7 @@ impl QueryTable {
         };
 
         for line in &sanitized_table {
-            tex.push_str(&to_latex_row(line, max_size));
+            tex.push_str(&to_latex_row(line, &max_size));
         }
 
         tex.push_str("\\end{tabular}\n\\end{table}");
@@ -215,19 +302,57 @@ fn sanitize_latex(value: &str, bold: bool) -> String {
     }
 }
 
-fn to_latex_row(line: &[String], fill_len: usize) -> String {
+fn to_latex_row(line: &[String], fill_len: &[usize]) -> String {
     let mut latex_line = String::new();
-    for val in line.iter().take(line.len() - 1) {
-        latex_line.push_str(&format!("{:}{} & ", val, " ".repeat(fill_len - val.len())));
+    for (i, val) in line.iter().enumerate().take(line.len() - 1) {
+        latex_line.push_str(&format!(
+            "{:}{} & ",
+            val,
+            " ".repeat(fill_len[i] - val.len())
+        ));
     }
     let last_line = line.last().expect("one line");
     latex_line.push_str(&format!(
         "{:}{} \\\\ \\hline\n",
         last_line,
-        " ".repeat(fill_len - last_line.len())
+        " ".repeat(fill_len.last().expect("at least one val") - last_line.len())
     ));
 
     latex_line
+}
+
+fn sanitize_markdown(value: &str) -> String {
+    let mut san_value = String::new();
+
+    value.chars().for_each(|c| {
+        let c_str = c.to_string();
+        san_value.push_str(match &c {
+            '\\' => "\\\\",
+            '|' => "\\|",
+            _ => &c_str,
+        });
+    });
+
+    san_value
+}
+
+fn to_markdown_row(line: &[String], fill_len: &[usize]) -> String {
+    let mut md_line = String::new();
+    if line.len() == 1 {
+    } else {
+        md_line.push_str("| ");
+        for (i, val) in line.iter().enumerate() {
+            md_line.push_str(&format!(
+                "{:}{} | ",
+                val,
+                " ".repeat(fill_len[i] - val.len())
+            ));
+        }
+        md_line.pop();
+        md_line.push('\n');
+    }
+
+    md_line
 }
 
 impl SaveOutput for QueryTable {
