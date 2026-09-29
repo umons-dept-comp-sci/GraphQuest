@@ -110,7 +110,6 @@ async fn execute_query(
     // try to parse query:
     let mut query = QueryParser::parse_query(query.clone(), epsilon)?;
     let add_expressions = QueryParser::parse_expression_list(add_args)?;
-    println!("{add_expressions:?}");
     if counter {
         query.to_counter();
     }

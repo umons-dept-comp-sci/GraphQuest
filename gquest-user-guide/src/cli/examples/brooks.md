@@ -27,5 +27,5 @@ gquest query "n == 7 -> is_connected -> not chromatic_nb <= max_degree" configs.
 
 
 ```bash
-gquest query "is_connected -> not(chromatic_nb <= max_degree)" -a "n;is_complete;is_cycle;n%2"
+gquest query "is_connected -> not(chromatic_nb <= max_degree)" -a "n;is_complete;is_cycle;n%2" configs.json
 ```
