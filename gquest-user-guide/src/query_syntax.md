@@ -75,12 +75,19 @@ Expressions can be constructed using arithmetic operators.
 
 
 For example:
-* n + 1
-* m * 2
-* chromatic_nb + max_degree
-* (n + m) // 2
+```
+n + 1
+m * 2
+chromatic_nb + max_degree
+(n + m) // 2
+```
 
 
+Expressions respect the expected order of operations.
+
+For example:
+* `n * 2 ** 2` is equivalent to `n * (2 ** 2)`,
+* `n * 5 + 1` is equivalent to `(n * 5) + 1`.
 
 ### Unary functions
 
@@ -223,8 +230,8 @@ The query is evaluated from left to right, with each filter being applied to the
 
 The final dataset therefore contains graphs satisfying **all three conditions**: an even number of vertices, more than 5 edges, and a chromatic number greater than 3. By applying the filters sequentially, GraphQuest can reduce the number of graphs for which the chromatic number needs to be computed.
 
-
-Because GraphQuest only computes values based on the current dataset, filtering it can also be useful when dealing with invariants that are only defined for certain classes of graphs.
+> [!tip]
+> Because GraphQuest only computes values based on the current dataset, filtering it can also be useful when dealing with invariants that are only defined for certain classes of graphs.
 
 
 For example, suppose that the invariant `eci(G)` is the eccentric connectivity index, denoted by \\(\xi^c(G)\\), and is defined only for connected graphs. If we wanted to select the set of connected graphs that maximise the value of `eci(G)` for each order present in the dataset, we could do:

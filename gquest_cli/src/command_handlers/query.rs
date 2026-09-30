@@ -31,7 +31,6 @@ pub async fn query_database(
     query_args: QueryArgs,
     add_args: Option<String>,
     config_arg: ConfigFileArg,
-    is_counter: bool,
 ) -> Result<(), CliError> {
     let output = OutputHandler::new(query_args.output);
 
@@ -52,7 +51,7 @@ pub async fn query_database(
         query_args.query,
         add_args.unwrap_or_default(),
         epsilon,
-        is_counter,
+        query_args.counter,
     )
     .await;
 

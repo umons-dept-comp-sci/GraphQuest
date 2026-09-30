@@ -73,16 +73,6 @@ pub enum Modes {
         #[command(flatten)]
         contents: QueryCounterContents,
     },
-    /// Tries to find counter examples in the dataset.
-    #[command(
-        alias = "c",
-        subcommand_value_name = "OUTPUT",
-        subcommand_help_heading = "Outputs"
-    )]
-    Counter {
-        #[command(flatten)]
-        contents: QueryCounterContents,
-    },
     // /// Shows the tables present in the database
     // #[command(alias = "sm")]
     // Summary {
@@ -107,10 +97,10 @@ pub struct QueryArgs {
     /// The query to ask the database
     #[clap()]
     pub query: String,
-    // #[command(subcommand, name = "OUTPUT")]
-    // pub output: Option<OutputChoice>,
     #[clap(flatten)]
     pub output: OutputSettings,
+    #[clap(short, long, default_value("false"))]
+    pub counter: bool,
 }
 
 #[derive(Args, Debug, Clone)]
