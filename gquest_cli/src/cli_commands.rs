@@ -83,12 +83,12 @@ pub enum Modes {
         #[command(flatten)]
         contents: QueryCounterContents,
     },
-    /// Shows the tables present in the database
-    #[command(alias = "sm")]
-    Summary {
-        #[command(subcommand, name = "OUTPUT")]
-        output: Option<OutputChoice>,
-    },
+    // /// Shows the tables present in the database
+    // #[command(alias = "sm")]
+    // Summary {
+    //     #[command(subcommand, name = "OUTPUT")]
+    //     output: Option<Output>,
+    // },
 }
 
 #[derive(Args, Debug, Clone)]
@@ -107,8 +107,10 @@ pub struct QueryArgs {
     /// The query to ask the database
     #[clap()]
     pub query: String,
-    #[command(subcommand, name = "OUTPUT")]
-    pub output: Option<OutputChoice>,
+    // #[command(subcommand, name = "OUTPUT")]
+    // pub output: Option<OutputChoice>,
+    #[clap(flatten)]
+    pub output: OutputSettings,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -170,31 +172,40 @@ pub struct BatchSizeArg {
     pub batch_size: usize,
 }
 
-#[derive(Subcommand, Debug, Clone)]
-pub enum OutputChoice {
-    /// Stores the result as a `csv` file
-    File {
-        /// The path of the file
-        path: String,
-        /// The separator of the values
-        #[clap(short, default_value = ",")]
-        separator: char,
-    },
-    /// Prints result line by line to the standart output
-    Stdout,
-    /// Prints the result as a pretty table (default)
-    #[group(required = false)]
-    Table {
-        /// [n:m] Only stores the n first and the m last rows. Can improve performances and visibility.
-        #[clap(short)]
-        partial: Option<String>,
-        /// Returns the result as a valid latex table.
-        #[clap(short, long, default_value("false"))]
-        latex: bool,
-        /// Hides the index column of the table.
-        #[clap(short, long, default_value("false"))]
-        no_id: bool,
-    },
+// #[derive(Subcommand, Debug, Clone)]
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum TableOutputFormat {
+    Table,
+    PlainText,
+    Latex,
+    Markdown,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OutputSettings {
+    /// (n:m) Only displays the n first and the m last rows.
+    #[clap(short)]
+    pub partial: Option<String>,
+    /// Hides the index column of the table.
+    #[clap(short, long, default_value("false"))]
+    pub no_id: bool,
+    /// The format of the result.
+    #[arg(short, long, value_enum, default_value_t = TableOutputFormat::Table)]
+    pub format: TableOutputFormat,
+
+    /// Saves the entire output as a csv file
+    #[clap(flatten)]
+    pub output_file: OutputFile,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OutputFile {
+    /// Stores the entire result as a `csv` file at the given path
+    #[arg(short, long)]
+    pub output_path: Option<String>,
+    /// The separator of the values
+    #[clap(short, default_value = ",", requires = "output_path")]
+    pub separator: char,
 }
 
 /// Removes data from the database

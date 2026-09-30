@@ -4,7 +4,7 @@ use gquest_cli::{
     cli_commands::{CliArg, Modes},
     command_handlers::{
         add_remove::{add_dataset, remove_dataset},
-        query::{query_database, query_raw_sql, summary},
+        query::{query_database, query_raw_sql},
     },
 };
 use log::error;
@@ -54,7 +54,7 @@ async fn main() {
         }
         Modes::Sql { args } => query_raw_sql(path, args).await,
         Modes::Remove { choice } => remove_dataset(path, choice).await,
-        Modes::Summary { output } => summary(path, output).await,
+        // Modes::Summary { output } => summary(path, output).await,
     } {
         Ok(_) => {}
         Err(e) => {

@@ -106,6 +106,45 @@ impl QueryTable {
         }
     }
 
+    pub fn to_plaintext(&self) -> String {
+        let nb_cols = self.get_nb_cols();
+
+        if !self.header_added {
+            // Return Empty table
+            return String::from(r"No values");
+        }
+
+        let mut res = String::new();
+
+        for line in &self.table_data.first_lines {
+            for value in line {
+                res.push_str(&format!("{value} "));
+            }
+            res.pop();
+            res.push('\n');
+        }
+
+        if self.table_data.has_overflown {
+            for _ in 0..nb_cols {
+                res.push_str("... ");
+            }
+            res.pop();
+            res.push('\n');
+        }
+
+        for line in &self.table_data.last_lines {
+            for value in line {
+                res.push_str(&format!("{value} "));
+            }
+            res.pop();
+            res.push('\n');
+        }
+        // remove last '\n'
+        res.pop();
+
+        res
+    }
+
     /// Turns the current table into a valid markdown table.
     pub fn to_markdown(&self) -> String {
         if !self.header_added {
@@ -117,12 +156,7 @@ impl QueryTable {
             );
         }
 
-        let nb_cols = self
-            .table_data
-            .first_lines
-            .first()
-            .expect("header present")
-            .len();
+        let nb_cols = self.get_nb_cols();
 
         let mut md = String::from("");
         let mut final_table: Vec<Vec<String>> = Vec::new();
@@ -207,12 +241,7 @@ impl QueryTable {
             );
         }
 
-        let nb_cols = self
-            .table_data
-            .first_lines
-            .first()
-            .expect("header present")
-            .len();
+        let nb_cols = self.get_nb_cols();
 
         let mut tex = String::from("\\begin{table}[]\n\\begin{tabular}{|");
         tex.push_str("l|".repeat(nb_cols).as_str());
@@ -261,6 +290,14 @@ impl QueryTable {
 
         tex.push_str("\\end{tabular}\n\\end{table}");
         tex
+    }
+
+    fn get_nb_cols(&self) -> usize {
+        self.table_data
+            .first_lines
+            .first()
+            .expect("header present")
+            .len()
     }
 
     fn build_table(&self) -> Table {
