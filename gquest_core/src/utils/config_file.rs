@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, hash_map::Entry},
-    fs::File,
-    io,
-    path::Path,
-};
+use std::{fs::File, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,25 +7,23 @@ use thiserror::Error;
 use crate::{
     data_handler::{
         data_types::ValueTypeError,
-        module::{Module, ModuleError, TypedArg},
+        module::{ModuleLoader, ModuleTemplate, TypedArg},
     },
     parser::query_parser::{ParsingError, QueryParser},
 };
 
 #[derive(Error, Debug)]
 pub enum ConfigFileError {
-    #[error("Could not open config file at \"{1}\" because : `{0}`")]
+    #[error("Could not open config file at \"{1}\" because: `{0}`")]
     FileError(io::Error, String),
-    #[error("Could not read json file : `{0}`")]
+    #[error("Could not read json file: `{0}`")]
     JsonError(#[from] serde_json::Error),
-    #[error("Could not create one of the given invariant : `{0}`")]
-    InvariantError(#[from] ModuleError),
     #[error("At least one invariant should be provided in the file")]
     NoInvariantError,
-    #[error("Could not create a module : `{0}`")]
+    #[error("Could not parse one argument of a module: `{0}`")]
     ArgParseError(#[from] ValueTypeError),
-    #[error("The modules at the paths \"{0}\" and \"{1}\" have the same function name.")]
-    SameFunctionNameError(String, String),
+    #[error("Two modules have the same function name:\"{0}\".")]
+    SameFunctionNameError(String),
     #[error("While parsing the expression \"{0}\" for \"{1}\" ran into an error: {2}")]
     ParsingError(String, String, ParsingError),
 }
@@ -81,7 +74,7 @@ pub struct ConfigFile {
     /// The maximum number of threads to use when computing invariants
     nb_threads: usize,
     /// An hashmap containing the modules that the program can use : `Function name` -> `Module`.
-    modules: HashMap<String, Module>,
+    module_loader: ModuleLoader,
     // /// The list of aliases : `key` -> `value`
     // aliases: Vec<(String, String)>,
 }
@@ -120,8 +113,12 @@ impl ConfigFile {
         from_json_data(serde_json::from_value(value)?)
     }
 
-    pub fn get_module_refs(&self) -> &HashMap<String, Module> {
-        &self.modules
+    pub fn get_mut_module_loader(&mut self) -> &mut ModuleLoader {
+        &mut self.module_loader
+    }
+
+    pub fn get_module_loader(&self) -> &ModuleLoader {
+        &self.module_loader
     }
 
     pub fn get_batch_size(&self) -> usize {
@@ -142,79 +139,61 @@ fn from_json_data(config_json: ConfigJsonFile) -> Result<ConfigFile, ConfigFileE
     if config_json.modules.is_empty() {
         return Err(ConfigFileError::NoInvariantError);
     }
-    let mut modules: HashMap<String, Module> = HashMap::new();
+    let mut module_loader = ModuleLoader::default();
 
     for module in config_json.modules {
-        match modules.entry(module.function.clone()) {
-            Entry::Occupied(occupied_entry) => {
-                return Err(ConfigFileError::SameFunctionNameError(
-                    occupied_entry
-                        .get()
-                        .exec_path
-                        .as_os_str()
-                        .to_str()
-                        .expect("correct path string") // it was inputted as a string so this is safe
-                        .to_string(),
-                    module.path,
-                ));
-            }
-            Entry::Vacant(vacant_entry) => {
-                let module = if let Some(args_json) = module.args {
-                    let add_args = match module.add_args {
-                        Some(args) => {
-                            let mut add_args = Vec::with_capacity(args.len());
-                            for arg in args {
-                                match QueryParser::parse_expression(&arg) {
-                                    Ok(expr) => {
-                                        add_args.push(expr);
-                                    }
-                                    Err(e) => {
-                                        return Err(ConfigFileError::ParsingError(
-                                            arg,
-                                            module.function,
-                                            e,
-                                        ));
-                                    }
-                                }
+        let fn_name_cp = module.function.to_owned();
+        let res = if let Some(args_json) = module.args {
+            let add_args = match module.add_args {
+                Some(args) => {
+                    let mut add_args = Vec::with_capacity(args.len());
+                    for arg in args {
+                        match QueryParser::parse_expression(&arg) {
+                            Ok(expr) => {
+                                add_args.push(expr);
                             }
-                            add_args
+                            Err(e) => {
+                                return Err(ConfigFileError::ParsingError(arg, module.function, e));
+                            }
                         }
-                        None => Vec::new(),
-                    };
-                    // From JSON to real module types
-                    let mut args = Vec::with_capacity(args_json.len());
-                    for arg in args_json {
-                        args.push(TypedArg {
-                            name: arg.name,
-                            data_type: arg.class.try_into()?,
-                        });
                     }
-                    Module::new(
-                        module.path,
-                        module.function,
-                        args,
-                        add_args,
-                        module.output.try_into()?,
-                        module.batch_size,
-                    )
-                } else {
-                    Module::new_invariant(
-                        module.path,
-                        module.function,
-                        module.output.try_into()?,
-                        module.batch_size,
-                    )
-                }?;
-                vacant_entry.insert_entry(module);
+                    add_args
+                }
+                None => Vec::new(),
+            };
+            // From JSON to real module types
+            let mut args = Vec::with_capacity(args_json.len());
+            for arg in args_json {
+                args.push(TypedArg {
+                    name: arg.name,
+                    data_type: arg.class.try_into()?,
+                });
             }
+            module_loader.add_module_template(ModuleTemplate::new(
+                module.path,
+                module.function,
+                args,
+                add_args,
+                module.output.try_into()?,
+                module.batch_size,
+            ))
+        } else {
+            module_loader.add_module_template(ModuleTemplate::new_invariant(
+                module.path,
+                module.function,
+                module.output.try_into()?,
+                module.batch_size,
+            ))
+        };
+        if res.is_some() {
+            return Err(ConfigFileError::SameFunctionNameError(fn_name_cp));
         }
     }
 
     Ok(ConfigFile {
         epsilon: config_json.epsilon,
-        modules,
+        module_loader,
         nb_threads: config_json.nb_threads.unwrap_or(1),
         batch_size: config_json.batch_size.unwrap_or(5000),
-        // aliases: config_json.aliases.unwrap_or_default(),
     })
 }

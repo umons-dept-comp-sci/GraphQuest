@@ -78,11 +78,6 @@
       "output": "numeric"
     },
     {
-      "function": "max",
-      "path": "modules/max_degree.py",
-      "output": "string"
-    },
-    {
       "function": "comp",
       "path": "modules/complement.py",
       "output": "graph"

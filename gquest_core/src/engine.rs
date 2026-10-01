@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use log::{debug, info};
@@ -8,7 +8,7 @@ use tokio::task::JoinError;
 use crate::{
     data_handler::{
         data_types::ConstantValue,
-        module::{Module, ModuleError},
+        module::{Module, ModuleError, ModuleLoader},
         rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
     },
     database_handler::{
@@ -84,23 +84,20 @@ impl GquestEngine {
         add_expr: Vec<MathExpression<ParsedArgType>>,
         output: &mut O,
     ) -> Result<(), EngineError> {
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
+        let batch_size = self.config.get_batch_size();
+        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
         info!("Starting query's modules executions");
         loop {
             match query {
                 QueryStatement::ExtremalCondition(condition) => {
                     info!("Executing: {condition}");
-                    cond_engine
-                        .add_new_extr_cond(condition, self.config.get_batch_size())
-                        .await?;
+                    cond_engine.add_new_extr_cond(condition, batch_size).await?;
                     break;
                 }
                 QueryStatement::IfThen(condition, query_statement) => {
                     info!("Executing: {condition}");
-                    cond_engine
-                        .add_new_extr_cond(condition, self.config.get_batch_size())
-                        .await?;
+                    cond_engine.add_new_extr_cond(condition, batch_size).await?;
 
                     query = *query_statement;
                     info!("Moving on to the next If-Then clause");
@@ -112,7 +109,7 @@ impl GquestEngine {
         if !add_expr.is_empty() {
             info!("Starting additional expressions execution");
             cond_engine
-                .add_additional_expressions(add_expr, self.config.get_batch_size())
+                .add_additional_expressions(add_expr, batch_size)
                 .await?;
 
             info!("Finished additional expressions execution");
@@ -128,11 +125,10 @@ impl GquestEngine {
         output: &mut O,
     ) -> Result<(), EngineError> {
         info!("Starting condition's modules execution");
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
+        let batch_size = self.config.get_batch_size();
+        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
-        cond_engine
-            .add_new_cond(cond, self.config.get_batch_size())
-            .await?;
+        cond_engine.add_new_cond(cond, batch_size).await?;
         info!("Finished condition's modules execution");
 
         cond_engine.get_result(output).await
@@ -150,7 +146,7 @@ struct ConditionEngine<'a> {
 }
 
 impl<'a> ConditionEngine<'a> {
-    fn new(db: &'a mut AllowedGraphDb, modules: &'a HashMap<String, Module>) -> Self {
+    fn new(db: &'a mut AllowedGraphDb, modules: &'a mut ModuleLoader) -> Self {
         Self {
             db,
             graph: Some(RelationGraph::new(modules)),

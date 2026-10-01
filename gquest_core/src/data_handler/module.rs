@@ -2,6 +2,7 @@ use is_executable::IsExecutable;
 use log::debug;
 use regex::Regex;
 use std::{
+    collections::{HashMap, hash_map::Entry},
     env,
     fmt::{Debug, Display},
     io::{self, BufRead, BufReader, Write},
@@ -33,6 +34,45 @@ pub enum ModuleError {
     ReturnSelf(String),
     #[error("Encountered an IoError : \"{0}\"")]
     IoError(#[from] io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum ModuleLoaderError {
+    UnknownTemplateError {
+        fn_name: String,
+    },
+    UnknownLoadedModuleError {
+        fn_name: String,
+    },
+    LoadError {
+        fn_name: String,
+        path: String,
+        reason: ModuleError,
+    },
+}
+
+impl Display for ModuleLoaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", {
+            match self {
+                ModuleLoaderError::UnknownTemplateError { fn_name } => {
+                    format!("No module template exists with the given function name \"{fn_name}\"")
+                }
+                ModuleLoaderError::UnknownLoadedModuleError { fn_name } => {
+                    format!("No loaded module has the current function name \"{fn_name}\"")
+                }
+                ModuleLoaderError::LoadError {
+                    fn_name,
+                    path,
+                    reason,
+                } => {
+                    format!(
+                        "Failed to load the module with the function name \"{fn_name}\", with the given path \"{path}\", because \"{reason}\"",
+                    )
+                }
+            }
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -101,6 +141,126 @@ impl From<(&str, ValueType)> for TypedArg {
     }
 }
 
+/// Contains the set of available modules. Is used to only try to load modules when they are neeeded.
+#[derive(Default, Debug)]
+pub struct ModuleLoader {
+    templates: HashMap<String, ModuleTemplate>,
+    loaded: HashMap<String, Module>,
+}
+
+impl ModuleLoader {
+    /// Adds a module to the templates.
+    /// If a previously added function has the same name, the new module is not added
+    /// and the previous ones path is returned, otherwise the module is added and nothing is returned.
+    pub fn add_module_template(&mut self, template: ModuleTemplate) -> Option<String> {
+        match self.templates.entry(template.fn_name.to_owned()) {
+            Entry::Occupied(entry) => Some(entry.into_mut().exec_path.to_string()),
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(template);
+                None
+            }
+        }
+    }
+
+    /// Get the hashmap containing all module templates stored.
+    pub fn get_templates(&self) -> &HashMap<String, ModuleTemplate> {
+        &self.templates
+    }
+
+    /// Tries to find the module with the given function name.
+    ///
+    /// # Errors:
+    /// * [`ModuleLoaderError::UnknownLoadedModuleError`] if the function name is not the name of any loaded module.
+    pub fn try_get_loaded_module(&self, fn_name: &str) -> Result<&Module, ModuleLoaderError> {
+        match self.loaded.get(fn_name) {
+            Some(module) => Ok(module),
+            None => Err(ModuleLoaderError::UnknownLoadedModuleError {
+                fn_name: fn_name.to_owned(),
+            }),
+        }
+    }
+
+    /// Tries to load a module and returns its reference.
+    ///
+    /// # Errors:
+    /// if no module with the given name were loaded and if
+    /// * no template has the given function name: [`ModuleLoaderError::UnknownTemplateError`],
+    /// * the template could not be turned into an instance of a module: [`ModuleLoaderError::LoadError`].
+    pub fn load_module(&mut self, fn_name: &str) -> Result<&Module, ModuleLoaderError> {
+        match self.loaded.entry(fn_name.to_owned()) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+
+            Entry::Vacant(entry) => {
+                let template = self.templates.get(fn_name).ok_or_else(|| {
+                    ModuleLoaderError::UnknownTemplateError {
+                        fn_name: fn_name.to_string(),
+                    }
+                })?;
+
+                let module = Module::from_template(template).map_err(|reason| {
+                    ModuleLoaderError::LoadError {
+                        fn_name: fn_name.to_owned(),
+                        path: template.exec_path.to_string(),
+                        reason,
+                    }
+                })?;
+
+                Ok(entry.insert(module))
+            }
+        }
+    }
+}
+
+/// Represents an unloaded module, meaning the data contained here can be used to try to initialised a module when needed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModuleTemplate {
+    exec_path: String,
+    fn_name: String,
+    args: Vec<TypedArg>,
+    add_args: Vec<MathExpression>,
+    output: ValueType,
+    batch_size: Option<usize>,
+}
+
+impl ModuleTemplate {
+    pub fn new(
+        exec_path: impl Into<String>,
+        fn_name: impl Into<String>,
+        args: Vec<impl Into<TypedArg>>,
+        add_args: Vec<MathExpression>,
+        output: ValueType,
+        batch_size: Option<usize>,
+    ) -> Self {
+        Self {
+            args: args.into_iter().map(|arg| arg.into()).collect(),
+            batch_size,
+            add_args,
+            exec_path: exec_path.into(),
+            fn_name: fn_name.into(),
+            output,
+        }
+    }
+
+    /// Creates a module with only one argument, a graph.
+    /// Useful when making modules that act as invariants.
+    /// The argument will be called `graph` and be a [`ValueType::Graph`].
+    pub fn new_invariant(
+        exec_path: impl Into<String>,
+        fn_name: impl Into<String>,
+        output: ValueType,
+        batch_size: Option<usize>,
+    ) -> Self {
+        Self {
+            args: Vec::from([("graph", ValueType::Graph).into()]),
+            batch_size,
+            add_args: Vec::new(),
+            exec_path: exec_path.into(),
+            fn_name: fn_name.into(),
+            output,
+        }
+    }
+}
+
 /// Represent an executable file that can be used to compute graph invariants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
@@ -115,7 +275,20 @@ pub struct Module {
 }
 
 impl Module {
-    /// Creates a module using the given parameters
+    /// Tries to creates a module using the given template
+    fn from_template(template: &ModuleTemplate) -> Result<Self, ModuleError> {
+        let owned_template = template.clone();
+        Self::new(
+            owned_template.exec_path,
+            owned_template.fn_name,
+            owned_template.args,
+            owned_template.add_args,
+            owned_template.output,
+            owned_template.batch_size,
+        )
+    }
+
+    /// Tries to creates a module using the given parameters
     pub fn new(
         exec_path: impl Into<String>,
         fn_name: impl Into<String>,
