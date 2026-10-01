@@ -81,11 +81,13 @@ impl GquestEngine {
     pub async fn exec_query<O: SaveOutput>(
         &mut self,
         mut query: QueryStatement,
+        retain_only_sig: bool,
         add_expr: Vec<MathExpression<ParsedArgType>>,
         output: &mut O,
     ) -> Result<(), EngineError> {
         let batch_size = self.config.get_batch_size();
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
+        let mut cond_engine =
+            ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
         info!("Starting query's modules executions");
         loop {
@@ -103,6 +105,13 @@ impl GquestEngine {
                     info!("Moving on to the next If-Then clause");
                 }
             };
+        }
+
+        if retain_only_sig {
+            cond_engine.result.set_col_selection(Column {
+                value: format!("{CANONICAL_TABLE_NAME}.{PK_NAME}").into(),
+                rename_as: None,
+            });
         }
 
         info!("Finished query's modules execution");
@@ -126,7 +135,8 @@ impl GquestEngine {
     ) -> Result<(), EngineError> {
         info!("Starting condition's modules execution");
         let batch_size = self.config.get_batch_size();
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
+        let mut cond_engine =
+            ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
         cond_engine.add_new_cond(cond, batch_size).await?;
         info!("Finished condition's modules execution");

@@ -71,7 +71,7 @@ pub enum Modes {
     )]
     Query {
         #[command(flatten)]
-        contents: QueryCounterContents,
+        contents: QueryContents,
     },
     // /// Shows the tables present in the database
     // #[command(alias = "sm")]
@@ -82,7 +82,7 @@ pub enum Modes {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct QueryCounterContents {
+pub struct QueryContents {
     #[command(flatten)]
     pub args: QueryArgs,
     /// Additional expressions to append to the query result
@@ -99,8 +99,12 @@ pub struct QueryArgs {
     pub query: String,
     #[clap(flatten)]
     pub output: OutputSettings,
+    /// Negates the last condition from the given query
     #[clap(short, long, default_value("false"))]
     pub counter: bool,
+    /// Only retains the signature column and additional expressions.
+    #[clap(short, long, default_value("false"))]
+    pub retain_sigs: bool,
 }
 
 #[derive(Args, Debug, Clone)]

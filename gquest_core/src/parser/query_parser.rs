@@ -74,7 +74,7 @@ fn get_parsing_error(error: Error<Rule>) -> ParsingError {
             for r in positives {
                 missing_token = match r {
                     Rule::binary_op => Some(String::from("AND, OR")),
-                    Rule::comp_operator => Some(String::from(">=, <=, =, !=, ...")),
+                    // Rule::comp_operator => Some(String::from(">=, <=, =, !=, ...")),
                     Rule::primitif => Some(String::from("an identifier or a value")),
                     _ => None,
                 };
@@ -349,19 +349,33 @@ impl QueryParser {
                 _ => unreachable!("{inner_rule:?}"),
             }
         } else {
-            // expression - comp_operator - expression
-            let prim_1 =
-                Self::parse_expr_rule(inner_rules.next().expect("prim1 present").into_inner());
-            let operator = inner_rules
-                .next()
-                .expect("operator present")
-                .into_inner()
-                .next()
-                .expect("one sub operator rule");
-            let prim_2 =
-                Self::parse_expr_rule(inner_rules.next().expect("prim2 present").into_inner());
+            // This rule is basically :
+            // expression - (comp_operator - expression)+
+            let mut curr_left_expr =
+                Self::parse_expr_rule(inner_rules.next().expect("expr1 present").into_inner());
+            let mut condition: Option<Condition> = None;
 
-            Condition::Comparison(create_comparison(prim_1, operator, prim_2, epsilon))
+            while !inner_rules.is_empty() {
+                let operator = inner_rules.next().expect("operator present");
+                let right_expr =
+                    Self::parse_expr_rule(inner_rules.next().expect("expr2 present").into_inner());
+
+                let curr_cond = Condition::Comparison(create_comparison(
+                    curr_left_expr,
+                    operator,
+                    right_expr.clone(),
+                    epsilon,
+                ));
+
+                if let Some(prev_cond) = condition {
+                    condition = Some(Condition::and(prev_cond, curr_cond));
+                } else {
+                    condition = Some(curr_cond);
+                }
+                curr_left_expr = right_expr;
+            }
+
+            condition.expect("at least one cond due to parser restriction")
         }
     }
 

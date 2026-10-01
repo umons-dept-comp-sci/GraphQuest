@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
 use gquest_core::{
-    data_handler::{
-        data_types::ValueType,
-        module::ModuleTemplate,
-    },
+    data_handler::{data_types::ValueType, module::ModuleTemplate},
     utils::config_file::{ConfigFile, ConfigFileError},
 };
 use serde_json::json;

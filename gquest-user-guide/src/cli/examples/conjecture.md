@@ -18,10 +18,10 @@ Let \\(d_{n,m} \geq 3\\), then \\(E_{n,m}\\) is the unique graph with maximal ec
 
 
 ```bash
-gquest q "n-1 <= m and m <= n*(n-1)/2 -> is_connected -> d(n,m) >= 3 -> max(eci;m,n) -> iso(G, e_nm(n,m))" -c
+gquest q "n-1 <= m <= n*(n-1)/2 -> is_connected -> d(n,m) >= 3 -> max(eci;m,n) -> iso(G, e_nm(n,m))" -c
 ```
 
 
 ```bash
-gquest q "n-1 <= m and m <= n * (n-1)/2 -> is_connected -> d(n,m) >= 3 -> eci(G) == eci(e_nm(n,m)) -> iso(G, e_nm(n,m))" -c
+gquest q "n-1 <= m <= n * (n-1)/2 -> is_connected -> d(n,m) >= 3 -> eci(G) == eci(e_nm(n,m)) -> iso(G, e_nm(n,m))" -c
 ```

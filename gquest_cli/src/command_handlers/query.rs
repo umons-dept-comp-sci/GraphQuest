@@ -52,6 +52,7 @@ pub async fn query_database(
         add_args.unwrap_or_default(),
         epsilon,
         query_args.counter,
+        query_args.retain_sigs,
     )
     .await;
 
@@ -67,6 +68,7 @@ async fn execute_query(
     add_args: String,
     epsilon: Option<f64>,
     counter: bool,
+    retain_sig: bool,
 ) -> Result<(), CliError> {
     // try to parse query:
     let mut query = QueryParser::parse_query(query.clone(), epsilon)?;
@@ -76,7 +78,7 @@ async fn execute_query(
     }
     info!("Executing query with the engine");
     engine
-        .exec_query(query, add_expressions, &mut output)
+        .exec_query(query, retain_sig, add_expressions, &mut output)
         .await?;
     println!("{}", output.close());
     info!("Finished executing query");

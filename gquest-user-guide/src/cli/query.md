@@ -74,6 +74,10 @@ will return all *connected* graph with an order from 5.
 > Currently, trying to get the counter of an extremal selection will result in an error of type `not yet implemented` and crash the application.
 > This is because this feature is still a work in progress, so this should be fixed in a future release.
 
+#### Retain signatures
+
+By default GraphQuest displays for all graphs returned, their values for each of the functions it used to get them in the last filtering condition. 
+The `-r` option can be used to only retain the signatures alongside the additional expressions provided. 
 
 #### Limiting displayed rows
 
@@ -162,12 +166,14 @@ The `-a` or `--add-expr` option allows additional expressions to be appended to 
 -a <ADD_EXPR>
 ```
 
+Each expression must be separated by a semicolon ("`;`").
+
 For example:
 
 ```bash
-gquest query -a "max_degree - chromatic_nb" "n == 5"
+gquest query -a "max_degree - chromatic_nb; m" "n == 5"
 ```
 
-adds the value of `max_degree - chromatic_nb` as an additional column in the displayed result.
+adds the value of `max_degree - chromatic_nb` and `m` as additional columns in the displayed result.
 
 This can be useful when an expression is needed only for displaying or analysing the result and does not need to be part of the filtering condition itself.

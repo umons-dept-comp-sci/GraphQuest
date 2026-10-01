@@ -132,16 +132,37 @@ chromatic_nb <= max_degree
 
 
 Functions that return a numerical value can be used directly as conditions. When a function is used without an explicit comparison, GraphQuest currently interprets it as a comparison with 1. So for example:
-* `is_complete` is equivalent to `is_complete = 1`, and
-* `iso(G, comp)` is equivalent to `iso(G, comp) = 1`
+* `is_complete` is equivalent to `is_complete == 1`, and
+* `iso(G, comp)` is equivalent to `iso(G, comp) == 1`
 
 
 > [!warning]
 > Currently, any function that is used as a condition without an explicit comparison is implicitly compared to 1, even if they do not return a numerical value.
 > 
-> For example, `is_connected and d(n,m)` is equivalent to `is_connected = 1 and d(n,m) = 1`
+> For example, `is_connected and d(n,m)` is equivalent to `is_connected == 1 and d(n,m) == 1`
 > 
 > Therefore, this query selects connected graphs for which d(n,m) evaluates to 1.
+
+### Comparison chaining
+
+Comparison chaining is a shorthand notation for combining several comparisons that share operators.
+
+A comparison chain must follow a consistent direction. Once a chain contains a < or <= comparison, subsequent comparisons must continue in the same direction. Similarly, a chain containing > or >= comparisons must continue in that direction.
+
+For example:
+* `x < y < z` is equivalent to `x < y and y < z`, 
+* `x == y == z` is equivalent to `x == y and y == z`, and
+* `x < y == a <= z == b` is equivalent to `x < y and y == a and a <= z and z == b`.
+
+But the following examples are not correct:
+* `x < y > z`, and
+* `x > y < z`.
+
+
+> [!tip]
+> Comparison chaining can be particularly useful for expressing ranges. For example:
+> 
+> `2 <= n <= 5` is equivalent to: `n >= 2 and n <= 5`.
 
 
 ### Logical operators
@@ -190,7 +211,6 @@ For example:
 pair `(n, m % n)`.
 
 ## Dataset filtering
-
 
 
 **Filters** can be used to chain conditions and extremal selections, progressively
@@ -242,3 +262,12 @@ is_connected -> max(eci;n)
 Here, the first expression restricts the dataset to connected graphs. The second expression then selects the graphs with the maximum `eci` for each value of `n` within this filtered dataset.
 
 The order of the filters is therefore important: `max(eci;n)` is evaluated **only** after disconnected graphs have been removed, so `eci` only needs to be computed for graphs for which it is defined.
+
+
+## Queries
+
+Queries in GraphQuest are either:
+* a condition,
+* a comparison,
+* an extremal selection, or even
+* a set of filters.
