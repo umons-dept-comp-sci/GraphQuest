@@ -2,6 +2,9 @@
 
 ## Dataset
 
+
+For this 
+
 ```bash
 gquest add geng 1:8
 ```
@@ -9,7 +12,26 @@ gquest add geng 1:8
 
 ## Modules
 
+We will use the following functions:
+* "`m(G)`" is the size of G;
+* "`chromatic_nb(G)`" is the value of \\(\chi(G)\\);
+* "`max_degree(G)`" is the value of the maximum degree in G, denoted by \\(\Delta(G)\\);
+* "`is_connected(G)`" is equal to 1 if G is connected, 0 otherwise;
+* "`is_cycle(G)`" is equal to 1 if G is a cycle, 0 otherwise;
+* "`is_complete(G)`" is equal to 1 if G is a complete graph, 0 otherwise;
+* "`eci(G)`" is the value of the eccentric connectivity index of a connected graph \\(G\\), denoted by \\(\xi^c(G)\\);
+* "`d(n,m)`" is the value of [\\(d(n,m)\\)](conjecture.md);
+* "`e_nm(n,m)`" is the value of [\\(E_{n,m}\\)](conjecture.md);
+* "`iso(G,H)`" is equal to 1 if \\(G \simeq H\\), 0 otherwise;
+
+
+The implementation of these modules can be found in the module examples repository.
+
+
+
 ## Configuration file
+
+Then for this section we will use a configuration file called `configs.json`. 
 
 ```json
 {
@@ -110,3 +132,5 @@ gquest add geng 1:8
   ]
 }
 ```
+
+Suppose that this file is located in the current directory.

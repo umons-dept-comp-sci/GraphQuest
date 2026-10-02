@@ -4,6 +4,8 @@ In this section, we will explain how to install `gquest` and add it to your PATH
 
 ## Features:
 
+GraphQuest is currently compatible with [PostgreSQL](https://www.postgresql.org/) and [SQLite](https://www.sqlite.org/). You can choose which database system to compile the program with using the following features:
+
 * `sqlite`: Uses the bundled SQLite library. No SQLite installation is required.
 * `sqlite-unbundled`: Uses the system SQLite library. Requires SQLite to be installed. Can be faster than the bundled SQLite library in some situations. Also reduces the size of the resulting executable.
 * `postgres`: Enables PostgreSQL support. Requires a PostgreSQL server.

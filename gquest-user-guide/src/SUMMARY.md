@@ -5,9 +5,6 @@
 # User guide
 
 - [Installation](guide/installation.md)
-
-# Reference guide
-
 - [Modules](modules.md)
 - [Configuration files](configs.md)
 - [Query syntax](query_syntax.md)
