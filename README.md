@@ -2,8 +2,6 @@
 
 Here we discuss how to execute the command-line interface of GraphQuest, referred to as $\texttt{gquest}$. 
 
-
-
 ## Prerequisite
 
 In order to use this program a few things have to installed on your machine first. This includes:

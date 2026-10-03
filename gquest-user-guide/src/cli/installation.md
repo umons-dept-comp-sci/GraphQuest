@@ -17,8 +17,8 @@ GraphQuest is currently compatible with [PostgreSQL](https://www.postgresql.org/
 > [!WARNING]
 > The features `sqlite` and `sqlite-unbundled` are mutually exclusive. The program will not compile when both are provided.
 
-## Using Cargo
 
+## Using Cargo
 
 Download the project from its [GitHub repository](https://github.com/umons-dept-comp-sci/GraphQuest).
 

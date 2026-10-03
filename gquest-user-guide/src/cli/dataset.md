@@ -5,7 +5,7 @@ The `gquest add` and `gquest remove` commands can be used to manage the graphs s
 ### Adding graphs
 
 Graphs can be added to the current dataset using:
-```text
+```bash
 gquest add [OPTIONS] <SOURCE>
 ```
 
@@ -19,6 +19,16 @@ GraphQuest supports three different sources:
 | `file` | `f`      | Imports graph signatures from a file.                                                                          |
 | `pipe` | `p`      | Imports graph signatures from a pipe.                                                                          |
 
+
+> [!important]
+> If no database exists at the given database URL when using the `add` command,
+> `gquest` will try to create one at this URL automatically.
+>
+> For example, suppose that we are using `gquest` with one of the SQLite features, and the database `test.db` does not exist in the current directory then:
+> ```bash
+> gquest "sqlite://test.db" add geng 1  
+> ```
+> will create the database `test.db` before adding the given dataset.
 
 #### Using geng
 
