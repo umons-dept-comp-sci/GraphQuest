@@ -32,6 +32,21 @@
       "output": "graph"
     },
     {
+      "function": "double_star",
+      "path": "modules/double_star.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        }
+      ],
+      "output": "graph"
+    },
+    {
       "function": "m",
       "path": "modules/edges.py",
       "output": "numeric"
@@ -75,6 +90,11 @@
     {
       "function": "max_degree",
       "path": "modules/max_degree.py",
+      "output": "numeric"
+    },
+    {
+      "function": "min_degree",
+      "path": "modules/min_degree.py",
       "output": "numeric"
     },
     {

@@ -2,26 +2,26 @@
 
 ## Dataset
 
+For the following examples, we will use the default database created by GraphQuest, therefore we do not need to specify its URL every command.
 
-For this 
-
+Let us start by adding every non-isomorphic graphs of order 1 to 8 to our dataset.
 ```bash
 gquest add geng 1:8
 ```
 
-
 ## Modules
 
 We will use the following functions:
-* "`m(G)`" is the size of G;
-* "`chromatic_nb(G)`" is the value of \\(\chi(G)\\);
-* "`max_degree(G)`" is the value of the maximum degree in G, denoted by \\(\Delta(G)\\);
-* "`is_connected(G)`" is equal to 1 if G is connected, 0 otherwise;
-* "`is_cycle(G)`" is equal to 1 if G is a cycle, 0 otherwise;
-* "`is_complete(G)`" is equal to 1 if G is a complete graph, 0 otherwise;
-* "`eci(G)`" is the value of the eccentric connectivity index of a connected graph \\(G\\), denoted by \\(\xi^c(G)\\);
 * "`d(n,m)`" is the value of [\\(d(n,m)\\)](conjecture.md);
 * "`e_nm(n,m)`" is the value of [\\(E_{n,m}\\)](conjecture.md);
+* "`m(G)`" is the size of G;
+* "`n(G)`" is the order of G;
+* "`chromatic_nb(G)`" is the value of \\(\chi(G)\\);
+* "`is_connected(G)`" is equal to 1 if G is connected, 0 otherwise;
+* "`is_complete(G)`" is equal to 1 if G is a complete graph, 0 otherwise;
+* "`is_cycle(G)`" is equal to 1 if G is a cycle, 0 otherwise;
+* "`max_degree(G)`" is the value of the maximum degree in G, denoted by \\(\Delta(G)\\);
+* "`eci(G)`" is the value of the eccentric connectivity index of a connected graph \\(G\\), denoted by \\(\xi^c(G)\\);
 * "`iso(G,H)`" is equal to 1 if \\(G \simeq H\\), 0 otherwise;
 
 
@@ -31,7 +31,7 @@ The implementation of these modules can be found in the module examples reposito
 
 ## Configuration file
 
-Then for this section we will use a configuration file called `configs.json`. 
+Then for this section we will use a configuration file called `configs.json` located in the current directory. Because this is the default configuration file name, we won't have to specify it at every query.
 
 ```json
 {
@@ -132,5 +132,3 @@ Then for this section we will use a configuration file called `configs.json`.
   ]
 }
 ```
-
-Suppose that this file is located in the current directory.
