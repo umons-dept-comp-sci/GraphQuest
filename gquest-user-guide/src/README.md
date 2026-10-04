@@ -14,6 +14,11 @@ to act as a substitute when working on something not replicable in [House of Gra
 example. 
 
 
+## Quick Start examples
+
+If you are simply looking for examples of how to use GraphQuest, you can [click here](cli/examples) to access the examples section.
+
+
 ## Components
 
 GraphQuest makes uses of three main components, an SQL database, a

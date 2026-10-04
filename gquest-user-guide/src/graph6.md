@@ -1,10 +1,10 @@
 # Graph signatures
 
-The [graph6](https://users.cecs.anu.edu.au/~bdm/data/formats.html) format, also referred to as `g6`, was created by Brendan McKay and
+The [graph6](https://users.cecs.anu.edu.au/~bdm/data/formats.html) format, also referred to as g6, was created by Brendan McKay and
 is used to store simple undirected graphs by using their adjacency matrix, as compact string values only containing printable ASCII character
 
 Given an isomorphic class, we can select one of the value of this set to represent it, which will be referred to as the canonical member of the class. This selected graph is
-often the minimal member under some defined ordering, but for this application we will follow [McKay canonical selection](https://www.math.unl.edu/~aradcliffe1/Papers/Canonical.pdf). The canonical graph's g6 format will then be referred to as the signature of this isomorphic class.
+often the minimal member under some defined ordering, but for this application we will follow McKay canonical selection[^fn1]. The canonical graph's g6 format will then be referred to as the signature of this isomorphic class.
 
 > [!note]
 > Let two graphs \\(G\\) and \\(H\\) such that \\(G \simeq H\\). Let the signature of \\(G\\) and \\(H\\) be \\(s_G\\) and \\(s_H\\)
@@ -21,7 +21,7 @@ the generated graphs among many other things.
 
 Currently, the GraphQuest project has no graphical interface, meaning that the resulting graph from a query are output as their signatures. 
 
-Therefore, to visualise a graph signature, we recommend the use of [House of Graphs](https://houseofgraphs.org), a website providing access to a database of graphs considered to be "relevant to the study of some graph theoric problem". House of Graphs also provides a  [graph drawing tool](https://houseofgraphs.org/draw_graph) that allows users to visualise a graph by providing its `g6` format. 
+Therefore, to visualise a graph signature, we recommend the use of [House of Graphs](https://houseofgraphs.org), a website providing access to a database of graphs considered to be "relevant to the study of some graph theoric problem". House of Graphs also provides a  [graph drawing tool](https://houseofgraphs.org/draw_graph) that allows users to visualise a graph by providing its g6 format. 
 
 
 > [!tip]
@@ -36,3 +36,6 @@ We currently do not support the *sparse6* format as we typically work with small
 
 And since GraphQuest only works with undirected graphs, the *digraph6* format is also not supported.
 
+
+
+[^fn1]: Hartke, S. G., & Radcliffe, A. J. (2009). Mckay’s canonical graph labeling algorithm. Communicating mathematics, 479, 99-111.

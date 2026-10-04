@@ -441,10 +441,19 @@ impl<'a> RelationGraph<'a> {
         &self,
         expr: &MathExpression<FnArg>,
     ) -> Result<String, RelationGraphError> {
+        let parenthesis_fn = |val: &MathExpression<FnArg>| -> Result<String, RelationGraphError> {
+            let val_sql = self.expression_to_string(val)?;
+            if val.is_primitif() {
+                Ok(val_sql)
+            } else {
+                Ok(format!("({val_sql})"))
+            }
+        };
+
         Ok(match expr {
             MathExpression::Primitif(p) => self.arg_to_string(p)?,
             MathExpression::Negation(math_expression) => {
-                format!("-({})", self.expression_to_string(math_expression)?)
+                format!("-{}", parenthesis_fn(math_expression)?)
             }
             MathExpression::Floor(math_expression) => {
                 format!("floor({})", self.expression_to_string(math_expression)?)
@@ -459,11 +468,7 @@ impl<'a> RelationGraph<'a> {
                 format!("sqrt({})", self.expression_to_string(math_expression)?)
             }
             MathExpression::BinOperation { left, op, right } => {
-                format!(
-                    "{} {op} {}",
-                    self.expression_to_string(left)?,
-                    self.expression_to_string(right)?
-                )
+                format!("{} {op} {}", parenthesis_fn(left)?, parenthesis_fn(right)?)
             }
         })
     }
