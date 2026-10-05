@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use gquest_core::{
-    data_handler::{data_types::ValueType, module::Module},
+    data_handler::{data_types::ValueType, module::ModuleTemplate},
     utils::config_file::{ConfigFile, ConfigFileError},
 };
 use serde_json::json;
@@ -47,7 +47,7 @@ pub fn from_value_test() {
 
     let config_file = ConfigFile::read_json_value(config_file).expect("no error");
 
-    let modules = config_file.get_module_refs();
+    let modules = config_file.get_module_loader().get_templates();
 
     for (name, module) in modules {
         assert_eq!(module, modules_ref.get(name).expect("fun name present"))
@@ -61,25 +61,23 @@ pub fn from_file_test() {
 
     let config_file = ConfigFile::read_json_file(&OPTION_FILE.to_string()).expect("no error");
 
-    assert_eq!(&module_map, config_file.get_module_refs())
+    assert_eq!(&module_map, config_file.get_module_loader().get_templates())
 }
 
-pub fn get_a_b_c_exec() -> HashMap<String, Module> {
-    let a = Module::new(
+pub fn get_a_b_c_exec() -> HashMap<String, ModuleTemplate> {
+    let a = ModuleTemplate::new(
         VALID_EXEC_A.to_string(),
         "A",
         [("n", ValueType::Bool)].to_vec(),
         Vec::new(),
         ValueType::Numeric,
         None,
-    )
-    .expect("Correct inv");
+    );
 
-    let b = Module::new_invariant(VALID_EXEC_B.to_string(), "B", ValueType::String, None)
-        .expect("Correct inv");
+    let b = ModuleTemplate::new_invariant(VALID_EXEC_B.to_string(), "B", ValueType::String, None);
 
-    let c = Module::new_invariant(VALID_EXEC_C.to_string(), "C", ValueType::Numeric, Some(100))
-        .expect("Correct inv");
+    let c =
+        ModuleTemplate::new_invariant(VALID_EXEC_C.to_string(), "C", ValueType::Numeric, Some(100));
     let mut hash_map = HashMap::new();
 
     hash_map.insert("A".to_string(), a);

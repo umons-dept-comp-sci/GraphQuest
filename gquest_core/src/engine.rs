@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use log::{debug, info};
@@ -8,7 +8,7 @@ use tokio::task::JoinError;
 use crate::{
     data_handler::{
         data_types::ConstantValue,
-        module::{Module, ModuleError},
+        module::{Module, ModuleError, ModuleLoader},
         rel_graph::{AutoFnCallIterator, FnArg, FnRef, RelationGraph, RelationGraphError},
     },
     database_handler::{
@@ -65,9 +65,11 @@ impl GquestEngine {
         output: &mut O,
     ) -> Result<(), EngineError> {
         match db {
+            #[cfg(any(feature = "sqlite-unbundled", feature = "sqlite"))]
             AllowedGraphDb::Sqlite(sqlite_db) => {
                 sqlite_db.fetch_all_rows_raw_sql(query.into(), output).await
             }
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(pg_db) => {
                 pg_db.fetch_all_rows_raw_sql(query.into(), output).await
             }
@@ -79,26 +81,25 @@ impl GquestEngine {
     pub async fn exec_query<O: SaveOutput>(
         &mut self,
         mut query: QueryStatement,
+        retain_only_sig: bool,
         add_expr: Vec<MathExpression<ParsedArgType>>,
         output: &mut O,
     ) -> Result<(), EngineError> {
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
+        let batch_size = self.config.get_batch_size();
+        let mut cond_engine =
+            ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
         info!("Starting query's modules executions");
         loop {
             match query {
                 QueryStatement::ExtremalCondition(condition) => {
                     info!("Executing: {condition}");
-                    cond_engine
-                        .add_new_extr_cond(condition, self.config.get_batch_size())
-                        .await?;
+                    cond_engine.add_new_extr_cond(condition, batch_size).await?;
                     break;
                 }
                 QueryStatement::IfThen(condition, query_statement) => {
                     info!("Executing: {condition}");
-                    cond_engine
-                        .add_new_extr_cond(condition, self.config.get_batch_size())
-                        .await?;
+                    cond_engine.add_new_extr_cond(condition, batch_size).await?;
 
                     query = *query_statement;
                     info!("Moving on to the next If-Then clause");
@@ -106,11 +107,18 @@ impl GquestEngine {
             };
         }
 
+        if retain_only_sig {
+            cond_engine.result.set_col_selection(Column {
+                value: format!("{CANONICAL_TABLE_NAME}.{PK_NAME}").into(),
+                rename_as: None,
+            });
+        }
+
         info!("Finished query's modules execution");
         if !add_expr.is_empty() {
             info!("Starting additional expressions execution");
             cond_engine
-                .add_additional_expressions(add_expr, self.config.get_batch_size())
+                .add_additional_expressions(add_expr, batch_size)
                 .await?;
 
             info!("Finished additional expressions execution");
@@ -126,11 +134,11 @@ impl GquestEngine {
         output: &mut O,
     ) -> Result<(), EngineError> {
         info!("Starting condition's modules execution");
-        let mut cond_engine = ConditionEngine::new(&mut self.db, self.config.get_module_refs());
+        let batch_size = self.config.get_batch_size();
+        let mut cond_engine =
+            ConditionEngine::new(&mut self.db, self.config.get_mut_module_loader());
 
-        cond_engine
-            .add_new_cond(cond, self.config.get_batch_size())
-            .await?;
+        cond_engine.add_new_cond(cond, batch_size).await?;
         info!("Finished condition's modules execution");
 
         cond_engine.get_result(output).await
@@ -148,7 +156,7 @@ struct ConditionEngine<'a> {
 }
 
 impl<'a> ConditionEngine<'a> {
-    fn new(db: &'a mut AllowedGraphDb, modules: &'a HashMap<String, Module>) -> Self {
+    fn new(db: &'a mut AllowedGraphDb, modules: &'a mut ModuleLoader) -> Self {
         Self {
             db,
             graph: Some(RelationGraph::new(modules)),
@@ -544,9 +552,11 @@ impl<'a> ConditionEngine<'a> {
     async fn get_result<O: SaveOutput>(&self, output: &mut O) -> Result<(), EngineError> {
         info!("Start fetching the result");
         match &self.db {
+            #[cfg(any(feature = "sqlite", feature = "sqlite-unbundled"))]
             AllowedGraphDb::Sqlite(sqlite_db) => {
                 sqlite_db.fetch_all_row_query(&self.result, output).await
             }
+            #[cfg(feature = "postgres")]
             AllowedGraphDb::Postgres(pg_db) => {
                 pg_db.fetch_all_row_query(&self.result, output).await
             }
@@ -572,6 +582,7 @@ async fn compute_module(
     dataset_to_use.set_col_selection(format!("{CANONICAL_TABLE_NAME}.{PK_NAME}").into());
 
     match db {
+        #[cfg(any(feature = "sqlite-unbundled", feature = "sqlite"))]
         AllowedGraphDb::Sqlite(sqlite_db) => {
             sqlite_db
                 .compute_module(
@@ -585,6 +596,7 @@ async fn compute_module(
                 )
                 .await?;
         }
+        #[cfg(feature = "postgres")]
         AllowedGraphDb::Postgres(pg_db) => {
             pg_db
                 .compute_module(

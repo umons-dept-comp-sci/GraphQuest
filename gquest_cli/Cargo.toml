@@ -1,17 +1,27 @@
 [package]
 name = "gquest_cli"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
+cfg-if = "1.0.5"
 clap = "4.5.52"
 clap-verbosity-flag = "3.0.4"
 ctrlc = "3.5.1"
 env_logger = "0.11.8"
-gquest_core = { version = "0.2.0", path = "../gquest_core" }
+gquest_core = { version = "0.3.0", path = "../gquest_core", default-features = true }
 indicatif = "0.18.3"
 log = "0.4.28"
 pest = "2.8.4"
 pest_derive = "2.8.4"
 thiserror = "2.0.17"
 tokio = "1.48.0"
+
+[features]
+sqlite = ["gquest_core/sqlite"]
+sqlite-unbundled = ["gquest_core/sqlite-unbundled"]
+postgres = ["gquest_core/postgres"]
+
+[[bin]]
+name = "gquest"
+path = "src/main.rs"

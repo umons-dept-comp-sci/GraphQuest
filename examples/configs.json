@@ -17,8 +17,23 @@
       "output": "numeric"
     },
     {
-      "function": "e_nm",
+      "function": "E",
       "path": "modules/e_nm.py",
+      "args": [
+        {
+          "name": "n",
+          "class": "numeric"
+        },
+        {
+          "name": "m",
+          "class": "numeric"
+        }
+      ],
+      "output": "graph"
+    },
+    {
+      "function": "double_star",
+      "path": "modules/double_star.py",
       "args": [
         {
           "name": "n",
@@ -78,9 +93,9 @@
       "output": "numeric"
     },
     {
-      "function": "max",
-      "path": "modules/max_degree.py",
-      "output": "string"
+      "function": "min_degree",
+      "path": "modules/min_degree.py",
+      "output": "numeric"
     },
     {
       "function": "comp",

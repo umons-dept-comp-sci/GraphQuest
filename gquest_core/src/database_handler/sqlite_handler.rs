@@ -125,7 +125,7 @@ impl DbQuerySystem<Sqlite> for Sqlite {
         for column_i in 0..query.select.len() - 1 {
             res.push_str(&format!(
                 "{}, ",
-                &query.select[column_i].translate_to_column_name::<Self>()
+                query.select[column_i].translate_to_column_name::<Self>()
             ));
         }
         res.push_str(&format!(

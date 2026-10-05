@@ -1,10 +1,11 @@
 [package]
 name = "gquest_core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 async-trait = "0.1.89"
+cfg-if = "1.0.5"
 env_logger = "0.11.6"
 indexmap = "2.12.1"
 is_executable = "1.0.5"
@@ -14,10 +15,8 @@ pest_derive = "2.8.4"
 regex = "1.11.2"
 serde = "1.0.228"
 serde_json = "1.0.145"
-sqlx = { version = "0.8.3", features = [
-    "sqlite-unbundled",
-    # "mysql",
-    "postgres",
+sqlx = { version = "0.8.3", default-features = false, features = [
+    "migrate",
     "runtime-async-std",
 ] }
 tabled = "0.17.0"
@@ -25,3 +24,9 @@ thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 topo_sort = "0.4.0"
+
+[features]
+# default = ["sqlite"]
+sqlite = ["sqlx/sqlite"]
+sqlite-unbundled = ["sqlx/sqlite-unbundled"]
+postgres = ["sqlx/postgres"]

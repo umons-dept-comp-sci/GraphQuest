@@ -1,14 +1,23 @@
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 
-const DEFAULT_URL: &str = "sqlite://gquest.db";
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sqlite")] {
+        const DEFAULT_URL: &str = "sqlite://gquest.db";
+    } else if #[cfg(feature = "postgres")] {
+        const DEFAULT_URL: &str = "postgresql://localhost/gquest";
+    } else {
+        const DEFAULT_URL: &str = "sqlite://gquest.db"; // Fallback default
+    }
+}
+
 const DEFAULT_CONFIGS: &str = "configs.json";
 
 #[derive(Parser)]
 #[command(
     author("Axel Foucart"),
     version,
-    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2026")
+    about("gquest: Developped by Axel Foucart at the Algorithms Lab, UMONS-2024-2026")
 )]
 pub struct CliArg {
     #[command(subcommand)]
@@ -62,28 +71,18 @@ pub enum Modes {
     )]
     Query {
         #[command(flatten)]
-        contents: QueryCounterContents,
+        contents: QueryContents,
     },
-    /// Tries to find counter examples in the dataset.
-    #[command(
-        alias = "c",
-        subcommand_value_name = "OUTPUT",
-        subcommand_help_heading = "Outputs"
-    )]
-    Counter {
-        #[command(flatten)]
-        contents: QueryCounterContents,
-    },
-    /// Shows the tables present in the database
-    #[command(alias = "sm")]
-    Summary {
-        #[command(subcommand, name = "OUTPUT")]
-        output: Option<OutputChoice>,
-    },
+    // /// Shows the tables present in the database
+    // #[command(alias = "sm")]
+    // Summary {
+    //     #[command(subcommand, name = "OUTPUT")]
+    //     output: Option<Output>,
+    // },
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct QueryCounterContents {
+pub struct QueryContents {
     #[command(flatten)]
     pub args: QueryArgs,
     /// Additional expressions to append to the query result
@@ -98,8 +97,14 @@ pub struct QueryArgs {
     /// The query to ask the database
     #[clap()]
     pub query: String,
-    #[command(subcommand, name = "OUTPUT")]
-    pub output: Option<OutputChoice>,
+    #[clap(flatten)]
+    pub output: OutputSettings,
+    /// Negates the last condition from the given query
+    #[clap(short, long, default_value("false"))]
+    pub counter: bool,
+    /// Only retains the signature column and additional expressions.
+    #[clap(short, long, default_value("false"))]
+    pub retain_sigs: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -161,31 +166,40 @@ pub struct BatchSizeArg {
     pub batch_size: usize,
 }
 
-#[derive(Subcommand, Debug, Clone)]
-pub enum OutputChoice {
-    /// Stores the result as a `csv` file
-    File {
-        /// The path of the file
-        path: String,
-        /// The separator of the values
-        #[clap(short, default_value = ",")]
-        separator: char,
-    },
-    /// Prints result line by line to the standart output
-    Stdout,
-    /// Prints the result as a pretty table (default)
-    #[group(required = false)]
-    Table {
-        /// [n:m] Only stores the n first and the m last rows. Can improve performances and visibility.
-        #[clap(short)]
-        partial: Option<String>,
-        /// Returns the result as a valid latex table.
-        #[clap(short, long, default_value("false"))]
-        latex: bool,
-        /// Hides the index column of the table.
-        #[clap(short, long, default_value("false"))]
-        no_id: bool,
-    },
+// #[derive(Subcommand, Debug, Clone)]
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum TableOutputFormat {
+    Table,
+    PlainText,
+    Latex,
+    Markdown,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OutputSettings {
+    /// (n:m) Only displays the n first and the m last rows.
+    #[clap(short)]
+    pub partial: Option<String>,
+    /// Hides the index column of the table.
+    #[clap(short, long, default_value("false"))]
+    pub no_id: bool,
+    /// The format of the result.
+    #[arg(short, long, value_enum, default_value_t = TableOutputFormat::Table)]
+    pub format: TableOutputFormat,
+
+    /// Saves the entire output as a csv file
+    #[clap(flatten)]
+    pub output_file: OutputFile,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OutputFile {
+    /// Stores the entire result as a `csv` file at the given path
+    #[arg(short, long)]
+    pub output_path: Option<String>,
+    /// The separator of the values
+    #[clap(short, default_value = ",", requires = "output_path")]
+    pub separator: char,
 }
 
 /// Removes data from the database

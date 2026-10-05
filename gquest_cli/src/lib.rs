@@ -7,6 +7,8 @@ use gquest_core::{
 };
 use thiserror::Error;
 
+use crate::command_handlers::arg_parser::ArgParseError;
+
 pub mod cli_commands;
 pub mod progress_bar;
 
@@ -14,22 +16,6 @@ pub mod command_handlers;
 
 #[derive(Debug, Error)]
 pub enum CliError {
-    #[error(
-        "Something went wrong while parsing the following arg - \"{arg}\", possibly missing token : \"{missing_tokens:?}\""
-    )]
-    ArgParseError {
-        arg: String,
-        column: usize,
-        missing_tokens: Vec<String>,
-    },
-    #[error(
-        "The given formular/query \"{formula}\" is correct but was not expected, use \"{correct_command}\" instead of \"{current_command}\""
-    )]
-    WrongQueryError {
-        formula: String,
-        correct_command: String,
-        current_command: String,
-    },
     #[error("Something went wrong when trying to import signatures -> {0}")]
     MethodErrorMethodError(#[from] MethodError),
     #[error("Something went wrong when starting the database -> {0}")]
@@ -42,7 +28,8 @@ pub enum CliError {
     WorplaceError(#[from] EngineError),
     #[error("Something went wrong with the database -> {0}")]
     GraphDbRuntimeError(#[from] GraphDbRuntimeError),
-
-    #[error("Something went wrong with the output file -> {0}")]
+    #[error("{0}")]
+    ArgParseError(#[from] ArgParseError),
+    #[error("{0}")]
     CsvFileError(#[from] CsvFileError),
 }

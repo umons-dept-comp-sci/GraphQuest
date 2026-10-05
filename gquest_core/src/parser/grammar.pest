@@ -29,7 +29,7 @@ condition = {
 binary_op = { and_op | or_op | xor_op | implication_op | equivalence_op }
 
 comparison = {
-    expr ~ comp_operator ~ expr
+    comparison_chaining
   | "(" ~ condition ~ ")"
   | not_comparison
   | function
@@ -40,13 +40,48 @@ comparison = {
 // Special case of inv to not force parenthesis: !(x) == !x
 not_comparison = { not_op ~ comparison }
 
-comp_operator = {
+// comp_operator = _{
+// equal
+// | not_equal
+// | less_equal
+// | less
+// | greater_equal
+// | greater
+// }
+
+// Either an equal chaining then maybe a smaller/bigger chaining
+// or a simple chaining
+// but a simple expression is not considered valid
+comparison_chaining = _{
+    expr ~ (equal_chaining+ ~ ((smaller_chaining | bigger_chaining)?) | (smaller_chaining | bigger_chaining))
+}
+
+equal_chaining = _{
+    (equality_op ~ expr)+
+}
+
+smaller_chaining = _{
+    (less_op ~ expr)+
+}
+bigger_chaining  = _{
+    (greater_op ~ expr)+
+}
+
+equality_op = _{
     equal
   | not_equal
-  | less_equal
+}
+
+less_op = _{
+    less_equal
   | less
-  | greater_equal
+  | equality_op
+}
+
+greater_op = _{
+    greater_equal
   | greater
+  | equality_op
 }
 
 // _________ MATH _________

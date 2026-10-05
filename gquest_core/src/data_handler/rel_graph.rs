@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::{
     data_handler::{
         data_types::{ConstantValue, ValueType},
-        module::Module,
+        module::{Module, ModuleLoader, ModuleLoaderError},
     },
     parser::{
         extremal_expression::ExtremalSelection,
@@ -15,8 +15,8 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum RelationGraphError {
-    #[error("Tried to use \"{0}\" but no module references this function.")]
-    UnknownFunction(String),
+    #[error("Error while loading a module: {0}")]
+    ModuleLoaderError(#[from] ModuleLoaderError),
     #[error("The given function ref (\"{0}\", {1}) is not known.")]
     UnknownFunctionRef(String, usize),
     #[error("Tried to call the function \"{0}\" with {1} argument instead of {2}.")]
@@ -59,7 +59,7 @@ pub type FnRef = (String, usize);
 /// Here function calls are nodes, and if a function call depends on another then it adds an edge.
 #[derive(Debug)]
 pub struct RelationGraph<'a> {
-    modules: &'a HashMap<String, Module>,
+    module_loader: &'a mut ModuleLoader,
     relations: Vec<Relation>,
     fn_calls_map: HashMap<String, Vec<FnCall>>,
 }
@@ -100,14 +100,16 @@ pub enum FnArg {
 
 impl<'a> RelationGraph<'a> {
     /// Creates a new empty [`RelationGraph`] and copies the list of modules.
-    pub fn new(modules: &'a HashMap<String, Module>) -> Self {
-        let mut fn_calls_map = HashMap::new();
-        modules.keys().for_each(|k| {
+    pub fn new(module_loader: &'a mut ModuleLoader) -> Self {
+        let hash_map = HashMap::new();
+        let mut fn_calls_map = hash_map;
+        // TODO: At some point, a graph should start empty and get filled progressively with nodes.
+        module_loader.get_templates().keys().for_each(|k| {
             fn_calls_map.insert(k.to_string(), Vec::new());
         });
 
         Self {
-            modules,
+            module_loader,
             relations: Vec::new(),
             fn_calls_map,
         }
@@ -189,6 +191,9 @@ impl<'a> RelationGraph<'a> {
         }
         // if it wasn't, perform some additional compatibility verifications
         else {
+            // Try loading its module
+            self.load_get_module(&fn_name)?;
+
             // Check its validity
             self.try_valid_call(&fn_name, args)?;
 
@@ -226,14 +231,14 @@ impl<'a> RelationGraph<'a> {
     /// * and their types.  
     fn try_valid_call(
         &self,
-        fn_name: &String,
+        fn_name: &str,
         args: &[MathExpression<FnArg>],
     ) -> Result<(), RelationGraphError> {
-        let module = self.get_module(fn_name)?;
+        let module = self.get_loaded_module(fn_name)?;
 
         if module.args.len() != args.len() {
             return Err(RelationGraphError::DifferentArgumentNumber(
-                fn_name.clone(),
+                fn_name.to_string(),
                 args.len(),
                 module.args.len(),
             ));
@@ -245,7 +250,7 @@ impl<'a> RelationGraph<'a> {
             let needed_type = &module_arg.data_type;
             if *needed_type != found_type {
                 return Err(RelationGraphError::DifferentArgumentType {
-                    fn_name: fn_name.clone(),
+                    fn_name: fn_name.to_string(),
                     arg: (module_arg.name.clone(), needed_type.clone()),
                     given_arg: found_type,
                 });
@@ -264,22 +269,26 @@ impl<'a> RelationGraph<'a> {
                     fn_ref.1,
                 )),
             },
-            None => Err(RelationGraphError::UnknownFunction(fn_ref.0.clone())),
+            None => Err(RelationGraphError::UnknownFunctionRef(
+                fn_ref.0.to_owned(),
+                fn_ref.1,
+            )),
         }
     }
 
-    fn get_module(&self, fn_name: &String) -> Result<&Module, RelationGraphError> {
-        match self.modules.get(fn_name) {
-            Some(m) => Ok(m),
-            None => Err(RelationGraphError::UnknownFunction(fn_name.clone())),
-        }
+    fn load_get_module(&mut self, fn_name: &str) -> Result<&Module, RelationGraphError> {
+        Ok(self.module_loader.load_module(fn_name)?)
+    }
+
+    fn get_loaded_module(&self, fn_name: &str) -> Result<&Module, RelationGraphError> {
+        Ok(self.module_loader.try_get_loaded_module(fn_name)?)
     }
 
     fn try_get_type(&self, arg: &MathExpression<FnArg>) -> Result<ValueType, RelationGraphError> {
         match arg {
             MathExpression::Primitif(prim) => Ok(match prim {
                 FnArg::FnCall(fn_ref) => {
-                    let module = self.get_module(&fn_ref.0)?;
+                    let module = self.get_loaded_module(&fn_ref.0)?;
                     module.output.clone()
                 }
                 FnArg::Constant(constant_value) => match constant_value {
@@ -432,10 +441,19 @@ impl<'a> RelationGraph<'a> {
         &self,
         expr: &MathExpression<FnArg>,
     ) -> Result<String, RelationGraphError> {
+        let parenthesis_fn = |val: &MathExpression<FnArg>| -> Result<String, RelationGraphError> {
+            let val_sql = self.expression_to_string(val)?;
+            if val.is_primitif() {
+                Ok(val_sql)
+            } else {
+                Ok(format!("({val_sql})"))
+            }
+        };
+
         Ok(match expr {
             MathExpression::Primitif(p) => self.arg_to_string(p)?,
             MathExpression::Negation(math_expression) => {
-                format!("-({})", self.expression_to_string(math_expression)?)
+                format!("-{}", parenthesis_fn(math_expression)?)
             }
             MathExpression::Floor(math_expression) => {
                 format!("floor({})", self.expression_to_string(math_expression)?)
@@ -450,11 +468,7 @@ impl<'a> RelationGraph<'a> {
                 format!("sqrt({})", self.expression_to_string(math_expression)?)
             }
             MathExpression::BinOperation { left, op, right } => {
-                format!(
-                    "{} {op} {}",
-                    self.expression_to_string(left)?,
-                    self.expression_to_string(right)?
-                )
+                format!("{} {op} {}", parenthesis_fn(left)?, parenthesis_fn(right)?)
             }
         })
     }
@@ -582,8 +596,9 @@ impl<'g, 'a> FnCallIterator<'g, 'a> {
     pub fn get_module_args(&self, fn_ref: &FnRef) -> (&Module, &Vec<MathExpression<FnArg>>) {
         let module = self
             .relation_graph
-            .get_module(&fn_ref.0)
+            .get_loaded_module(&fn_ref.0)
             .expect("correct module name");
+
         let fn_args = &self
             .relation_graph
             .get_call(fn_ref)

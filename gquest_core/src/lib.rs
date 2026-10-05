@@ -10,6 +10,12 @@ pub mod database_handler;
 
 pub mod engine;
 
+#[cfg(all(feature = "sqlite", feature = "sqlite-unbundled"))]
+compile_error!(
+    "Features `sqlite` and `sqlite-unblunded` are mutually exclusive. \
+     Enable only one SQLite database backend."
+);
+
 #[derive(Clone, Copy, Debug)]
 pub struct EqF64(pub f64);
 
