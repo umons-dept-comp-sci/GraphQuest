@@ -162,6 +162,8 @@ The `-s` option can be used to specify the separator used in the CSV file. The d
 gquest query -s ";" --output-path results.csv "n == 5"
 ```
 
+Overwrites any file at the given path.
+
 #### Adding expressions to the result
 
 The `-a` or `--add-expr` option allows additional expressions to be appended to the query result:

@@ -5,6 +5,7 @@ use gquest_core::utils::{
 };
 
 use crate::{
+    CliError,
     cli_commands::{OutputSettings, TableOutputFormat},
     command_handlers::arg_parser::ArgParser,
 };
@@ -20,25 +21,25 @@ pub struct OutputHandler {
 }
 
 impl OutputHandler {
-    pub fn new(settings: OutputSettings) -> Self {
+    pub fn new(settings: OutputSettings) -> Result<Self, CliError> {
         let file = match settings.output_file.output_path {
-            Some(path) => Some(
-                CsvFile::new_no_headers(&path, Some(settings.output_file.separator))
-                    .expect("no issues creating the output file"),
-            ),
+            Some(path) => Some(CsvFile::new_no_headers(
+                &path,
+                Some(settings.output_file.separator),
+            )?),
             None => None,
         };
 
         let options = match settings.partial {
-            Some(partial) => ArgParser::parse_partial_table(&partial).expect("can parse argument"),
+            Some(partial) => ArgParser::parse_partial_table(&partial)?,
             None => QueryTableOptions::Full,
         };
 
-        Self {
+        Ok(Self {
             file,
             table: QueryTable::new_no_header(!settings.no_id, options),
             format: settings.format,
-        }
+        })
     }
 
     pub fn close(self) -> String {

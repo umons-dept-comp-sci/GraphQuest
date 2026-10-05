@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 use gquest_core::utils::table_handler::QueryTableOptions;
 use pest::{
@@ -7,15 +7,33 @@ use pest::{
     iterators::Pair,
 };
 use pest_derive::Parser;
-
-use crate::CliError;
+use thiserror::Error;
 
 #[derive(Parser)]
 #[grammar = "command_handlers/grammar.pest"]
 pub struct ArgParser;
 
+#[derive(Debug, Error)]
+pub struct ArgParseError {
+    arg: String,
+    column: usize,
+    missing_tokens: Vec<String>,
+}
+
+impl Display for ArgParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let arg = &self.arg;
+        let missing_tokens = &self.missing_tokens;
+        let column = self.column;
+        write!(
+            f,
+            "Something went wrong while parsing the following arg - \"{arg}\", possibly missing token : \"{missing_tokens:?}\", at : {column}"
+        )
+    }
+}
+
 impl ArgParser {
-    pub fn parse_order(input: &str) -> Result<Vec<u32>, CliError> {
+    pub fn parse_order(input: &str) -> Result<Vec<u32>, ArgParseError> {
         match ArgParser::parse(Rule::order, input) {
             Ok(mut rule) => Ok(ArgParser::parse_order_rule(
                 rule.next().expect("one sub rule"),
@@ -24,7 +42,7 @@ impl ArgParser {
         }
     }
 
-    pub fn parse_partial_table(input: &str) -> Result<QueryTableOptions, CliError> {
+    pub fn parse_partial_table(input: &str) -> Result<QueryTableOptions, ArgParseError> {
         match ArgParser::parse(Rule::partial_table, input) {
             Ok(mut rule) => Ok(ArgParser::parse_partial_tablerule(
                 rule.next().expect("one sub rule"),
@@ -33,7 +51,7 @@ impl ArgParser {
         }
     }
 
-    pub fn get_error(e: Error<Rule>) -> CliError {
+    pub fn get_error(e: Error<Rule>) -> ArgParseError {
         let arg = e.line().to_string();
         let column = match e.line_col {
             LineColLocation::Pos((_, col)) => col,
@@ -59,7 +77,7 @@ impl ArgParser {
             _ => unreachable!(),
         };
 
-        CliError::ArgParseError {
+        ArgParseError {
             arg,
             column,
             missing_tokens,

@@ -16,7 +16,7 @@ pub async fn query_raw_sql(path: DatabasePath, query_args: QueryArgs) -> Result<
 
     info!("Sending raw sql query");
 
-    let mut output = OutputHandler::new(query_args.output);
+    let mut output = OutputHandler::new(query_args.output)?;
     GquestEngine::send_raw_sql(db.clone(), query_args.query, &mut output).await?;
     println!("{}", output.close());
     info!("Finished executing query");
@@ -32,7 +32,7 @@ pub async fn query_database(
     add_args: Option<String>,
     config_arg: ConfigFileArg,
 ) -> Result<(), CliError> {
-    let output = OutputHandler::new(query_args.output);
+    let output = OutputHandler::new(query_args.output)?;
 
     // open database :
     info!("Opening database");
