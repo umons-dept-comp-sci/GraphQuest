@@ -2,7 +2,7 @@
 
 The core of GraphQuest is essentially a Rust library, also referred to as a crate, that was designed to be a quick and reliable exploration tool for graph theory researchers. A command-line interface called `gquest` was developed alongside it.
 
-It was made to help rapidly compute any invariants and to answer simple questions researchers can encounter during a proof or even when trying to refute a given conjecture using a counterexample. It also tries to stay as modular and user-friendly as possible, by allowing users to customize a lot of their experience, such as the tools used to compute values, and the database system to use. 
+It was made to help rapidly compute any invariants and to answer simple questions researchers can encounter during a proof or even when trying to refute a given conjecture using a counterexample. It also tries to stay as modular and user-friendly as possible, by allowing users to customise a lot of their experience, such as the tools used to compute values, and the database system to use. 
 
 It even has its own simple query language.
 
@@ -30,8 +30,8 @@ queried when in need of said data or to answer a user query. Currently, only Pos
 SQLite databases are supported with plans to add MySQL in the future.
 Note that GraphQuest needs sufficient permissions to manipulate a given database.
 
-* Then [Modules](modules.md) are executable files that the user provide and that are used to compute any
-invariants or conjecture result for a given graph.
+* Then [Modules](modules.md) are executable files that the user provides and that are used to compute any
+invariants or value needed during a query.
 
 * And finally, a [configuration file](configs.md) is a JSON formatted file containing information that GraphQuest
 needs to correctly interact with modules like the path leading to them, their return values and
@@ -85,7 +85,7 @@ control over the content and size of the research space.
 
 There are a lot of programming languages to choose from to compute invariants or conjecture results
 from a graph signature:
-* some have dedicated graph libraries like Python with NetworkX,
+* some have dedicated graph libraries like Python with [NetworkX](https://networkx.org/documentation/stable/index.html),
 * others might lead to faster computations like Rust or C.
 
 Ultimately, programming language are often up to the preferences of the user, so restricting the

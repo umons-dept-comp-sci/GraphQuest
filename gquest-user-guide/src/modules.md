@@ -74,7 +74,7 @@ one. For a module to be compatible with GraphQuest, it should follow the subsequ
 
 > [!tip]
 > Since GraphQuest keeps the module's process alive until all needed values were computed, 
-> a module can use optimization methods, such as memoization, in order to accelerate the computations of values.
+> a module can use optimisation methods, such as memoization, in order to accelerate the computations of values.
 
 ### Flushing the stdout
 

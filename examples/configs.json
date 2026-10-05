@@ -17,7 +17,7 @@
       "output": "numeric"
     },
     {
-      "function": "e_nm",
+      "function": "E",
       "path": "modules/e_nm.py",
       "args": [
         {

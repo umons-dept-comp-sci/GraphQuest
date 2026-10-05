@@ -17,7 +17,7 @@ const DEFAULT_CONFIGS: &str = "configs.json";
 #[command(
     author("Axel Foucart"),
     version,
-    about("gquest: Developped by Axel Foucart at Algorithm Lab, UMONS-2024-2026")
+    about("gquest: Developped by Axel Foucart at the Algorithms Lab, UMONS-2024-2026")
 )]
 pub struct CliArg {
     #[command(subcommand)]

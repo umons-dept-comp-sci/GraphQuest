@@ -207,7 +207,7 @@ The function `max` selects the graphs for which the given expression reaches its
 For example:
 * `max(chromatic_nb)`: selects the graphs that have the maximum value of `chromatic_nb` in the *entire* dataset.
 * `max(chromatic_nb;n,m)`: selects the graphs that have the maximum value of `chromatic_nb` for each pair of `(n,m)`.
-* `max(chromatic_nb - max_degree; n, m % n)`: selects the graphs that maximize the difference beween `chromatic_nb` and `max_degree` for each
+* `max(chromatic_nb - max_degree; n, m % n)`: selects the graphs that maximise the difference beween `chromatic_nb` and `max_degree` for each
 pair `(n, m % n)`.
 
 ## Dataset filtering

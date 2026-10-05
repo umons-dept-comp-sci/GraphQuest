@@ -1,6 +1,6 @@
 # Configuration files
 
-Configuration files are an indispensable component of GraphQuest, as they allow the users to customize the behaviour of the application as well as letting them define a set of available module.
+Configuration files are an indispensable component of GraphQuest, as they allow the users to customise the behaviour of the application as well as letting them define a set of available module.
 
 A configuration file is formatted using the JSON format. This means that each setting is represented as a key-value pair, where the key is the name of the parameter and the value specifies what
 to set it to. 
