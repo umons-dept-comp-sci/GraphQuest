@@ -5,6 +5,7 @@ The `gquest query` command is used to execute a query on the current dataset and
 ```bash
 gquest query [OPTIONS] <QUERY> [CONFIG_FILE]
 ```
+The shortcut to the *query* command is `q`.
 
 ### `<QUERY>`
 
@@ -42,8 +43,9 @@ with `i`, a column containing the index of the displayed row.
 
 The optional `CONFIG_FILE` argument specifies the path to the [configuration file](../configs.md) containing the definitions of the modules and functions used by the query.
 
-If no configuration file is specified, GraphQuest uses `configs.json` by default:
+If no configuration file is specified, GraphQuest uses `configs.json` by default.
 
+For example:
 ```bash
 gquest query "chromatic_nb > 3" configs.json
 ```
@@ -61,13 +63,13 @@ For example:
 gquest query "n == 5" -c
 ```
 
-will return all graph with an order from 5, while the query:
+will return all graph with an order different from 5, while the query:
 
 ```bash
 gquest query "is_connected -> n == 5" -c
 ```
 
-will return all *connected* graph with an order from 5.
+will return all *connected* graph with an order different from 5.
 
 
 > [!CAUTION]
@@ -88,6 +90,8 @@ The `-p` option can be used to display only a portion of the result:
 ```
 
 The value has the form `n:m`, where `n` is the number of rows displayed at the beginning of the result and `m` is the number of rows displayed at the end.
+
+If `n` (or `m`) is omitted then its value will be set to `0`. But not providing both `n` and `m` will result in an error.
 
 For example:
 

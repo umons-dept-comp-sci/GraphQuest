@@ -90,10 +90,9 @@ This can improve the performances depending on your machine.
 gquest add file [OPTIONS] <PATH>
 ```
 
-GraphQuest 
+The file command allows you to add graphs stored in a file to the GraphQuest dataset. Each line of the file must contain the g6 signature of a graph.
 
-
-For example:
+For example, suppose that the file `dataset.txt` contains the following:
 ```
 B?
 BO
@@ -101,29 +100,36 @@ BW
 Bw
 ```
 
+Running:
+```bash
+gquest add file dataset.txt
+```
+will add these four graphs to the current dataset.
+
+
 > [!tip]
 > You can use the `geng` command to create files with certain graph classes. 
 > 
-> For example, using bash, we can store all connected graphs with an order of 3 and 4 in a file:
+> For example, using Bash, we can store all connected graphs with an order of 3 and 4 in a file:
 > ```bash
 > geng 3 -c > dataset.txt
 > geng 4 -c >> dataset.txt
 > ```
-> And then add this dataset in GraphQuest:
+> The resulting dataset can then be added to GraphQuest:
 > ```bash
-> gquest a f dataset.txt
+> gquest add file dataset.txt
 > ```
-
 
 #### Using pipes
 
+GraphQuest can also read graph signatures directly from the standard input. This makes it possible to pipe the output of another program directly into GraphQuest without first storing the graphs in a file.
 
 > [!tip]
 > You can pipe the output of the `geng` command to `gquest`. 
 > 
 > For example, using bash, we can add all connected graphs with an order of 8 to the dataset:
 > ```bash
-> geng 8 -c | gquest a p
+> geng 8 -c | gquest add pipe
 > ```
 
 

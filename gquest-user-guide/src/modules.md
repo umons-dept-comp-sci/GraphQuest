@@ -3,14 +3,14 @@
 As explained in the [introduction](index.html#modules), modules are executable files so we will refer to the process resulting
 from the execution of a module \\(M\\) as \\(P_M\\). And like for any process, \\(P_M\\) has three input and output
 communication channels, each with a different purpose:
-* a standard input, called the stdin, which is stream of data containing PM ’s input;
-* a standard output, called stdout, which is the stream where PM writes its outputted data; and
-* a standard error, called stderr, which is stream where PM writes its diagnostics or the errors
+* a standard input, called the stdin, which is stream of data containing \\(P_M\\) 's input;
+* a standard output, called stdout, which is the stream where \\(P_M\\) writes its outputted data; and
+* a standard error, called stderr, which is stream where \\(P_M\\) writes its diagnostics or the errors
 it faces.
 
 
-Another process can be at the other end of these channels to communicate with \\(P_M\\) , which is what
-GraphQuest’s process \\(P_{GQ}\\) does as shown by the following figure:
+Another process can be at the other end of these channels to communicate with \\(P_M\\), which is what
+GraphQuest's process \\(P_{GQ}\\) does as shown by the following figure:
 <p align="center">
   <img src="figures/module_com_simple.png" />
 </p>
@@ -40,13 +40,13 @@ Additionally, if at any point an error arises from \\(P_M\\)' side, it can send 
 stderr channel, which will signal GraphQuest to report the error to the user and cease its execution.
 
 > [!warning]
-> A module should not use it's stderr channel unless it is to report an error to GraphQuest.
+> A module should not use its stderr channel unless it is to report an error to GraphQuest.
 
 ### Argument format
 
 Values need to be written in plain text in the stdin and stdout.
 
-For example, if a module requires one integer and one float as arguments, GraphQuest could write the following to stdin:
+For example, if a module requires one integer and one float as arguments, GraphQuest could write the following to the stdin:
 ```bash
 3 12.2
 ```
@@ -85,7 +85,7 @@ works by sending a certain number of inputs, referred to as a batch, to the stdi
 the necessary data was computed. So if the number of values of a batch is \\(b\\), then the number of
 data written by the module before a flush must be less or equal than \\(b\\) and a divisor of \\(b\\), otherwise
 there is a risk that both GraphQuest and the module are stuck waiting for each others until the user
-manually interrupts one of the processes. We will see why this is the case in section 3.1.4. 
+manually interrupts one of the processes. 
 
 You can of course flush after every received input, however it might slightly slow down the execution process.
 
@@ -96,7 +96,7 @@ You can of course flush after every received input, however it might slightly sl
 
 ## Defining a module
 
-We will see in the next section how we can define this module in a [configuration file](configs.md) in order to use as a function in future queries.
+We will see in the next section how we can define this module in a [configuration file](configs.md) in order to use it as a function in queries.
 
 
 ## Example: creating a python module
@@ -112,9 +112,9 @@ Let us implement a module that will check whether two graphs \\(G\\) and \\(H\\)
 ```
 
 
-To create this module, we can take advantage of Python’s [networkx](https://networkx.org/en/) library which provides useful
-methods related to graphs. Such as the [from_graph6_bytes(S)](https://networkx.org/documentation/stable/reference/readwrite/generated/networkx.readwrite.graph6.from_graph6_bytes.html) method that can translate a given
-signature \\(S\\) into a graph \\(G\\), or the method [is_isomorphic(G1,G2)](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.isomorphism.is_isomorphic.html) that returns True if \\(G1 \simeq G2\\), False otherwise.
+To create this module, we can take advantage of Python's [networkx](https://networkx.org/en/) library which provides useful
+methods related to graphs. Such as the [`from_graph6_bytes(S)`](https://networkx.org/documentation/stable/reference/readwrite/generated/networkx.readwrite.graph6.from_graph6_bytes.html) method that can translate a given
+signature \\(S\\) into a graph \\(G\\), or the method [`is_isomorphic(G,H)`](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.isomorphism.is_isomorphic.html) that returns True if \\(G \simeq H\\), False otherwise.
 
 
 ```py
@@ -124,10 +124,10 @@ import sys
 import networkx as nx
 
 for sig1, sig2 in map(str.split, map(str.strip, sys.stdin)):
-    G1 = nx.from_graph6_bytes(sig1.encode("utf-8"))
-    G2 = nx.from_graph6_bytes(sig2.encode("utf-8"))
+    G = nx.from_graph6_bytes(sig1.encode("utf-8"))
+    H = nx.from_graph6_bytes(sig2.encode("utf-8"))
 
-    print(sig1, sig2, int(nx.is_isomorphic(G1, G2)), flush=True)
+    print(sig1, sig2, int(nx.is_isomorphic(G, H)), flush=True)
 ```
 
 > [!note]
@@ -140,7 +140,7 @@ for sig1, sig2 in map(str.split, map(str.strip, sys.stdin)):
 > of a text file to specify that it is a script and not a binary file. Then the rest of the line specifies
 > the path of the program to execute the script with
 
-So since we already added the shebang line in our example, we just have to make it executable:
+So since we already added the shebang line in our example, we just have to make the file executable:
 ```bash
 chmod +x modules/iso.py
 ```

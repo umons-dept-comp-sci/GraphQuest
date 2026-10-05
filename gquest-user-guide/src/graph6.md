@@ -10,7 +10,7 @@ often the minimal member under some defined ordering, but for this application w
 > Let two graphs \\(G\\) and \\(H\\) such that \\(G \simeq H\\). Let the signature of \\(G\\) and \\(H\\) be \\(s_G\\) and \\(s_H\\)
 > respectively, then \\(s_G = s_H\\).
 
-Finding those signatures also requires a lot of consideration which is why we highly recommend the use of tools provided by the [nauty and traces](https://pallini.di.uniroma1.it/) collection such as the tool called `geng`, to generate simple undirected graphs. This tool allows us to control the number of vertices, edges and even the classes of
+Finding those signatures requires a lot of consideration which is why we highly recommend the use of tools provided by the [nauty and traces](https://pallini.di.uniroma1.it/) collection such as the tool called `geng`, to generate simple undirected graphs. This tool allows us to control the number of vertices, edges and even the classes of
 the generated graphs among many other things.
 
 

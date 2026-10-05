@@ -1,6 +1,6 @@
 # Configuration files
 
-Configuration files are an indispensable component of GraphQuest, as they allow the users to customise the behaviour of the application as well as letting them define a set of available module.
+Configuration files are an indispensable component of GraphQuest, as they allow the users to customise the behaviour of the application as well as letting them define a set of available modules.
 
 A configuration file is formatted using the JSON format. This means that each setting is represented as a key-value pair, where the key is the name of the parameter and the value specifies what
 to set it to. 
@@ -44,12 +44,13 @@ will send up to 6500 values to a module at a time before waiting for the module 
 
 #### Modules
 
-Each module is described by several fields specifying how it should be executed, what function should be called, and how its input and output should be handled.
+Each module is described by several fields specifying how it should be executed, what arguments it expects, and what it outputs.
 
 
 ##### Executable path
 
 The path to the module. It can be either an absolute or a relative path.
+
 For example:
 ```bash
 {
@@ -58,12 +59,13 @@ For example:
 ```
 
 > [!note]
-> GraphQuest checks whether or not their exists a file at the given path only when the module has to be executed. 
+> GraphQuest checks whether or not there exists a file at the given path only when the module has to be executed. 
 
 ##### Function name
 
 The name used to refer to this module in queries.
 
+For example:
 ```json
 {
     "function": "is_complete" 
@@ -74,13 +76,17 @@ The name used to refer to this module in queries.
 
 The `args` field, defines the arguments that GraphQuest should provide to the module's function. 
 
+
 Arguments can be graph arguments or standard values such as integers, floating-point numbers, or strings.
 
+Each argument has two fields:
+* `name`: represent its name, and
+* `class`: its type.
 
-Currently GraphQuest allows 3 classes of arguments:
-* `numeric` represent both integers and floating point values, 
-* `string` represent string values, and
-* `graph` represent graphs, formatted using their g6 notation.
+Currently GraphQuest allows 3 classes/types of arguments:
+* `"numeric"` represent both integers and floating point values, 
+* `"string"` represent string values, and
+* `"graph"` represent graphs, formatted using their g6 notation.
 
 > [!note]
 > Boolean values need to be formatted as numeric values, 
@@ -111,7 +117,7 @@ This is useful when defining functions with only a graph as an arguments, which 
 
 ##### Output
 
-Defines the type of value returned by the module. This allows GraphQuest to correctly interpret and store the result in the database.
+Defines the type of the value returned by the module. 
 
 For example:
 ```bash
@@ -139,7 +145,7 @@ Therefore, reducing the batch size allows GraphQuest to store results more frequ
 
 ## Example: configuring a python module
 
-Let us continue the example we started in the [module section](modules.md#example-creating-a-python-module), where we created a module `iso.py`, by creating a configuration file to use this module, called `configs.json`.
+Let us continue the example we started in the [module section](modules.md#example-creating-a-python-module), where we created a module named `iso.py`, by creating a configuration file to use this module, called `configs.json`.
 ```
 .
 ├── configs.json
@@ -150,17 +156,18 @@ Let us continue the example we started in the [module section](modules.md#exampl
 ```
 
 
-The module `iso.py` requires two arguments, two graphs \\(G\\) and \\(H\\) and returns 1 if they are, 0 otherwise. 
+The module `iso.py` requires two arguments, a graph \\(G\\) and another graph \\(H\\) and returns 1 if they are isomorphic, 0 otherwise. 
 
 So this means that this module:
 * requires two arguments of class `graph`, and
 * returns a value with a `numeric` class.
 
 
-And since checking whether or not two graphs are isomorphic can take significant time, we will decrease the value of a batch size for this module.
+And since checking whether or not two graphs are isomorphic can take significant time, we will decrease the value of the batch sizes to 5000 for this module while keeping it to 7000 for the others.
 
 ```json
 {
+  "batch_size": 7000,
   "modules": [
     {
       "function": "iso",

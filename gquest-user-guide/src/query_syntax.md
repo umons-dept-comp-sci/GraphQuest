@@ -4,14 +4,14 @@ GraphQuest queries are composed of values, identifiers, functions, expressions, 
 
 ## Primitive values
 
-GraphQuest supports the following primitive values:
+GraphQuest supports the following primitive values in a query:
 
-| Type                  | Examples        |
-| --------------------- | --------------- |
-| Integer               | `0`, `42`, `-3` |
-| Floating-point number | `3.14`, `-0.5`  |
-| String                | `"hello"`       |
-| Dataset argument      | `G`             |
+| Type                  | Examples          |
+| --------------------- | ----------------- |
+| Integer               | `0`, `42`, `-3`   |
+| Floating-point number | `3.14`, `-0.5`    |
+| String                | `"hello"`         |
+| Dataset argument      | `G`               |
 
 
 ### Dataset Argument
@@ -34,22 +34,22 @@ The dataset argument can also be omitted for [invariants](#invariant).
 
 ### Functions
 
-A function takes one or more argument and returns a value. Each function is linked to a [module](modules.md) and is defined in a given [configuration file](configs.md).
+A function takes one or more arguments and returns a value. Each function is linked to a [module](modules.md) and is defined in a [configuration file](configs.md).
 
 For example:
 * `m(G)`,
 * `d(n(G),m(G))` (altough we will see in the next [section](#invariant) that this can be simplified),
-* `d(2,4)`,
+* `d(2,4)`, and
 * `iso(G, comp(G))`.
 
 ### Invariant
-Invariants refer to functions that take a graph as their only argument.
+Invariants refer to functions that takes only one argument of type Graph.
 
-A function that takes only one argument of type Graph can be written without explicitly passing the dataset argument `G`.
+They can be written without explicitly passing the dataset argument `G`.
 
 For example:
-* `m(G)` is equivalent to `m`, and
-* `chromatic_nb(G)` is equivalent to `chromatic_nb`.
+* `m` is equivalent to `m(G)`, and
+* `chromatic_nb` is equivalent to `chromatic_nb(G)`.
 
 This shorthand allows graph invariants to be used directly in expressions and conditions without explicitly specifying `G`.
 
@@ -125,9 +125,9 @@ Expressions can be compared using the following operators:
 
 For example:
 ```
-n == 5
+n <= 5
 m > 10
-chromatic_nb <= max_degree
+chromatic_nb == max_degree + 1
 ```
 
 
@@ -139,28 +139,29 @@ Functions that return a numerical value can be used directly as conditions. When
 > [!warning]
 > Currently, any function that is used as a condition without an explicit comparison is implicitly compared to 1, even if they do not return a numerical value.
 > 
-> For example, `is_connected and d(n,m)` is equivalent to `is_connected == 1 and d(n,m) == 1`
-> 
-> Therefore, this query selects connected graphs for which d(n,m) evaluates to 1.
+> For example, `is_connected and chromatic_nb` is equivalent to `is_connected == 1 and chromatic_nb == 1`,
+> therefore, this query selects connected graphs for which the chromatic number evaluates to 1.
 
 ### Comparison chaining
 
 Comparison chaining is a shorthand notation for combining several comparisons that share operators.
 
-A comparison chain must follow a consistent direction. Once a chain contains a < or <= comparison, subsequent comparisons must continue in the same direction. Similarly, a chain containing > or >= comparisons must continue in that direction.
+A comparison chain must follow a consistent direction. Once a chain contains a `<` or `<=` comparison, subsequent comparisons must continue in the same direction. Similarly, a chain containing `>` or `>=` comparisons must continue in that direction. 
+
+But equal operator can be chained in any chain regardless of the direction.
 
 For example:
 * `x < y < z` is equivalent to `x < y and y < z`, 
 * `x == y == z` is equivalent to `x == y and y == z`, and
 * `x < y == a <= z == b` is equivalent to `x < y and y == a and a <= z and z == b`.
 
-But the following examples are not correct:
+But the following syntax is not correct:
 * `x < y > z`, and
 * `x > y < z`.
 
 
 > [!tip]
-> Comparison chaining can be particularly useful for expressing ranges. For example:
+> Comparison chaining can be useful for expressing ranges. For example:
 > 
 > `2 <= n <= 5` is equivalent to: `n >= 2 and n <= 5`.
 
